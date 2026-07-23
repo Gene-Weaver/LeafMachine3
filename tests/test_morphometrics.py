@@ -41,9 +41,8 @@ def test_lm2_rotated_bbox_dims_are_length_and_width():
     assert m.aspect_ratio > 2.0                          # clearly elongated (length/width)
 
 
-def test_feret_is_the_default_and_tight():
-    # default method is now "feret" (Tier 1): tracks the long axis and bounds the mask tightly.
-    m = polygon_morphology(_ellipse(200, 60, angle=25))
+def test_feret_method_is_tight():
+    m = polygon_morphology(_ellipse(200, 60, angle=25), method="feret")
     assert m is not None
     assert m.dim_max >= m.dim_min > 0
     assert abs(m.dim_max - 400) < 25, m.dim_max
@@ -52,11 +51,14 @@ def test_feret_is_the_default_and_tight():
     assert len(m.rotated_bbox) == 4
 
 
-def test_pca_option_orients_symmetric_shape():
-    m = polygon_morphology(_ellipse(200, 60, angle=25), method="pca")
-    assert m is not None
-    assert abs(m.dim_max - 400) < 40 and abs(m.dim_min - 120) < 40
-    assert m.dim_max * m.dim_min >= m.area_px - 1
+def test_pca_is_the_default():
+    # default method is now "pca": robust axis; the default call must equal an explicit pca call.
+    default = polygon_morphology(_ellipse(200, 60, angle=25))
+    explicit = polygon_morphology(_ellipse(200, 60, angle=25), method="pca")
+    assert default is not None and explicit is not None
+    assert abs(default.dim_max - 400) < 40 and abs(default.dim_min - 120) < 40
+    assert default.dim_max * default.dim_min >= default.area_px - 1        # box covers the mask
+    assert (round(default.dim_max), round(default.dim_min)) == (round(explicit.dim_max), round(explicit.dim_min))
 
 
 def test_circularity_of_circle_near_one():

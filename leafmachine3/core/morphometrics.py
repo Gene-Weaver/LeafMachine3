@@ -6,15 +6,16 @@ aspect ratio, vertex count) plus the rotated (minimum) bounding box.
 
 Four rotated-bbox methods are available via ``polygon_morphology(..., method=...)``:
 
-* ``"feret"`` (DEFAULT) — orient by the maximum-Feret axis (the longest chord across the convex
-  hull), then measure the hull extents along and perpendicular to it. Tracks the leaf's true
-  long axis (tip->base) and stays tight; the recommended default.
+* ``"pca"`` (DEFAULT) — orient by the mask's area-weighted principal (second-moment) axis, then
+  measure the hull extents along and perpendicular to it. Because it integrates over the whole
+  shape it is robust across the broadest range of leaf shapes (entire, cordate, lobed); the
+  recommended default.
+* ``"feret"`` — orient by the maximum-Feret axis (the longest chord across the convex hull) +
+  hull extents. Tracks the tip->base long axis; excellent on clearly elongated leaves.
 * ``"lm2"`` — LM2's ``fit_min_bbox``: rotate the simplified polygon in 1-degree steps until the
   axis-aligned box's long side matches the min-enclosing-circle diameter.
 * ``"minarearect"`` — OpenCV ``cv2.minAreaRect``: the true minimum-AREA rotated rectangle.
   Geometrically tightest, but minimizes area rather than orientation, so it can mis-align.
-* ``"pca"`` — orient by the mask's area-weighted principal (second-moment) axis, then measure
-  the hull extents; robust for near-symmetric shapes.
 
 All four return the same tuple ``(angle, dim_max, dim_min, corners, circle)`` and are drop-in.
 Elliptic Fourier descriptors are not ported yet — the module is structured so an ``efds``
@@ -177,11 +178,11 @@ def pca_bbox(polygon):
     return _oriented_from_axis(polygon, theta)
 
 
-def polygon_morphology(polygon, *, find_min_bbox: bool = True, method: str = "feret") -> Morphometrics | None:
+def polygon_morphology(polygon, *, find_min_bbox: bool = True, method: str = "pca") -> Morphometrics | None:
     """Compute all scalar morphology + the rotated bbox for one polygon (working coords).
 
-    ``method`` selects the rotated-bbox algorithm: ``"feret"`` (default), ``"lm2"``,
-    ``"minarearect"`` (cv2), or ``"pca"``.
+    ``method`` selects the rotated-bbox algorithm: ``"pca"`` (default), ``"feret"``, ``"lm2"``,
+    or ``"minarearect"`` (cv2).
     """
     poly = np.asarray(polygon, dtype=float).reshape(-1, 2)
     if len(poly) < 3:
@@ -203,8 +204,8 @@ def polygon_morphology(polygon, *, find_min_bbox: bool = True, method: str = "fe
     method = str(method).lower()
     if method in _MIN_AREA_RECT_ALIASES:
         angle, dim_max, dim_min, rotated_bbox, circle = min_area_rect_bbox(closed)
-    elif method in _PCA_ALIASES:
-        angle, dim_max, dim_min, rotated_bbox, circle = pca_bbox(closed)
+    elif method in _FERET_ALIASES:
+        angle, dim_max, dim_min, rotated_bbox, circle = feret_bbox(closed)
     elif method in _LM2_ALIASES:
         approx = cv2.approxPolyDP(contour, 0.010 * perimeter, True).reshape(-1, 2)   # LM2 1% simplify
         if len(approx) < 3:
@@ -212,8 +213,8 @@ def polygon_morphology(polygon, *, find_min_bbox: bool = True, method: str = "fe
         angle, dim_max, dim_min, rotated_bbox, circle = fit_min_bbox(
             closed, approx, int(round(cx)), int(round(cy)), find_min=find_min_bbox
         )
-    else:  # default: "feret" (Tier 1)
-        angle, dim_max, dim_min, rotated_bbox, circle = feret_bbox(closed)
+    else:  # default: "pca" (Tier 2) -- also the fallback for an unrecognized method
+        angle, dim_max, dim_min, rotated_bbox, circle = pca_bbox(closed)
     aspect_ratio = (dim_max / dim_min) if dim_min else 0.0
 
     return Morphometrics(

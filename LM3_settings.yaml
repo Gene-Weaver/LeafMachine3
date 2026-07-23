@@ -131,10 +131,10 @@ modules:
   morphology:                           # runs right after leaf_segmenter
     enabled: true
     classes: ["Leaf"]                   # seg classes to measure (Petiole / Hole addable later)
-    method: "feret"                     # rotated-bbox algorithm (DEFAULT: "feret" = max-Feret axis +
-                                        #   hull extents; tracks the leaf's long axis and stays tight).
-                                        #   Options: "feret" | "lm2" (fit_min_bbox) | "pca" |
-                                        #   "minarearect" (cv2; minimizes area, can mis-orient).
+    method: "pca"                       # rotated-bbox algorithm (DEFAULT: "pca" = area-weighted
+                                        #   principal axis; robust across the broadest range of leaf
+                                        #   shapes). Options: "pca" | "feret" (max-Feret axis) |
+                                        #   "lm2" (fit_min_bbox) | "minarearect" (cv2, can mis-orient).
     find_minimum_bounding_box: true     # (lm2 only) run the rotate-to-min-circle procedure
 
   metric_grounding:

@@ -42,7 +42,7 @@ class Morphology(PipelineStage):
         return bool(_get(self.cfg.stage(self.key), "find_minimum_bounding_box", default=True))
 
     def _method(self) -> str:
-        return str(_get(self.cfg.stage(self.key), "method", default="feret"))
+        return str(_get(self.cfg.stage(self.key), "method", default="pca"))
 
     def collect_items(self, project) -> list[WorkItem]:
         return [

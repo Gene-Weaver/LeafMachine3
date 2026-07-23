@@ -11,8 +11,8 @@ long-axis tilt, and `box_area / mask_area` (1.0 = perfectly tight).
 |---|--------|--------------|
 | 1 | **LM2 `fit_min_bbox`** — rotate until the axis-aligned box's long side = min-enclosing-circle diameter | ✅ option (`morphology.method: lm2`) |
 | 2 | **`cv2.minAreaRect`** — true minimum-area rotated rectangle | ✅ option (`morphology.method: minarearect`) |
-| 3 | **Feret axis + hull extents** — orient by the longest-chord axis, measure hull extents | ✅ **default** (`morphology.method: feret`) |
-| 4 | **PCA principal axis** — orient by the mask's area-weighted second-moment axis | ✅ option (`morphology.method: pca`) |
+| 3 | **Feret axis + hull extents** — orient by the longest-chord axis, measure hull extents | ✅ option (`morphology.method: feret`) |
+| 4 | **PCA principal axis** — orient by the mask's area-weighted second-moment axis | ✅ **default** (`morphology.method: pca`) |
 | 5 | **`cv2.fitEllipse` axis** — orient by a least-squares ellipse major axis | prototype (here only) |
 | 6 | **Hybrid** — Feret, unless it disagrees with PCA by > 20° → PCA | prototype (here only) |
 
@@ -48,10 +48,8 @@ Panels: `panel_catalpa_cordate.png`, `panel_platanus_lobed.png`, `panel_posoquer
   cleanly**, while the geometric "improvements" impose a spurious ~15–22° tilt (the principal
   axis is ill-defined for a near-round shape).
 
-**Takeaway:** `feret` (Tier 1) is the production default — it tracks the leaf's true long axis
-and stays tight, and was the most accurate across these leaves. `lm2` remains available (a
-robust circle-based fallback), `pca` for near-symmetric shapes, and `minarearect` for the pure
-minimum-area rectangle. Caveat: on near-round leaves (e.g. the Platanus) the principal axis is
-ill-defined, so `feret`/`pca` can pick a slight tilt where `lm2`/`cv2` stay axis-aligned. The
-clear future win is **landmark-based orientation** (petiole→apex midvein), botanically correct
-by construction.
+**Takeaway:** `pca` (area-weighted principal axis) is the production default — because it
+integrates over the whole shape it is the most robust across the broadest range of taxa (entire,
+cordate, lobed). `feret` is available for clearly elongated leaves, `lm2` as the circle-based
+fallback, and `minarearect` for the pure minimum-area rectangle. The clear future win is
+**landmark-based orientation** (petiole→apex midvein), botanically correct by construction.
