@@ -30,15 +30,33 @@ def _ellipse(a: float, b: float, cx: float = 500.0, cy: float = 500.0, angle: fl
     return np.asarray(rotate_polygon_by_angle(pts, angle, cx, cy), dtype=float)
 
 
-def test_rotated_bbox_dims_are_length_and_width():
+def test_lm2_rotated_bbox_dims_are_length_and_width():
     # LM2's procedure ties dim_max to the min-enclosing-circle diameter; for a leaf-like
     # ellipse (major 400, minor 120) that recovers the length (400) and width (120).
-    m = polygon_morphology(_ellipse(200, 60, angle=30), find_min_bbox=True)
+    m = polygon_morphology(_ellipse(200, 60, angle=30), method="lm2", find_min_bbox=True)
     assert m is not None
     assert m.dim_max >= m.dim_min > 0
     assert abs(m.dim_max - 400) < 50, m.dim_max         # major axis -> leaf length
     assert abs(m.dim_min - 120) < 70, m.dim_min         # minor axis -> leaf width
     assert m.aspect_ratio > 2.0                          # clearly elongated (length/width)
+
+
+def test_feret_is_the_default_and_tight():
+    # default method is now "feret" (Tier 1): tracks the long axis and bounds the mask tightly.
+    m = polygon_morphology(_ellipse(200, 60, angle=25))
+    assert m is not None
+    assert m.dim_max >= m.dim_min > 0
+    assert abs(m.dim_max - 400) < 25, m.dim_max
+    assert abs(m.dim_min - 120) < 25, m.dim_min
+    assert m.dim_max * m.dim_min >= m.area_px - 1        # a bounding box must cover the mask
+    assert len(m.rotated_bbox) == 4
+
+
+def test_pca_option_orients_symmetric_shape():
+    m = polygon_morphology(_ellipse(200, 60, angle=25), method="pca")
+    assert m is not None
+    assert abs(m.dim_max - 400) < 40 and abs(m.dim_min - 120) < 40
+    assert m.dim_max * m.dim_min >= m.area_px - 1
 
 
 def test_circularity_of_circle_near_one():

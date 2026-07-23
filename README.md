@@ -19,9 +19,10 @@ hardware internally; the pipeline is resumable and driven by one YAML settings f
 mask — area, perimeter, centroid, convex hull, convexity/concavity, circularity, aspect ratio —
 plus the rotated (minimum) bounding box (rotation angle + `rotated_bbox_dim_max`/`dim_min` =
 leaf length/width), stored in the `leaf_morphology` table. The rotated-bbox algorithm is
-selectable via `modules.morphology.method`: `lm2` (LM2's `fit_min_bbox`, the default) or
-`minarearect` (OpenCV `cv2.minAreaRect`). **Note: the cv2 method does not perform as well** —
-`lm2` is preferred. The
+selectable via `modules.morphology.method`: **`feret`** (max-Feret axis + hull extents — the
+default, tracks the leaf's long axis and stays tight), `lm2` (LM2's `fit_min_bbox`), `pca`
+(area-weighted principal axis), or `minarearect` (OpenCV `cv2.minAreaRect`; minimizes area, can
+mis-orient). See `tests/rotated_bbox_comparision/` for a visual comparison. The
 Reporter overlay can draw leaf boxes as the rotated min box (`report.overlay.box_style: rotated`,
 default) or the axis-aligned YOLO box (`yolo`).
 
