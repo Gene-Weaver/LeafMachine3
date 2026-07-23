@@ -1,0 +1,141 @@
+-- ==========================================================================
+-- LeafMachine3 -- one SQLite database per project (in the YAML output dir).
+-- Applied once at init; idempotent (IF NOT EXISTS). Stage KEYS (project_status)
+-- are distinct from TABLE names: keys = archival_detector/plant_detector/... ;
+-- tables = archival_detection/plant_detection/... . One canonical key set only.
+-- ==========================================================================
+PRAGMA journal_mode = WAL;        -- concurrent readers while the single collector writes
+PRAGMA synchronous  = NORMAL;     -- safe under WAL; big throughput win
+PRAGMA foreign_keys = ON;         -- cascade + provenance integrity
+PRAGMA busy_timeout = 30000;
+
+-- specimen : raw/metadata table. ONE row per input image. Original is immutable.
+-- Key cross-stage OUTPUTS are duplicated here for cheap, join-free reporting.
+CREATE TABLE IF NOT EXISTS specimen (
+    specimen_id        INTEGER PRIMARY KEY,
+    image_name         TEXT NOT NULL,
+    image_stem         TEXT NOT NULL,
+    original_path      TEXT NOT NULL,          -- IMMUTABLE source
+    working_path       TEXT NOT NULL,          -- symlink into the working set (what stages open)
+    width              INTEGER,                -- WORKING-copy dims
+    height             INTEGER,
+    original_width     INTEGER,                -- ORIGINAL dims (Reporter renders on the original)
+    original_height    INTEGER,
+    work_scale         REAL NOT NULL DEFAULT 1.0,   -- working / original long-side ratio
+    orig_size_bytes    INTEGER,                -- ingest change-detection (moved/edited original)
+    orig_mtime         REAL,
+    normalized         INTEGER NOT NULL DEFAULT 0,  -- 1 if a tmp jpg copy was materialized
+    -- duplicated key outputs (authoritative copies live in the method tables):
+    cf_px_per_cm       REAL,                   -- from ruler_cf (the CF)
+    selected_ruler_cf_id INTEGER,              -- which ruler_cf row produced the CF (provenance)
+    ruler_unit_type    TEXT,
+    has_leaves         INTEGER, has_flowers INTEGER, has_fruits INTEGER,
+    ingested_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (image_stem),
+    UNIQUE (original_path)
+);
+
+-- archival_detection / plant_detection : one row per box. xyxy in WORKING coords.
+-- Idempotency is by delete-then-insert per specimen inside one txn (see ProjectDB),
+-- backed by a deterministic unique key so a torn write can't duplicate.
+CREATE TABLE IF NOT EXISTS archival_detection (
+    detection_id INTEGER PRIMARY KEY,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    cls_id INTEGER NOT NULL, cls_name TEXT NOT NULL, conf REAL NOT NULL,
+    x1 REAL, y1 REAL, x2 REAL, y2 REAL,
+    tag TEXT, crop_path TEXT,                  -- tag is BARE ("R"); crop file adds __R__
+    UNIQUE (specimen_id, cls_id, x1, y1, x2, y2)
+);
+CREATE INDEX IF NOT EXISTS ix_arch_spec ON archival_detection (specimen_id, cls_name);
+
+CREATE TABLE IF NOT EXISTS plant_detection (
+    detection_id INTEGER PRIMARY KEY,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    cls_id INTEGER NOT NULL, cls_name TEXT NOT NULL, conf REAL NOT NULL,
+    x1 REAL, y1 REAL, x2 REAL, y2 REAL,
+    tag TEXT, crop_path TEXT,
+    UNIQUE (specimen_id, cls_id, x1, y1, x2, y2)
+);
+CREATE INDEX IF NOT EXISTS ix_plant_spec ON plant_detection (specimen_id, cls_name);
+
+-- phenology : per-specimen presence/absence (also mirrored onto specimen.has_*).
+CREATE TABLE IF NOT EXISTS phenology (
+    specimen_id INTEGER PRIMARY KEY REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    has_leaves INTEGER, has_flowers INTEGER, has_fruits INTEGER,
+    n_leaves INTEGER, n_flowers INTEGER, n_fruits INTEGER
+);
+
+-- ruler_classification : per Ruler crop -> unit_type + the ensemble votes.
+CREATE TABLE IF NOT EXISTS ruler_classification (
+    ruler_class_id INTEGER PRIMARY KEY,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id)           ON DELETE CASCADE,
+    detection_id INTEGER NOT NULL REFERENCES archival_detection(detection_id) ON DELETE CASCADE,
+    unit_type TEXT NOT NULL, votes_json TEXT, conf REAL,
+    UNIQUE (detection_id)                      -- idempotent re-run
+);
+
+-- ruler_cf : per-ruler CF measurement. cf_px_per_cm = px_per_mm * 10; the WINNER is
+-- flagged is_selected and duplicated onto specimen.cf_px_per_cm.
+CREATE TABLE IF NOT EXISTS ruler_cf (
+    ruler_cf_id INTEGER PRIMARY KEY,
+    specimen_id    INTEGER NOT NULL REFERENCES specimen(specimen_id)                ON DELETE CASCADE,
+    ruler_class_id INTEGER NOT NULL REFERENCES ruler_classification(ruler_class_id) ON DELETE CASCADE,
+    unit_type TEXT, minimum_unit TEXT, second_unit TEXT,
+    px_per_mm REAL, cf_px_per_cm REAL, cf_px_per_inch REAL,
+    agreement REAL, n_ticks INTEGER, is_valid INTEGER NOT NULL DEFAULT 1,
+    is_selected INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (ruler_class_id)
+);
+
+-- leaf_segmentation : one row per INSTANCE mask. Polygon/RLE in PARENT (working) coords
+-- so Reporter rebuilds every view. Hole/Petiole link to their Leaf via parent_instance_index.
+CREATE TABLE IF NOT EXISTS leaf_segmentation (
+    leaf_id INTEGER PRIMARY KEY,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id)         ON DELETE CASCADE,
+    detection_id INTEGER NOT NULL REFERENCES plant_detection(detection_id) ON DELETE CASCADE,
+    instance_index INTEGER NOT NULL,
+    parent_instance_index INTEGER,             -- Hole/Petiole -> owning Leaf instance; Leaf -> itself
+    cls_id INTEGER NOT NULL, cls_name TEXT NOT NULL, conf REAL,   -- Leaf | Petiole | Hole
+    mask_format TEXT NOT NULL CHECK (mask_format IN ('polygon_xy','coco_rle')),
+    mask_data TEXT NOT NULL,                   -- polygon rings JSON  OR  COCO-RLE counts (parent coords)
+    frame_width INTEGER NOT NULL, frame_height INTEGER NOT NULL,  -- coord frame = working dims
+    bbox_x1 REAL, bbox_y1 REAL, bbox_x2 REAL, bbox_y2 REAL,
+    num_parts INTEGER NOT NULL DEFAULT 1,
+    area_px REAL, perimeter_px REAL,
+    area_cm2 REAL, perimeter_cm REAL,          -- filled by MetricGrounding
+    bbox_w_cm REAL, bbox_h_cm REAL,
+    UNIQUE (detection_id, instance_index)      -- upsert -> resume-safe
+);
+CREATE INDEX IF NOT EXISTS ix_leaf_spec ON leaf_segmentation (specimen_id);
+
+-- project_status : stage-level ledger. Drives whole-module skip + config-drift + restart.
+CREATE TABLE IF NOT EXISTS project_status (
+    stage_key   TEXT PRIMARY KEY,              -- canonical STAGE_KEYS, seeded at init
+    stage_order INTEGER NOT NULL,              -- 1..8
+    state       TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (state IN ('pending','running','done','error')),
+    n_total INTEGER DEFAULT 0, n_done INTEGER DEFAULT 0,
+    settings_hash TEXT,                        -- hash of the resolved cfg block + model mtime/size
+    started_at TEXT, finished_at TEXT, error_msg TEXT
+);
+
+-- image_status : per (specimen x stage) completion ledger for mid-stage resume.
+-- no_work=1 marks a specimen a stage legitimately has nothing to do for (e.g. no
+-- ruler) so depends_on gating never stalls.
+CREATE TABLE IF NOT EXISTS image_status (
+    specimen_id INTEGER NOT NULL REFERENCES specimen(specimen_id)      ON DELETE CASCADE,
+    stage_key   TEXT    NOT NULL REFERENCES project_status(stage_key)  ON DELETE CASCADE,
+    state   TEXT NOT NULL DEFAULT 'done' CHECK (state IN ('done','error')),
+    no_work INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    error_msg TEXT,
+    PRIMARY KEY (specimen_id, stage_key)
+);
+CREATE INDEX IF NOT EXISTS ix_imgstatus ON image_status (stage_key, state);
+
+-- report_manifest : exact artifact paths Reporter wrote, so --restart deletes them precisely.
+CREATE TABLE IF NOT EXISTS report_manifest (
+    specimen_id INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    path TEXT NOT NULL, kind TEXT,
+    PRIMARY KEY (specimen_id, path)
+);

@@ -1,0 +1,1981 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeafMachine3 — Architecture &amp; Build Plan</title>
+<style>
+:root{
+  --bg:#fbfbfd; --panel:#ffffff; --ink:#1c2024; --muted:#5b6570; --faint:#8a929b;
+  --line:#e6e8ec; --accent:#2f6f4f; --accent2:#3a6ea5; --amber:#b5730f; --purple:#6d4aad;
+  --codebg:#0f1720; --codeink:#d7dee8; --codecom:#7f8ea3; --codechip:#1c2836;
+  --stagebg:#f2f5f3; --stageline:#cfe0d6;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0d1013;--panel:#14181c;--ink:#e6e9ec;--muted:#9aa4ad;--faint:#6c757d;
+    --line:#242a30;--accent:#5cc08a;--accent2:#78a9dd;--amber:#e0a24a;--purple:#b39ae0;
+    --codebg:#0a0e13;--codeink:#cbd4de;--codecom:#6b7a8c;--codechip:#17222e;
+    --stagebg:#12201a;--stageline:#274a38;}
+}
+:root[data-theme="dark"]{--bg:#0d1013;--panel:#14181c;--ink:#e6e9ec;--muted:#9aa4ad;--faint:#6c757d;
+  --line:#242a30;--accent:#5cc08a;--accent2:#78a9dd;--amber:#e0a24a;--purple:#b39ae0;
+  --codebg:#0a0e13;--codeink:#cbd4de;--codecom:#6b7a8c;--codechip:#17222e;--stagebg:#12201a;--stageline:#274a38;}
+:root[data-theme="light"]{--bg:#fbfbfd;--panel:#ffffff;--ink:#1c2024;--muted:#5b6570;--faint:#8a929b;
+  --line:#e6e8ec;--accent:#2f6f4f;--accent2:#3a6ea5;--amber:#b5730f;--purple:#6d4aad;
+  --codebg:#0f1720;--codeink:#d7dee8;--codecom:#7f8ea3;--codechip:#1c2836;--stagebg:#f2f5f3;--stageline:#cfe0d6;}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;}
+.wrap{display:grid;grid-template-columns:260px minmax(0,1fr);gap:0;max-width:1400px;margin:0 auto}
+/* ---- sidebar TOC ---- */
+nav.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:26px 18px 40px;
+  border-right:1px solid var(--line);font-size:13.5px}
+nav.toc .brand{font-weight:700;font-size:15px;letter-spacing:.2px;margin-bottom:2px}
+nav.toc .brandsub{color:var(--faint);font-size:12px;margin-bottom:18px}
+nav.toc a{display:block;color:var(--muted);text-decoration:none;padding:3px 8px;border-radius:6px;
+  border-left:2px solid transparent;margin:1px 0}
+nav.toc a:hover{color:var(--ink);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+nav.toc a.sub{padding-left:20px;font-size:12.5px;color:var(--faint)}
+nav.toc .grp{margin-top:14px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);padding:0 8px}
+main{padding:40px clamp(20px,4vw,64px) 120px;min-width:0}
+/* ---- header ---- */
+header.hero{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:8px}
+.eyebrow{color:var(--accent);font-weight:650;font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.1;margin:.28em 0 .12em;letter-spacing:-.01em}
+.lede{font-size:18px;color:var(--muted);max-width:70ch;margin:.4em 0 0}
+.metaline{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:16px;font-size:12.5px;color:var(--faint)}
+.metaline b{color:var(--muted);font-weight:600}
+/* ---- sections ---- */
+section{padding-top:30px;margin-top:8px}
+h2{font-size:24px;letter-spacing:-.01em;margin:.4em 0 .3em;padding-top:8px;scroll-margin-top:16px}
+h2 .num{color:var(--accent);font-variant-numeric:tabular-nums;margin-right:.5em;font-weight:650}
+h3{font-size:17px;margin:1.4em 0 .3em;color:var(--ink);scroll-margin-top:16px}
+p{margin:.7em 0;max-width:76ch}
+ul,ol{max-width:76ch;padding-left:1.3em}
+li{margin:.28em 0}
+code:not(pre code){background:color-mix(in srgb,var(--accent2) 12%,transparent);color:var(--ink);
+  padding:.08em .38em;border-radius:5px;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.86em}
+strong{font-weight:650}
+a.ref{color:var(--accent2);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent2) 35%,transparent)}
+/* ---- code blocks ---- */
+figure.code{margin:18px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--codebg);
+  box-shadow:0 1px 2px rgba(0,0,0,.04)}
+figure.code figcaption{display:flex;justify-content:space-between;align-items:center;
+  background:var(--codechip);color:var(--codeink);padding:8px 14px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+figure.code .fn{font-weight:600;letter-spacing:.2px}
+figure.code .lang{color:var(--codecom);text-transform:uppercase;font-size:10px;letter-spacing:.14em}
+figure.code pre{margin:0;padding:16px 18px;overflow-x:auto}
+figure.code code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.6px;line-height:1.58;
+  color:var(--codeink);white-space:pre;tab-size:4}
+/* ---- callouts ---- */
+.call{border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--panel);
+  border-radius:10px;padding:14px 18px;margin:18px 0;font-size:14.5px}
+.call .t{font-weight:700;font-size:13px;letter-spacing:.02em;margin-bottom:4px;display:flex;gap:8px;align-items:center}
+.call.note{border-left-color:var(--accent2)} .call.note .t{color:var(--accent2)}
+.call.warn{border-left-color:var(--amber)} .call.warn .t{color:var(--amber)}
+.call.good{border-left-color:var(--accent)} .call.good .t{color:var(--accent)}
+.call.key{border-left-color:var(--purple)} .call.key .t{color:var(--purple)}
+.call p{margin:.35em 0;max-width:none}
+/* ---- pipeline diagram ---- */
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin:20px 0}
+.stagebox{flex:1 1 150px;min-width:150px;background:var(--stagebg);border:1px solid var(--stageline);
+  border-radius:10px;padding:10px 12px;position:relative}
+.stagebox .n{font-size:11px;color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
+.stagebox .nm{font-weight:650;font-size:13.5px;margin:1px 0 3px}
+.stagebox .d{font-size:11.5px;color:var(--muted);line-height:1.4}
+.stagebox.slot{background:transparent;border-style:dashed;border-color:var(--faint)}
+.stagebox.slot .nm{color:var(--faint)}
+.flowlabel{font-size:12px;color:var(--faint);margin:2px 0 -6px}
+/* ---- tables ---- */
+.tablewrap{overflow-x:auto;margin:18px 0;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:560px}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--panel);font-weight:650;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+tbody tr:last-child td{border-bottom:none}
+td code{font-size:12px}
+.tag{display:inline-block;font-size:11px;font-weight:650;padding:1px 7px;border-radius:20px;
+  background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)}
+/* ---- theme toggle ---- */
+.themebtn{position:fixed;top:14px;right:16px;z-index:20;border:1px solid var(--line);background:var(--panel);
+  color:var(--muted);border-radius:20px;padding:6px 13px;font-size:12px;cursor:pointer}
+.themebtn:hover{color:var(--ink)}
+footer{border-top:1px solid var(--line);margin-top:60px;padding-top:20px;color:var(--faint);font-size:13px}
+@media (max-width:900px){
+  .wrap{grid-template-columns:1fr}
+  nav.toc{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line);
+    display:flex;flex-wrap:wrap;gap:2px 6px}
+  nav.toc .grp{width:100%}
+  main{padding:26px 20px 80px}
+}
+</style>
+</head>
+<body>
+<button class="themebtn" onclick="tt()">◐ theme</button>
+<div class="wrap">
+<nav class="toc">
+<div class="brand">LeafMachine3</div>
+<div class="brandsub">Architecture &amp; Build Plan</div>
+<div class="grp">Foundations</div>
+<a href="#overview">Overview</a>
+<a href="#architecture">1 · Architecture at a glance</a>
+<a href="#layout" class="sub">Repo layout</a>
+<a href="#manager">2 · The manager (machine3.py)</a>
+<a href="#contract">3 · The stage contract</a>
+<a href="#order">4 · Pipeline order &amp; run loop</a>
+<div class="grp">The stages</div>
+<a href="#modules">5 · The eight modules</a>
+<div class="grp">The two control surfaces</div>
+<a href="#yaml">6 · LM3_settings.yaml</a>
+<a href="#setup">7 · LM3_Setup — auto-tuning</a>
+<a href="#db">8 · The project database</a>
+<a href="#projectdb" class="sub">ProjectDB access layer</a>
+<a href="#concurrency">9 · Concurrency engine</a>
+<a href="#ingest">10 · Image ingestion</a>
+<a href="#resume">11 · Resumability</a>
+<a href="#hardening">12 · Hardening decisions</a>
+<div class="grp">Shipping it</div>
+<a href="#deploy">13 · Packaging &amp; deployment</a>
+<a href="#server" class="sub">Server &amp; Electron</a>
+<a href="#recommend" class="sub">Recommendation</a>
+<a href="#roadmap">14 · Roadmap</a>
+</nav>
+<main>
+
+<header class="hero" id="overview">
+  <div class="eyebrow">Design plan · symbolic code</div>
+  <h1>LeafMachine3 — a clean, resumable, GPU-saturating specimen pipeline</h1>
+  <p class="lede">A symbolic architecture for the <b>runtime</b> LeafMachine3 package: a single YAML control
+  surface, a per-project SQLite database, a tiny sequential manager (<code>machine3.py</code>) that mirrors
+  LeafMachine2's <code>machine.py</code>, and modules that each saturate all available hardware. This is the
+  reconciled blueprint a developer turns into the real repo.</p>
+  <div class="metaline">
+    <span><b>Scope</b> runtime / deployment repo (ships exported models only)</span>
+    <span><b>Not</b> the /datac/Labelbox_Dump training area</span>
+    <span><b>Style</b> PEP8 · typed · dataclasses · pathlib · one DAL</span>
+    <span><b>Method</b> designed &amp; adversarially reviewed by an 11-agent workflow</span>
+  </div>
+</header>
+
+
+<p>LeafMachine3 (LM3) is the production successor to LeafMachine2. The <code>/datac/Labelbox_Dump</code> tree is
+the <em>training</em> area where each component is trained and exported; <b>LM3 is a separate, new repository
+that ships only the trained ONNX/OpenVINO artifacts plus this orchestration code.</b> LeafMachine2's
+<code>machine.py</code> is the structural reference — same spine — but LM2 is fractured and dead-code-laden, so
+LM3 pushes every concern (models, SQL, threading, resume) behind a small set of collaborators and keeps the
+manager readable.</p>
+
+<div class="call key">
+  <div class="t">◆ Two control surfaces + a one-time hardware profile</div>
+  <p><b>1 · <code>LM3_settings.yaml</code></b> — the <em>settings</em> surface: user intent (paths, model
+  choices, quality knobs). <em>Inputs.</em></p>
+  <p><b>2 · the <code>project_status</code> table</b> (in the per-project SQLite DB) — the <em>progress</em>
+  surface: skip / resume / staging. <em>Outputs.</em> Point the YAML at an output dir that already holds a
+  project DB and LM3 resumes — skipping whole finished modules and, within a partial module, the images
+  already done.</p>
+  <p><b>+ <code>hardware_settings.yaml</code></b> — written once by <b>LM3_Setup</b> (§7): the machine-tuned
+  performance layer (workers, batch, queue sizes, tmp location, GPU/VRAM, precision). Cached so runs never
+  re-probe; rerun it from the CLI or the GUI when the hardware changes.</p>
+</div>
+
+<section id="architecture"><h2><span class="num">1</span>Architecture at a glance</h2>
+
+<p>The pipeline is <b>strictly sequential</b> — each stage consumes an earlier stage's output — but every stage
+is <b>internally parallel</b>, fanning its per-image work across all GPUs and CPUs. Big pieces are serialized;
+the work inside them is not.</p>
+<div class="flowlabel">SEQUENTIAL barrier between stages · each box saturates all hardware internally</div>
+<div class="flow">
+  <div class="stagebox"><div class="n">STAGE 1</div><div class="nm">ArchivalDetector</div><div class="d">YOLO26 → Ruler, Barcode, Label, Colorcard, Map…</div></div>
+  <div class="stagebox"><div class="n">STAGE 2</div><div class="nm">PlantDetector</div><div class="d">YOLO26 → Leaf_WHOLE, Leaf_PARTIAL, Flower, Fruit…</div></div>
+  <div class="stagebox"><div class="n">STAGE 3</div><div class="nm">PhenologyDetector</div><div class="d">plant boxes → leaves / flowers / fruits present</div></div>
+  <div class="stagebox"><div class="n">STAGE 4</div><div class="nm">RulerClassifier</div><div class="d">Ruler crops → unit-type (3-ONNX vote)</div></div>
+  <div class="stagebox"><div class="n">STAGE 5</div><div class="nm">RulerConversionFactor</div><div class="d">tick spacing → CF (px per cm)</div></div>
+  <div class="stagebox"><div class="n">STAGE 6</div><div class="nm">LeafSegmenter</div><div class="d">leaf crops → instance masks (parent coords)</div></div>
+  <div class="stagebox slot"><div class="n">SLOT</div><div class="nm">+ future stages</div><div class="d">append one class here — no manager rewrite</div></div>
+  <div class="stagebox"><div class="n">STAGE 7</div><div class="nm">MetricGrounding</div><div class="d">apply CF: area px → cm², perimeter px → cm</div></div>
+  <div class="stagebox"><div class="n">STAGE 8</div><div class="nm">Reporter</div><div class="d">overlays · mask PNGs · RGB crops · datasets</div></div>
+</div>
+<p>Stages 4 and 5 are the two halves of the conversion-factor step: the classifier names the ruler's unit type,
+then the CF module measures its tick spacing and derives the pixel→metric factor with the math already proven in
+the training tool (<code>px_per_mm = raw_mean / unit_mm(unit)</code>; <code>cf_px_per_cm = px_per_mm × 10</code>).
+The CF lands in its own table <em>and</em> is duplicated onto the specimen metadata row so grounding reads it
+without a join.</p>
+
+<h3 id="layout">Repository layout</h3>
+<p>Everything the runtime needs, and nothing from training. The <code>inference/</code> wrappers are lifted verbatim from the training repo (their interfaces are already built and verified):</p>
+<figure class="code" data-lang="text"><figcaption><span class="fn">leafmachine3/  ·  repo layout</span><span class="lang">text</span></figcaption><pre><code>leafmachine3/                       # the RUNTIME package (new repo; ships EXPORTED models only)
+├── machine3.py                     # the pipeline manager  (mirrors LM2 machine.py)
+├── LM3_settings.yaml               # control surface #1: user INTENT (paths, models, quality)
+├── hardware_settings.yaml          # machine-DERIVED perf settings, written once by LM3_Setup
+├── pipeline.py                     # STAGE_ORDER (the one place order is declared) + run loop
+├── core/
+│   ├── config.py                   # typed, validated view over LM3_settings.yaml
+│   ├── dirs.py                     # output tree: working set, _tmp, crops, reports, logs, db
+│   ├── logging_setup.py            # stdlib logging -&gt; console + &lt;run&gt;/logs/lm3.log
+│   ├── ingest.py                   # ImageIngestor: immutable originals -&gt; working-copy symlinks
+│   ├── project.py                  # Project: thin run context (.db .dirs .cfg + path helpers)
+│   ├── db.py                       # ProjectDB: the ONLY place raw SQL lives  (WAL sqlite)
+│   ├── schema.sql                  # per-project schema (loaded by ProjectDB.init_schema)
+│   ├── stage.py                    # PipelineStage ABC + RunContext + WorkItem  (ONE contract)
+│   ├── executor.py                 # StageExecutor: GPU/CPU saturation + per-image checkpoint
+│   ├── validate.py                 # fail-fast: every exported artifact the YAML names exists
+│   └── timing.py                   # TimeReport
+├── modules/                        # one PipelineStage subclass per stage
+│   ├── archival_detector.py        # 1  ArchivalDetector
+│   ├── plant_detector.py           # 2  PlantDetector
+│   ├── phenology_detector.py       # 3  PhenologyDetector
+│   ├── ruler_classifier.py         # 4  RulerClassifier        (CF step a)
+│   ├── ruler_conversion_factor.py  # 5  RulerConversionFactor  (CF step b)
+│   ├── leaf_segmenter.py           # 6  LeafSegmenter
+│   │                               #    -- extensible slot: new stages insert here --
+│   ├── metric_grounding.py         # 7  MetricGrounding
+│   └── reporter.py                 # 8  Reporter
+├── inference/                      # portable exported-model wrappers (lifted from the training repo)
+│   ├── archival_detector.py        # ArchivalDetector(model).predict(img) -&gt; list[Detection]
+│   ├── plant_detector.py           # PlantDetector    (same shape, plant classes)
+│   ├── ruler_ensemble.py           # InferenceEnsemble.predict(img) -&gt; {&quot;ensemble&quot;: str, ...}
+│   ├── ruler_cf.py                 # measure_tick_spacing + px_per_mm / conversion_cm / conversion_inch
+│   ├── leaf_segmenter.py           # exported YOLO26x-seg -&gt; per-instance polygons
+│   └── providers.py                # onnxruntime EP auto-select (CUDA/DirectML/CoreML/OpenVINO/CPU)
+├── setup/
+│   └── hardware_setup.py           # LM3_Setup: profile the machine -&gt; hardware_settings.yaml
+├── server/
+│   └── app.py                      # optional local server (lm3 serve) reusing machine3()
+└── models/                         # the shipped EXPORTED artifacts (onnx/openvino), versioned
+    ├── archival_detector/  plant_detector/  phenology/
+    ├── ruler_classifier/   ruler_cf/        leaf_segmenter/
+    └── MODELS.md                   # provenance: which training run produced each artifact</code></pre></figure>
+</section>
+<section id="manager"><h2><span class="num">2</span>The manager — <code>machine3.py</code></h2>
+
+<p>The manager is the anti-LM2: the exact eight-beat spine of LeafMachine2's <code>machine()</code>, but each
+beat delegates to one collaborator, so the function fits on a screen with zero commented-out code. It sets the
+<code>spawn</code> start method before any CUDA import, loads and validates the YAML, builds the output tree,
+starts logging, fails fast if an exported artifact is missing, opens-or-creates the project DB (an existing DB
+means <em>resume</em>), reclaims any stale <code>running</code> state from a prior crash, ingests images, then
+runs the ordered pipeline.</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/machine3.py</span><span class="lang">python</span></figcaption><pre><code>&quot;&quot;&quot;leafmachine3.machine3 -- the LeafMachine3 pipeline manager.
+
+Mirrors the STRUCTURE of LeafMachine2&#x27;s machine.py (set mp start-method -&gt; load
+config -&gt; build output dirs -&gt; start logging -&gt; validate ML artifacts -&gt; build the
+SQL-backed Project -&gt; ingest images -&gt; run the ordered stages with per-stage GPU
+cleanup -&gt; emit a time report) but stays SMALL: every processing step is a
+self-contained PipelineStage and all persistence lives behind ProjectDB, so this
+module is orchestration ONLY -- no model code, no SQL, no threading.
+&quot;&quot;&quot;
+from __future__ import annotations
+
+import argparse
+import logging
+import multiprocessing as mp
+
+from leafmachine3.core.config import Config
+from leafmachine3.core.dirs import build_dirs
+from leafmachine3.core.logging_setup import start_logging
+from leafmachine3.core.ingest import ImageIngestor
+from leafmachine3.core.project import Project
+from leafmachine3.core.db import ProjectDB
+from leafmachine3.core.stage import RunContext
+from leafmachine3.core.timing import TimeReport
+from leafmachine3.core.validate import validate_ml_artifacts
+from leafmachine3.pipeline import build_pipeline, run_pipeline
+from leafmachine3.setup.hardware_setup import ensure_hardware_profile
+
+log = logging.getLogger(&quot;leafmachine3&quot;)
+
+
+def machine3(cfg_path, *, restart=None, input_dir=None, output_dir=None) -&gt; Project:
+    &quot;&quot;&quot;Run the full LM3 pipeline for `cfg_path` and return the resolved Project.
+
+    restart : None -&gt; resume; a stage key (or list of keys) -&gt; rerun those stages
+              and everything downstream; &quot;all&quot; -&gt; rebuild the whole project.
+    &quot;&quot;&quot;
+    _set_spawn()                                        # MUST precede any CUDA import
+
+    cfg = Config.load(cfg_path, overrides=_cli_overrides(input_dir, output_dir, restart))
+    cfg.validate()                                      # raises on missing / incoherent settings
+
+    ensure_hardware_profile(cfg)                        # bind hardware_settings.yaml; if ABSENT, auto-run
+                                                        #   the FULL LM3_Setup once. supplies tuned workers/batch/tmp
+
+    dirs = build_dirs(cfg)                              # working set, _tmp, crops, reports, logs, db
+    start_logging(dirs, cfg)
+    log.info(&quot;LM3 start | out=%s | restart=%s&quot;, dirs.root, cfg.restart)
+
+    validate_ml_artifacts(cfg)                          # fail fast if an export is missing
+
+    db = ProjectDB.open_or_create(dirs.db_path)         # an existing DB here =&gt; RESUME
+    db.reclaim_running()                                # crash recovery: &#x27;running&#x27; -&gt; &#x27;pending&#x27;
+    project = Project(cfg, dirs, db)
+
+    ImageIngestor(cfg, db).run(restart=cfg.wipe_working_set)   # immutable originals -&gt; symlinks
+
+    timer = TimeReport()
+    stages = build_pipeline(cfg)                        # ordered, ENABLED PipelineStage instances
+    ctx = RunContext(cfg=cfg, dirs=dirs, timer=timer)
+    run_pipeline(stages, project, ctx, restart=cfg.restart)
+
+    timer.log_report(log)
+    log.info(&quot;LM3 complete | %s&quot;, dirs.db_path)
+    return project
+
+
+def _set_spawn() -&gt; None:
+    try:
+        mp.set_start_method(&quot;spawn&quot;)                    # fresh interpreter; no inherited CUDA state
+    except RuntimeError:
+        pass                                            # already set by an outer caller
+
+
+def _cli_overrides(input_dir, output_dir, restart) -&gt; dict:
+    &quot;&quot;&quot;CLI flags win over the YAML; deep-merged in Config.load().&quot;&quot;&quot;
+    ov: dict = {&quot;project&quot;: {}}
+    if input_dir:            ov[&quot;project&quot;][&quot;input&quot;] = {&quot;dirs&quot;: [str(input_dir)]}
+    if output_dir:           ov[&quot;project&quot;][&quot;output&quot;] = {&quot;dir&quot;: str(output_dir)}
+    if restart is not None:  ov[&quot;project&quot;][&quot;run_mode&quot;] = {&quot;restart&quot;: restart}
+    return ov
+
+
+def main(argv=None) -&gt; int:
+    ap = argparse.ArgumentParser(prog=&quot;machine3&quot;, description=&quot;Run the LeafMachine3 pipeline.&quot;)
+    ap.add_argument(&quot;--config&quot;, required=True, help=&quot;path to LM3_settings.yaml&quot;)
+    ap.add_argument(&quot;--restart&quot;, action=&quot;append&quot;, default=None, metavar=&quot;STAGE|all&quot;,
+                    help=&quot;rerun a stage (repeatable) and its dependents, or &#x27;all&#x27;&quot;)
+    ap.add_argument(&quot;--input&quot;, default=None, help=&quot;override the YAML input dir&quot;)
+    ap.add_argument(&quot;--output&quot;, default=None, help=&quot;override the YAML output dir&quot;)
+    a = ap.parse_args(argv)
+    restart = a.restart[0] if a.restart == [&quot;all&quot;] else a.restart      # &quot;all&quot; | list | None
+    machine3(a.config, restart=restart, input_dir=a.input, output_dir=a.output)
+    return 0
+
+
+if __name__ == &quot;__main__&quot;:
+    raise SystemExit(main())</code></pre></figure>
+<section id="contract"><h2><span class="num">3</span>The stage contract</h2>
+
+<p>Every module subclasses one <code>PipelineStage</code>. The contract is split cleanly across the process
+boundary, which is what makes the pipeline both <b>correct under concurrency</b> and <b>trivially extensible</b>:</p>
+<ul>
+  <li><code>collect_items(project)</code> runs on the <b>parent</b> (which owns the DB): it reads inputs from
+      prior stages and returns self-contained, picklable <code>WorkItem</code>s.</li>
+  <li><code>build_model(device)</code> and <code>infer(item, model)</code> run <b>inside each worker</b>:
+      warm-load once, then pure compute. Workers never touch the database.</li>
+  <li><code>persist(project, item, payload)</code> runs back on the <b>parent collector</b>, inside one
+      transaction with the per-image checkpoint — a single writer, an atomic checkpoint.</li>
+</ul>
+<p>Adding a stage is genuinely "implement three methods and add one line to <code>STAGE_ORDER</code>." The
+resumability methods have DB-backed defaults, so a typical stage never overrides them.</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/core/stage.py</span><span class="lang">python</span></figcaption><pre><code>&quot;&quot;&quot;leafmachine3.core.stage -- the ONE PipelineStage contract + run context.
+
+Reconciled design (single-writer collector, picklable workers). Every stage splits
+its work into three hooks with a strict side of the process boundary:
+
+  collect_items(project)          PARENT (has DB): read inputs from prior stages and
+                                  build SELF-CONTAINED, picklable WorkItems.
+  build_model(device)             WORKER: warm-load the export ONCE per worker.
+  infer(item, model)              WORKER: PURE compute; returns the payload to write.
+                                  Never touches the DB.
+  persist(project, item, payload) PARENT collector, inside ONE transaction with the
+                                  image_status flip -&gt; torn-write safe, single writer.
+
+The stage object is pickled to workers, so it holds only `cfg` (never the DB or a
+live model). __getstate__ drops the per-worker model cache before pickling.
+&quot;&quot;&quot;
+from __future__ import annotations
+
+import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(frozen=True)
+class WorkItem:
+    &quot;&quot;&quot;One unit of work. `specimen_id` is the ledger key; `payload` carries exactly
+    what infer() needs (paths + prior-stage rows) so the worker never reads the DB.&quot;&quot;&quot;
+    specimen_id: int
+    payload: Any
+
+
+@dataclass
+class RunContext:
+    &quot;&quot;&quot;Per-run services handed to every stage.run().&quot;&quot;&quot;
+    cfg: &quot;Config&quot;
+    dirs: &quot;Dirs&quot;
+    timer: &quot;TimeReport&quot;
+    log: logging.Logger = field(default_factory=lambda: logging.getLogger(&quot;leafmachine3&quot;))
+
+    def executor(self, stage: &quot;PipelineStage&quot;) -&gt; &quot;StageExecutor&quot;:
+        from leafmachine3.core.executor import StageExecutor
+        return StageExecutor(self.cfg, stage)
+
+
+class PipelineStage(ABC):
+    &quot;&quot;&quot;One sequential stage. A concrete stage sets the class constants and implements
+    collect_items / infer / persist (+ build_model for GPU stages). run() is provided.&quot;&quot;&quot;
+
+    key: str = &quot;&quot;                     # canonical stage id -- see pipeline.STAGE_KEYS
+    name: str = &quot;&quot;                    # human label for logs / the time report
+    depends_on: tuple[str, ...] = ()  # stages whose output THIS consumes (gates + restart cascade)
+    owns_tables: tuple[str, ...] = () # method tables reset_stage() purges on --restart
+    device_kind: str = &quot;cuda&quot;         # &quot;cuda&quot; | &quot;cpu&quot;  (phenology / grounding / reporter are cpu)
+
+    def __init__(self, cfg: &quot;Config&quot;) -&gt; None:
+        self.cfg = cfg                # picklable; DB is PASSED to run/persist, never stored
+        self._model = None            # per-worker warm-load cache (dropped on pickle)
+
+    def __getstate__(self) -&gt; dict:
+        s = self.__dict__.copy(); s[&quot;_model&quot;] = None; return s   # never ship a live model/DB
+
+    # ---- the hooks -------------------------------------------------------- #
+    @abstractmethod
+    def collect_items(self, project: &quot;Project&quot;) -&gt; list[WorkItem]:
+        &quot;&quot;&quot;PARENT: read prior-stage rows; return self-contained items (one per specimen).&quot;&quot;&quot;
+
+    @abstractmethod
+    def infer(self, item: WorkItem, model: Any) -&gt; Any:
+        &quot;&quot;&quot;WORKER: pure compute; returns the payload persist() will write. No DB.&quot;&quot;&quot;
+
+    def build_model(self, device: &quot;Device&quot;) -&gt; Any:
+        &quot;&quot;&quot;WORKER: warm-load the export ONCE per worker. Default None (cpu-only stage).&quot;&quot;&quot;
+        return None
+
+    @abstractmethod
+    def persist(self, project: &quot;Project&quot;, item: WorkItem, payload: Any) -&gt; None:
+        &quot;&quot;&quot;PARENT collector: delete-then-insert this stage&#x27;s rows for item.specimen_id.
+        The executor adds `mark_image_done(specimen_id, key)` in the SAME transaction.&quot;&quot;&quot;
+
+    # ---- resumability contract (DB-backed defaults; canonical everywhere) -- #
+    def is_complete(self, project: &quot;Project&quot;) -&gt; bool:
+        &quot;&quot;&quot;Done == status &#x27;done&#x27; AND no pending images. So newly-added or errored
+        images RE-OPEN a &#x27;done&#x27; stage instead of being silently skipped.&quot;&quot;&quot;
+        return project.db.stage_state(self.key) == &quot;done&quot; and not self.pending(project)
+
+    def pending(self, project: &quot;Project&quot;) -&gt; list[int]:
+        &quot;&quot;&quot;Eligible specimens (all `depends_on` marked done) not yet done for this stage.&quot;&quot;&quot;
+        return project.db.pending_specimens(self.key, depends_on=self.depends_on)
+
+    # ---- the work (identical shape for all 8 stages) ---------------------- #
+    def run(self, project: &quot;Project&quot;, ctx: RunContext) -&gt; None:
+        items = self.collect_items(project)           # PARENT-side reads
+        ctx.executor(self).run(project, items)        # saturate hardware + per-image checkpoint</code></pre></figure>
+
+<div class="call good"><div class="t">✓ Why this split is the correct one</div>
+<p>An earlier draft had workers writing their own rows through a shared connection. That is unsafe — SQLite gives
+single-<em>writer</em> concurrency across connections, not concurrent use of one connection — and it makes the
+stage un-picklable (the connection can't cross a <code>spawn</code>). Confining all writes to the parent
+collector fixes both, and lets each stage still write its own tables via <code>persist</code>.</p></div>
+
+</section>
+<section id="order"><h2><span class="num">4</span>Pipeline order &amp; the run loop</h2>
+
+<p><code>STAGE_ORDER</code> is the single source of truth for stage identity and sequence; every other layer
+imports <code>STAGE_KEYS</code> from here, so the four-way key drift that used to break the ledger's foreign key
+is impossible by construction. The run loop owns exactly three cross-cutting concerns — <b>skip-if-done</b>,
+<b>config-drift detection</b>, and the <b>restart cascade</b> — none of which leak into the manager or a stage.</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/pipeline.py</span><span class="lang">python</span></figcaption><pre><code>&quot;&quot;&quot;leafmachine3.pipeline -- the canonical stage order + the run loop.
+
+STAGE_ORDER is the single source of truth for stage identity and sequence. Every
+layer imports STAGE_KEYS from here (PipelineStage.key, project_status seeding,
+Config._STAGES, depends_on), so the four-way key drift that used to break the ledger
+FK is impossible by construction. Adding a stage = one entry in STAGE_ORDER.
+&quot;&quot;&quot;
+from __future__ import annotations
+
+import gc
+import logging
+
+from leafmachine3.modules.archival_detector import ArchivalDetector
+from leafmachine3.modules.plant_detector import PlantDetector
+from leafmachine3.modules.phenology_detector import PhenologyDetector
+from leafmachine3.modules.ruler_classifier import RulerClassifier
+from leafmachine3.modules.ruler_conversion_factor import RulerConversionFactor
+from leafmachine3.modules.leaf_segmenter import LeafSegmenter
+from leafmachine3.modules.metric_grounding import MetricGrounding
+from leafmachine3.modules.reporter import Reporter
+
+log = logging.getLogger(&quot;leafmachine3&quot;)
+
+# THE one place the pipeline is declared. Strictly sequential by DATA dependency;
+# each stage saturates the hardware INTERNALLY. The extensible slot is the gap
+# between LeafSegmenter and MetricGrounding -- append future stages there and nothing
+# else changes.
+STAGE_ORDER = (
+    ArchivalDetector,        # 1  archival sheet elements (Ruler, Barcode, Label, ...)
+    PlantDetector,           # 2  plant organs (Leaf_WHOLE, Leaf_PARTIAL, ...)
+    PhenologyDetector,       # 3  plant boxes -&gt; leaves / flowers / fruits presence
+    RulerClassifier,         # 4  Ruler crops -&gt; unit-type            (CF step a)
+    RulerConversionFactor,   # 5  unit-type + crop -&gt; CF (px per cm)  (CF step b)
+    LeafSegmenter,           # 6  Leaf_WHOLE crops -&gt; instance masks
+    # &lt;---------- extensible slot: new PipelineStage subclasses go here ----------&gt;
+    MetricGrounding,         # 7  apply CF: area_px -&gt; cm^2, perimeter_px -&gt; cm
+    Reporter,                # 8  overlays / mask PNGs / RGB crops / derived datasets
+)
+STAGE_KEYS = tuple(cls.key for cls in STAGE_ORDER)      # the canonical id set
+
+
+def build_pipeline(cfg) -&gt; list:
+    stages = [cls(cfg) for cls in STAGE_ORDER if cfg.is_enabled(cls.key)]
+    _assert_dependencies_precede(stages)                # raises on a mis-ordered depends_on graph
+    return stages
+
+
+def run_pipeline(stages, project, ctx, *, restart=None) -&gt; None:
+    _apply_restart(project, stages, restart)            # cascade-clean stale output FIRST
+
+    for stage in stages:
+        _sync_settings_hash(project, stage, ctx.cfg)    # config-drift =&gt; force a rerun
+        if stage.is_complete(project):
+            log.info(&quot;skip  %-22s (up to date)&quot;, stage.key)
+            continue
+
+        log.info(&quot;start %-22s (%s)&quot;, stage.key, stage.name)
+        project.db.mark_stage_running(stage.key, n_total=len(stage.pending(project)))
+        with ctx.timer.stage(stage.key):
+            try:
+                stage.run(project, ctx)                 # saturates all GPUs / CPUs internally
+            except Exception:
+                project.db.mark_stage_error(stage.key)  # leaves a resumable ledger
+                log.exception(&quot;FAILED %s&quot;, stage.key)
+                raise
+        # mark &#x27;done&#x27; ONLY when the per-image ledger is truly drained (else it stays
+        # resumable and the next run re-enters to finish the stragglers).
+        if not stage.pending(project):
+            project.db.mark_stage_done(stage.key)
+        _gpu_cleanup()                                   # release VRAM before the next model
+
+
+def _apply_restart(project, stages, restart) -&gt; None:
+    &quot;&quot;&quot;--restart all -&gt; reset every stage; --restart KEY[,KEY] -&gt; reset those stages AND
+    their transitive dependents (their inputs changed, so their outputs are stale).&quot;&quot;&quot;
+    if restart is None:
+        return
+    by_key = {s.key: s for s in stages}
+    keys = STAGE_KEYS if restart == &quot;all&quot; else _closure(stages, _as_list(restart))
+    project.db.reset_stages(keys, by_key)               # purges method rows + crops + ledger, in txn
+
+
+def _sync_settings_hash(project, stage, cfg) -&gt; None:
+    &quot;&quot;&quot;A &#x27;done&#x27; stage whose resolved settings or model artifact changed is forced back
+    to pending (with its dependents) so the DB always corresponds to the YAML.&quot;&quot;&quot;
+    h = cfg.stage_settings_hash(stage.key)              # hash(resolved cfg block + model mtime/size)
+    if project.db.stage_state(stage.key) == &quot;done&quot; and project.db.stage_settings_hash(stage.key) != h:
+        log.warning(&quot;CONFIG DRIFT: %s settings changed -&gt; rerun&quot;, stage.key)
+        project.db.reset_stages(_closure([stage], [stage.key]), {stage.key: stage})
+    project.db.set_stage_settings_hash(stage.key, h)
+
+
+def _gpu_cleanup() -&gt; None:
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
+def _as_list(x):  return x if isinstance(x, list) else [x]
+def _closure(stages, keys) -&gt; tuple: ...   # keys + transitive dependents over the depends_on graph
+def _assert_dependencies_precede(stages) -&gt; None: ...   # every dep appears before its dependent</code></pre></figure>
+
+<p>Three subtle correctness rules are wired here: a stage is marked <code>done</code> only when its per-image
+ledger is genuinely drained (so newly-added or errored images re-open it); a <code>done</code> stage whose
+resolved settings or model artifact changed is forced back to <code>pending</code> (the DB always corresponds to
+the YAML that produced it); and <code>--restart&nbsp;KEY</code> invalidates that stage <em>and its transitive
+dependents</em>, cascading the cleanup so no downstream output is left computed from stale inputs.</p>
+
+</section>
+<section id="modules"><h2><span class="num">5</span>The eight modules</h2>
+<p>All eight share one shape — <code>collect_items</code> → <code>infer</code> → <code>persist</code> — and use the real, verified class taxonomies from the training runs:</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>#</th><th>Class · key</th><th>Consumes</th><th>Writes</th><th>Model</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><b>ArchivalDetector</b><br><code>archival_detector</code></td><td>working images</td><td><code>archival_detection</code> + __TAG__ crops</td><td>YOLO26 detect (9 cls)</td></tr>
+<tr><td>2</td><td><b>PlantDetector</b><br><code>plant_detector</code></td><td>working images</td><td><code>plant_detection</code> + __LW__/__LP__ crops</td><td>YOLO26 detect (9 cls)</td></tr>
+<tr><td>3</td><td><b>PhenologyDetector</b><br><code>phenology_detector</code></td><td>plant boxes</td><td><code>phenology</code> + <code>specimen.has_*</code></td><td>rule (cpu)</td></tr>
+<tr><td>4</td><td><b>RulerClassifier</b><br><code>ruler_classifier</code></td><td>Ruler crops</td><td><code>ruler_classification</code></td><td>3× ONNX ensemble</td></tr>
+<tr><td>5</td><td><b>RulerConversionFactor</b><br><code>ruler_cf</code></td><td>ruler class + crop</td><td><code>ruler_cf</code> + <code>specimen.cf_px_per_cm</code></td><td>tick math (cpu)</td></tr>
+<tr><td>6</td><td><b>LeafSegmenter</b><br><code>leaf_segmenter</code></td><td>leaf crops</td><td><code>leaf_segmentation</code> (parent-coord masks)</td><td>YOLO26x-seg (3 cls)</td></tr>
+<tr><td>7</td><td><b>MetricGrounding</b><br><code>metric_grounding</code></td><td>CF + leaf px</td><td>grounded <code>*_cm</code> columns</td><td>arithmetic (cpu)</td></tr>
+<tr><td>8</td><td><b>Reporter</b><br><code>reporter</code></td><td>everything</td><td>overlays · masks · crops · datasets</td><td>rendering (cpu)</td></tr>
+</tbody></table></div>
+<p><b>Real class names:</b> archival = <code>Ruler, Barcode, Colorcard, Label, Map, Envelope, Photo,
+Attached_Item, Weights</code>; plant = <code>Leaf_WHOLE, Leaf_PARTIAL, Seed_Fruit_ONE, Seed_Fruit_MANY,
+Flower_ONE, Flower_MANY, Bud, Roots, Wood</code>; leaf-seg = <code>Leaf, Petiole, Hole</code>. Phenology rolls
+these up: leaves ← {Leaf_WHOLE, Leaf_PARTIAL}, flowers ← {Flower_ONE, Flower_MANY, Bud}, fruits ←
+{Seed_Fruit_ONE, Seed_Fruit_MANY}.</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/modules/*.py</span><span class="lang">python</span></figcaption><pre><code># =============================================================================
+# All eight stages share ONE shape: collect_items (parent reads) -&gt; infer (pure,
+# in-worker) -&gt; persist (parent writes, in the collector txn). Canonical keys, real
+# LM3 class names, bare crop tags (crop_and_record wraps &lt;stem&gt;__TAG__x1-y1-x2-y2.jpg).
+# =============================================================================
+
+# --- modules/archival_detector.py --- stage 1 -------------------------------------
+from leafmachine3.core.stage import PipelineStage, WorkItem
+from leafmachine3.inference.archival_detector import ArchivalDetector as _Backend  # .predict -&gt; list[Detection]
+
+class ArchivalDetector(PipelineStage):
+    &quot;&quot;&quot;Detect archival sheet elements with the exported YOLO26 archival model.
+    CONSUMES specimen working images. WRITES archival_detection rows (+ __TAG__ crops).&quot;&quot;&quot;
+    key, name, depends_on, owns_tables = (
+        &quot;archival_detector&quot;, &quot;Archival Detector&quot;, (), (&quot;archival_detection&quot;,))
+    TAGS = {&quot;Ruler&quot;: &quot;R&quot;, &quot;Barcode&quot;: &quot;BC&quot;, &quot;Colorcard&quot;: &quot;CC&quot;, &quot;Label&quot;: &quot;L&quot;, &quot;Map&quot;: &quot;M&quot;,
+            &quot;Envelope&quot;: &quot;E&quot;, &quot;Photo&quot;: &quot;PH&quot;, &quot;Attached_Item&quot;: &quot;AI&quot;, &quot;Weights&quot;: &quot;WT&quot;}
+
+    def build_model(self, device):
+        k = self.cfg.stage(self.key)
+        return _Backend(k.model.path, conf=k.conf, iou=k.iou, imgsz=k.imgsz, device=device.torch_str)
+
+    def collect_items(self, project):
+        return [WorkItem(s.specimen_id, project.unit(s)) for s in project.db.iter_specimens()]
+
+    def infer(self, item, model):
+        img = read_image(item.payload.working_path)
+        rows = []
+        for d in model.predict(img):                          # list[Detection(cls_id,cls_name,conf,xyxy)]
+            tag = self.TAGS.get(d.cls_name, &quot;X&quot;)
+            crop = save_crop(img, d.xyxy, item.payload.stem, tag, item.payload.crops_dir)
+            rows.append(DetRow(d.cls_id, d.cls_name, d.conf, d.xyxy, tag, crop))
+        return rows
+
+    def persist(self, project, item, rows):
+        project.db.record_detections(&quot;archival_detection&quot;, item.specimen_id, rows)   # delete-then-insert
+
+
+# --- modules/plant_detector.py --- stage 2 ----------------------------------------
+from leafmachine3.inference.plant_detector import PlantDetector as _PlantBackend
+
+class PlantDetector(PipelineStage):
+    &quot;&quot;&quot;Detect plant organs (identical interface; Leaf_WHOLE -&gt; __LW__, Leaf_PARTIAL -&gt; __LP__
+    feed LeafSegmenter). CONSUMES specimen images. WRITES plant_detection rows.&quot;&quot;&quot;
+    key, name, depends_on, owns_tables = (
+        &quot;plant_detector&quot;, &quot;Plant Detector&quot;, (), (&quot;plant_detection&quot;,))
+    TAGS = {&quot;Leaf_WHOLE&quot;: &quot;LW&quot;, &quot;Leaf_PARTIAL&quot;: &quot;LP&quot;, &quot;Seed_Fruit_ONE&quot;: &quot;SF1&quot;,
+            &quot;Seed_Fruit_MANY&quot;: &quot;SFM&quot;, &quot;Flower_ONE&quot;: &quot;FL1&quot;, &quot;Flower_MANY&quot;: &quot;FLM&quot;,
+            &quot;Bud&quot;: &quot;BD&quot;, &quot;Roots&quot;: &quot;RT&quot;, &quot;Wood&quot;: &quot;WD&quot;}
+
+    def build_model(self, device):
+        k = self.cfg.stage(self.key)
+        return _PlantBackend(k.model.path, conf=k.conf, iou=k.iou, imgsz=k.imgsz, device=device.torch_str)
+
+    def collect_items(self, project):
+        return [WorkItem(s.specimen_id, project.unit(s)) for s in project.db.iter_specimens()]
+
+    def infer(self, item, model):
+        img = read_image(item.payload.working_path)
+        rows = []
+        for d in model.predict(img):
+            tag = self.TAGS.get(d.cls_name, &quot;X&quot;)
+            crop = save_crop(img, d.xyxy, item.payload.stem, tag, item.payload.crops_dir)
+            rows.append(DetRow(d.cls_id, d.cls_name, d.conf, d.xyxy, tag, crop))
+        return rows
+
+    def persist(self, project, item, rows):
+        project.db.record_detections(&quot;plant_detection&quot;, item.specimen_id, rows)
+
+
+# --- modules/phenology_detector.py --- stage 3 (cpu) ------------------------------
+class PhenologyDetector(PipelineStage):
+    &quot;&quot;&quot;Roll plant detections up to per-specimen presence of leaves / flowers / fruits.
+    CONSUMES plant_detection rows. WRITES a phenology row + mirrors has_* onto specimen.&quot;&quot;&quot;
+    key, name, depends_on, owns_tables, device_kind = (
+        &quot;phenology_detector&quot;, &quot;Phenology Detector&quot;, (&quot;plant_detector&quot;,), (&quot;phenology&quot;,), &quot;cpu&quot;)
+    ROLLUP = {&quot;leaves&quot;:  (&quot;Leaf_WHOLE&quot;, &quot;Leaf_PARTIAL&quot;),
+              &quot;flowers&quot;: (&quot;Flower_ONE&quot;, &quot;Flower_MANY&quot;, &quot;Bud&quot;),
+              &quot;fruits&quot;:  (&quot;Seed_Fruit_ONE&quot;, &quot;Seed_Fruit_MANY&quot;)}
+
+    def collect_items(self, project):                        # parent gathers each sheet&#x27;s boxes
+        return [WorkItem(s, project.db.detections(&quot;plant_detection&quot;, s))
+                for s in project.db.specimens_with_rows(&quot;plant_detection&quot;)]
+
+    def infer(self, item, _model):
+        t = self.cfg.stage(self.key).targets; out = {}
+        for organ, classes in self.ROLLUP.items():
+            hits = [d for d in item.payload if d.cls_name in classes and d.conf &gt;= t[organ].min_conf]
+            out[organ] = (len(hits) &gt;= t[organ].min_count, len(hits))
+        return out
+
+    def persist(self, project, item, out):
+        project.db.record_phenology(item.specimen_id, out)   # phenology row + specimen.has_*
+
+
+# --- modules/ruler_classifier.py --- stage 4  (CF step a) -------------------------
+from leafmachine3.inference.ruler_ensemble import InferenceEnsemble    # .predict -&gt; {&quot;ensemble&quot;: str, ...}
+
+class RulerClassifier(PipelineStage):
+    &quot;&quot;&quot;Classify each __R__ Ruler crop to a unit-type via the 3-model ONNX majority-vote
+    ensemble. CONSUMES archival_detection Ruler crops. WRITES ruler_classification rows.&quot;&quot;&quot;
+    key, name, depends_on, owns_tables = (
+        &quot;ruler_classifier&quot;, &quot;Ruler Classifier&quot;, (&quot;archival_detector&quot;,), (&quot;ruler_classification&quot;,))
+
+    def build_model(self, device):
+        return InferenceEnsemble(self.cfg.stage(self.key).models_dir, providers=device.ort_providers())
+
+    def collect_items(self, project):
+        return [WorkItem(s, project.db.crops(&quot;archival_detection&quot;, s, cls_name=&quot;Ruler&quot;))
+                for s in project.db.specimens_with_crops(&quot;archival_detection&quot;, cls_name=&quot;Ruler&quot;)]
+
+    def infer(self, item, model):
+        rows = []
+        for crop in item.payload:
+            out = model.predict(crop.crop_path)              # {&quot;ensemble&quot;:&quot;METRIC_MM&quot;,&quot;x224&quot;:..., ...}
+            rows.append(RulerClassRow(crop.detection_id, out[&quot;ensemble&quot;], votes=out))
+        return rows
+
+    def persist(self, project, item, rows):
+        project.db.record_ruler_classifications(item.specimen_id, rows)
+
+
+# --- modules/ruler_conversion_factor.py --- stage 5  (CF step b) ------------------
+from leafmachine3.inference.ruler_cf import measure_tick_spacing, px_per_mm, UNIT_SPEC
+
+class RulerConversionFactor(PipelineStage):
+    &quot;&quot;&quot;Measure ruler tick spacing and derive the pixel-&gt;metric CF (px per cm) with the
+    existing math. CONSUMES ruler_classification. WRITES ruler_cf rows and duplicates the
+    WINNING cf_px_per_cm onto specimen (+ specimen.selected_ruler_cf_id for provenance).&quot;&quot;&quot;
+    key, name, depends_on, owns_tables = (
+        &quot;ruler_cf&quot;, &quot;Ruler Conversion Factor&quot;, (&quot;ruler_classifier&quot;,), (&quot;ruler_cf&quot;,))
+
+    def collect_items(self, project):
+        return [WorkItem(s, project.db.ruler_classifications(s))
+                for s in project.db.specimens_with_rows(&quot;ruler_classification&quot;)]
+
+    def infer(self, item, _model):
+        k = self.cfg.stage(self.key); rows = []
+        for rc in item.payload:
+            unit, second = UNIT_SPEC.get(rc.unit_type, (&quot;mm&quot;, None))   # (minimum_unit, optional cross-check)
+            raw = measure_tick_spacing(read_image(rc.crop_path), **k.tick)
+            if raw is None:
+                continue
+            ppm = px_per_mm(raw.mean, unit)                            # = raw.mean / unit_mm(unit)
+            rows.append(RulerCFRow(
+                rc.ruler_class_id, rc.unit_type, unit, second,
+                px_per_mm=ppm, cf_px_per_cm=ppm * 10.0, cf_px_per_inch=ppm * 25.4,
+                agreement=cross_validate(raw, second, k.second_unit.cross_tol),
+                n_ticks=raw.n, is_valid=raw.agrees(k.agree_tol)))
+        return rows
+
+    def persist(self, project, item, rows):
+        ids = project.db.record_ruler_cf(item.specimen_id, rows)      # returns the new row ids
+        best = select_cf(rows, ids, policy=self.cfg.stage(self.key).cf_policy)   # one winner per sheet
+        if best is not None:                                          # 0 rulers -&gt; CF stays NULL
+            project.db.set_specimen_cf(item.specimen_id, best.cf_px_per_cm,
+                                       ruler_cf_id=best.id, unit_type=best.unit_type)
+
+
+# --- modules/leaf_segmenter.py --- stage 6 ----------------------------------------
+from leafmachine3.inference.leaf_segmenter import LeafSegmenter as _SegBackend      # exported YOLO26x-seg
+
+class LeafSegmenter(PipelineStage):
+    &quot;&quot;&quot;Segment Leaf_WHOLE (+ optional Leaf_PARTIAL) crops into instances (Leaf/Petiole/
+    Hole). Polygons are RE-BASED to PARENT (working) coords so Reporter reconstructs any
+    view. Hole/Petiole rows carry parent_instance_index -&gt; their owning Leaf instance.
+    CONSUMES plant_detection leaf crops. WRITES leaf_segmentation rows.&quot;&quot;&quot;
+    key, name, depends_on, owns_tables = (
+        &quot;leaf_segmenter&quot;, &quot;Leaf Segmenter&quot;, (&quot;plant_detector&quot;,), (&quot;leaf_segmentation&quot;,))
+
+    def build_model(self, device):
+        k = self.cfg.stage(self.key)
+        return _SegBackend(k.model.path, imgsz=k.imgsz, conf=k.conf, iou=k.iou,
+                           retina_masks=k.retina_masks, device=device.torch_str)
+
+    def _classes(self):
+        return (&quot;Leaf_WHOLE&quot;, &quot;Leaf_PARTIAL&quot;) if self.cfg.stage(self.key).include_partial else (&quot;Leaf_WHOLE&quot;,)
+
+    def collect_items(self, project):
+        cls_in = self._classes()
+        return [WorkItem(s, project.db.crops(&quot;plant_detection&quot;, s, cls_in=cls_in))
+                for s in project.db.specimens_with_crops(&quot;plant_detection&quot;, cls_in=cls_in)]
+
+    def infer(self, item, model):
+        rows = []
+        for crop in item.payload:                            # each leaf-box crop
+            ox, oy = crop.x1, crop.y1                         # crop origin in the parent (working) frame
+            leaves = []                                       # remember Leaf polys for hole/petiole linkage
+            for i, inst in enumerate(model.predict(crop.crop_path)):
+                poly = offset_polygon(inst.polygon, ox, oy)   # crop coords -&gt; parent coords
+                owner = i if inst.cls_name == &quot;Leaf&quot; else nearest_leaf(poly, leaves)
+                if inst.cls_name == &quot;Leaf&quot;:
+                    leaves.append((i, poly))
+                rows.append(LeafRow(
+                    crop.detection_id, i, inst.cls_id, inst.cls_name, inst.conf,
+                    parent_instance_index=owner,              # Hole/Petiole -&gt; its Leaf; Leaf -&gt; itself
+                    mask_format=&quot;coco_rle&quot;, mask_data=encode_rle(poly),
+                    frame_wh=crop.frame_wh, bbox=poly_bbox(poly), num_parts=poly.n_parts,
+                    area_px=poly_area(poly), perimeter_px=poly_perimeter(poly)))
+        return rows
+
+    def persist(self, project, item, rows):
+        project.db.record_leaf_instances(item.specimen_id, rows)   # upsert on (detection_id, instance_index)
+
+
+# --- modules/metric_grounding.py --- stage 7 (cpu) --------------------------------
+class MetricGrounding(PipelineStage):
+    &quot;&quot;&quot;Apply the specimen CF to pixel measurements: area_px -&gt; cm^2, perimeter_px -&gt; cm.
+    CF and area_px are BOTH in the working frame, so area_px / cf^2 is frame-consistent
+    (no rescale). CONSUMES specimen.cf_px_per_cm + leaf_segmentation. WRITES the *_cm cols.&quot;&quot;&quot;
+    key, name, depends_on, owns_tables, device_kind = (
+        &quot;metric_grounding&quot;, &quot;Metric Grounding&quot;, (&quot;ruler_cf&quot;, &quot;leaf_segmenter&quot;), (), &quot;cpu&quot;)
+
+    def collect_items(self, project):
+        return [WorkItem(s, (project.db.specimen_cf(s), project.db.leaf_instances(s)))
+                for s in project.db.specimens_with_rows(&quot;leaf_segmentation&quot;)]
+
+    def infer(self, item, _model):
+        cf, leaves = item.payload
+        if cf is None:                                       # no usable ruler -&gt; stays pixel-only
+            return []
+        return [Grounded(l.leaf_id, area_cm2=l.area_px / (cf * cf), perimeter_cm=l.perimeter_px / cf,
+                         bbox_w_cm=(l.bbox_x2 - l.bbox_x1) / cf, bbox_h_cm=(l.bbox_y2 - l.bbox_y1) / cf)
+                for l in leaves]
+
+    def persist(self, project, item, grounded):
+        project.db.set_leaf_metrics_cm(grounded)             # writes the *_cm columns only
+
+
+# --- modules/reporter.py --- stage 8 (cpu) ----------------------------------------
+class Reporter(PipelineStage):
+    &quot;&quot;&quot;Render user-selected outputs from stored records + the ORIGINAL pixels. Stored
+    geometry is in the working frame, so it is scaled by 1/work_scale before compositing
+    onto the full-res original. Views are RECONSTRUCTED on demand -- never pre-saved PNGs.&quot;&quot;&quot;
+    key, name, device_kind = &quot;reporter&quot;, &quot;Reporter&quot;, &quot;cpu&quot;
+    depends_on = (&quot;archival_detector&quot;, &quot;plant_detector&quot;, &quot;phenology_detector&quot;,
+                  &quot;ruler_cf&quot;, &quot;leaf_segmenter&quot;, &quot;metric_grounding&quot;)
+
+    def collect_items(self, project):
+        return [WorkItem(s, project.report_bundle(s)) for s in project.db.iter_specimen_ids()]
+
+    def infer(self, item, _model):
+        r = self.cfg.report; b = item.payload
+        img = read_image(b.original_path)                    # IMMUTABLE original, opened read-only
+        scale = 1.0 / b.work_scale                           # working coords -&gt; original pixels
+        segs = [(s, scale_polygon(decode_rle(s.mask_data), scale)) for s in b.leaves]
+        boxes = [scale_box(d, scale) for d in b.detections]
+        out, w = b.reports_dir, []
+        if r.overlay.enabled:       w.append(save_overlay(img, boxes, segs, b.cf_px_per_cm, r, out))
+        if r.export_binary_masks:   w.append(save_binary(rasterize(segs, img.shape, net_of_holes=True), out))
+        if r.export_rgb_on_black:   w += [save(composite(img, mask(p, img.shape), bg=0), out)   for _, p in segs]
+        if r.export_rgb_on_white:   w += [save(composite(img, mask(p, img.shape), bg=255), out) for _, p in segs]
+        if r.export_masked_subsets: w += [save(masked_subset(img, p), out) for _, p in segs]
+        if r.derived_dataset.enabled: w += emit_dataset(b, boxes, segs, r.derived_dataset, out)
+        return w
+
+    def persist(self, project, item, written):
+        project.db.record_report_manifest(item.specimen_id, written)   # exact paths -&gt; exact --restart cleanup</code></pre></figure>
+</section>
+<section id="yaml"><h2><span class="num">6</span>Control surface #1 — <code>LM3_settings.yaml</code></h2>
+
+<p>One hand-editable file drives an entire run. It is organized into <b>project</b> (I/O + run/resume policy),
+<b>compute</b> (devices, VRAM-based worker sizing, onnxruntime providers), <b>modules</b> (one block per stage,
+each exposing the model artifact plus most of that model's runtime knobs), and <b>report</b> (the Reporter output
+switches). The organizing principle: the YAML holds <em>inputs</em>; high-cardinality per-crop <em>outputs</em>
+live in the DB method tables — the one deliberate exception being the final CF duplicated onto the specimen row.</p>
+
+<figure class="code" data-lang="yaml"><figcaption><span class="fn">LM3_settings.yaml</span><span class="lang">yaml</span></figcaption><pre><code># ============================================================================
+# LM3_settings.yaml  --  LeafMachine3&#x27;s single unified control surface.
+# One file drives an entire run: WHERE data comes from / goes, HOW the hardware
+# is used, and the runtime knobs for every stage. Per-crop / per-detection RESULTS
+# are NOT here -- they land in the per-project SQLite method tables. This file is
+# INPUTS; the DB is OUTPUTS. Precedence: built-in defaults &lt; this file &lt; CLI flags.
+# ============================================================================
+version: 3
+
+# 1. PROJECT ----------------------------------------------------------------- #
+project:
+  run_name: &quot;run_2026_07_23&quot;          # names the output subdir and the SQLite DB
+  input:
+    dirs: [&quot;/data/herbarium/batch_A&quot;] # one or more folders of ORIGINAL images
+    recursive: true
+    image_extensions: [&quot;.jpg&quot;, &quot;.jpeg&quot;, &quot;.png&quot;, &quot;.tif&quot;, &quot;.tiff&quot;]
+  output:
+    dir: &quot;/data/lm3_runs&quot;             # &lt;dir&gt;/&lt;run_name&gt;/ holds db, crops, reports, logs
+    tmp_dir: &quot;auto&quot;                   # &#x27;auto&#x27; -&gt; &lt;run&gt;/_tmp ; converted working copies (symlinked)
+    keep_tmp: false
+  run_mode:
+    overwrite: false                  # true wipes the run dir and starts fresh
+    restart: []                       # [] resume | &quot;all&quot; | [&quot;ruler_cf&quot;,&quot;leaf_segmenter&quot;]
+    fail_fast: false                  # false = log per-image errors and continue
+
+# 2. COMPUTE ----------------------------------------------------------------- #
+# Stages run SEQUENTIALLY; WITHIN a stage a work queue saturates all listed devices.
+# &#x27;auto&#x27; worker counts are sized at runtime by PROBING one warm worker&#x27;s real VRAM.
+compute:
+  devices: &quot;auto&quot;                     # &#x27;auto&#x27; = GPU-FIRST: use EVERY visible NVIDIA GPU; drop
+                                      #   to CPU only when none exists. Or [0,1] to pin GPUs,
+                                      #   or &quot;cpu&quot; to force CPU.
+  tensorrt: false                     # true = prefer the TensorRT EP over CUDA (max NVIDIA throughput)
+  io_workers: &quot;auto&quot;                  # ingest decode/convert pool (cpu-bound)
+  vram:
+    safety_fraction: 0.90             # never plan past this fraction of free VRAM
+    reserve_mb: 1024                  # headroom left per device (CUDA context + fragmentation)
+    per_worker_mb: &quot;auto&quot;             # &#x27;auto&#x27; = probe ONE worker on a large image, then divide
+    max_workers_per_gpu: 6            # hard clamp
+  workers:                            # per-stage override of the probe; &#x27;auto&#x27; or an int
+    default: &quot;auto&quot;
+    ruler_cf: 8                       # cpu-bound tick math; not VRAM-limited
+  onnxruntime:
+    providers: &quot;auto&quot;                 # &#x27;auto&#x27; = GPU-first ladder (CUDA/TensorRT -&gt; DirectML/
+                                      #   CoreML/OpenVINO -&gt; CPU); see inference/providers.py
+    ld_library_path: &quot;auto&quot;           # &#x27;auto&#x27; resolves the bundled CUDA libs and prepends them
+    allow_cpu_fallback: false         # false = if an NVIDIA GPU is PRESENT but the GPU EP does
+                                      #   NOT bind, FAIL LOUD (don&#x27;t silently crawl on CPU).
+                                      #   A box with genuinely no GPU always uses CPU, no error.
+  precision: &quot;fp16&quot;                   # fp16 | fp32
+
+# 3. MODULES  (one block per stage; keys == the canonical STAGE_KEYS) --------- #
+modules:
+
+  archival_detector:
+    enabled: true
+    model: { path: &quot;models/archival_detector/yolo26x.onnx&quot;, format: &quot;onnx&quot; }
+    imgsz: 1280
+    conf: 0.25
+    iou: 0.60                         # informational (YOLO26 is end-to-end / NMS-free)
+    max_det: 300
+    min_box_area: 256                 # px^2; drop specks
+    classes: [Ruler, Barcode, Colorcard, Label, Map, Envelope, Photo, Attached_Item, Weights]
+
+  plant_detector:
+    enabled: true
+    model: { path: &quot;models/plant_detector/yolo26x.onnx&quot;, format: &quot;onnx&quot; }
+    imgsz: 1280
+    conf: 0.30
+    iou: 0.55
+    max_det: 500
+    min_box_area: 400
+    classes: [Leaf_WHOLE, Leaf_PARTIAL, Seed_Fruit_ONE, Seed_Fruit_MANY,
+              Flower_ONE, Flower_MANY, Bud, Roots, Wood]
+
+  phenology_detector:                 # rule over plant boxes -&gt; presence/absence
+    enabled: true
+    targets:
+      leaves:  { min_conf: 0.35, min_count: 1 }
+      flowers: { min_conf: 0.40, min_count: 1 }
+      fruits:  { min_conf: 0.40, min_count: 1 }
+
+  ruler_classifier:                   # CF step a -- 3-ONNX majority vote
+    enabled: true
+    models_dir: &quot;models/ruler_classifier&quot;     # dir of the 3 portable ONNX members
+    min_conf: 0.35                    # below -&gt; UNKNOWN, no CF attempted
+
+  ruler_cf:                           # CF step b -- tick spacing -&gt; px per cm
+    enabled: true
+    tick: { min_units: 3, otsu: true }
+    agree_tol: 0.05                   # accept a CF only if intra-ruler spacings agree within 5%
+    second_unit: { enabled: true, cross_tol: 0.03 }   # cross-check a 2nd graduation (e.g. cm vs mm)
+    cf_policy: &quot;max_quality&quot;          # which ruler wins when a sheet has &gt;1: max_quality | median
+    on_failure: &quot;null_cf&quot;             # leave CF NULL when no reliable measurement
+
+  leaf_segmenter:
+    enabled: true
+    model: { path: &quot;models/leaf_segmenter/yolo26x_seg.onnx&quot;, format: &quot;onnx&quot; }
+    include_partial: false            # true also segments Leaf_PARTIAL (__LP__) crops
+    imgsz: 1024
+    conf: 0.30
+    iou: 0.50
+    retina_masks: true                # full-res masks (sharper boundaries)
+    max_det: 50
+    mask_storage: { format: &quot;coco_rle&quot;, min_area_px: 64 }   # coco_rle | polygon_xy
+
+  metric_grounding:
+    enabled: true
+    missing_cf_policy: &quot;skip&quot;         # skip | zero | error  (per specimen with NULL CF)
+    round_ndigits: 4
+
+  reporter:
+    enabled: true                     # output switches live in `report:` below
+
+# 4. REPORT  (Reporter output toggles) --------------------------------------- #
+report:
+  overlay:
+    enabled: true
+    draw_archival_boxes: true
+    draw_plant_boxes: true
+    draw_masks: true
+    draw_cf_banner: true              # print the derived CF (px/cm) on the sheet
+    alpha: 0.45
+  export_binary_masks: true           # one binary PNG per leaf (holes subtracted)
+  export_rgb_on_black: true           # leaf pixels on a black canvas
+  export_rgb_on_white: false          # leaf pixels on a white canvas
+  export_masked_subsets: false        # per-instance masked subset crops
+  derived_dataset:
+    enabled: false
+    task: &quot;yolo_seg&quot;                  # yolo_seg | yolo_det | crops
+    split: { train: 0.8, val: 0.2 }
+  formats: { image_ext: &quot;jpg&quot;, jpg_quality: 100, mask_ext: &quot;png&quot; }</code></pre></figure>
+</section>
+<section id="setup"><h2><span class="num">7</span>LM3_Setup — one-time hardware auto-tuning</h2>
+
+<p>The YAML holds what the operator <em>wants</em>; it should not also carry values that depend on the specific
+box it runs on. <b>LM3_Setup</b> is a separate module (<code>python -m leafmachine3.setup</code>) that profiles the
+machine <b>once per install</b> and writes <code>hardware_settings.yaml</code> — the machine-derived layer every
+module reads. It is rerunnable any time (CLI <code>--force</code>, or the GUI's <em>Hardware Setup</em> panel), and
+a normal run auto-detects when the profile has gone stale.</p>
+<h3>What it measures and writes</h3>
+<ul>
+<li><b>GPU inventory</b> — count, model, total &amp; free VRAM (NVML), driver; or "CPU-only" when none.</li>
+<li><b>Bound execution provider</b> — which EP actually engages under the GPU-first ladder (CUDA / DirectML /
+CoreML / OpenVINO / CPU) and the best <b>precision</b> (fp16 vs fp32, after a speed + parity check).</li>
+<li><b>Tmp location</b> — benchmarks write-speed and free space of candidate dirs and picks the <b>fastest local
+disk</b> with headroom (so <code>_tmp</code> working copies never land on a slow HDD or a network mount).</li>
+<li><b>Per-stage throughput plan</b> — the slow, once-only part: short <b>dry runs</b> sweep
+<code>(batch, workers_per_gpu)</code> on a sample of representative crops, keeping the combo with the highest
+images/sec that still fits VRAM with the safety margin. Queue size follows the pool. CPU stages get a worker
+count from the core count.</li>
+<li><b>Fingerprint</b> — OS/CPU/RAM, GPU set, driver, onnxruntime version, and a hash of each exported model, so
+a later run can tell the profile apart from the current machine.</li>
+</ul>
+<div class="call note"><div class="t">◆ How the three files compose</div>
+<p>Precedence for any performance value is <b>built-in defaults &lt; <code>hardware_settings.yaml</code> &lt;
+<code>LM3_settings.yaml</code> (explicit, non-<code>"auto"</code>) &lt; CLI</b>. So a knob left as <code>"auto"</code>
+resolves from the tuned profile (no re-probe), while an operator who hard-codes <code>workers: 4</code> still wins.
+The executor takes a <b>fast path</b> — it reuses the cached optimum instead of live-probing VRAM every run — and
+only falls back to probing when no profile exists yet.</p></div>
+<h3>Running once, and rerunning</h3>
+<p><b>Missing file → auto-run once.</b> If <code>hardware_settings.yaml</code> does not exist,
+<code>machine3()</code> runs the <b>full LM3_Setup automatically</b> (the dry-run optimization) before the pipeline
+starts, so the very first run is already tuned. This is the <em>only</em> time it runs itself, and it may take a
+few minutes — then it is cached for every future run.</p>
+<p><b>File present → stays separate / on-demand.</b> Once the profile exists it is <b>never</b> re-run
+automatically. It is used as-is; a normal run only <em>logs a suggestion</em> to re-tune if the fingerprint drifts
+(GPU set, driver, onnxruntime, or a model hash changed). You rerun it deliberately: <code>python -m
+leafmachine3.setup --force</code>, or the GUI's <em>Re-run optimization</em> button (which streams the dry-run
+sweep so you see progress on the multi-minute pass). The desktop installer can also fire it once post-install so a
+packaged app is tuned on day one.</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/setup/hardware_setup.py</span><span class="lang">python</span></figcaption><pre><code>&quot;&quot;&quot;leafmachine3.setup.hardware_setup -- LM3_Setup: one-time (rerunnable) machine profiler.
+
+Runs ONCE per install (or on demand) to measure THIS specific machine and write
+hardware_settings.yaml -- the tuned, machine-derived layer every module reads for worker
+counts, batch sizes, queue sizes, tmp location, GPU availability + VRAM, precision, and
+the bound execution provider. Optimization uses short DRY RUNS (micro-benchmarks on a
+sample of representative crops), so it can take a few minutes -- but only once: the result
+is cached and reused until the hardware, driver, onnxruntime, or model artifacts change.
+
+CLI:  python -m leafmachine3.setup [--optimize] [--quick] [--force] [--tmp DIR]
+GUI:  the Electron &#x27;Hardware Setup&#x27; panel button -&gt; POST /v1/setup (streams sweep progress)
+&quot;&quot;&quot;
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+log = logging.getLogger(&quot;leafmachine3.setup&quot;)
+HW_PATH = Path(&quot;hardware_settings.yaml&quot;)     # top-level, beside LM3_settings.yaml
+
+
+@dataclass
+class GpuInfo:
+    index: int; name: str; total_vram_mb: int; free_vram_mb: int; driver: str
+
+
+@dataclass
+class Fingerprint:
+    &quot;&quot;&quot;Identifies the machine + software so a STALE profile is detected on a normal run.&quot;&quot;&quot;
+    os: str; cpu: str; cpu_cores: int; ram_gb: int
+    gpus: list                     # [(name, total_vram_mb), ...]
+    driver: str; ort_version: str; ort_providers: list
+    model_hashes: dict             # {stage_key: sha256(model file)} -&gt; rerun if a model changed
+    lm3_version: str
+
+
+def ensure_hardware_profile(cfg) -&gt; Path:
+    &quot;&quot;&quot;Called by machine3() at startup. If hardware_settings.yaml is MISSING, run the FULL
+    LM3_Setup automatically (the dry-run optimization) so the first run is tuned -- this is
+    the ONLY time it runs itself. If the file EXISTS it is NEVER re-run automatically (kept
+    on-demand via the CLI / GUI): the profile is used as-is, and a drifted fingerprint only
+    LOGS a suggestion to rerun. Then bind the profile onto cfg so every &#x27;auto&#x27; resolves from it.&quot;&quot;&quot;
+    if not HW_PATH.exists():
+        log.info(&quot;no hardware_settings.yaml found -- running LM3_Setup once to tune this machine &quot;
+                 &quot;(dry-run optimization; may take a few minutes, then cached for every future run)&quot;)
+        run_setup(cfg, optimize=True)                       # FULL optimize, first run only
+    elif _load(HW_PATH).fingerprint != _fingerprint(cfg):
+        log.warning(&quot;hardware / driver / models changed since the last LM3_Setup -- this run uses the &quot;
+                    &quot;EXISTING profile; rerun `python -m leafmachine3.setup` to re-tune when convenient&quot;)
+    cfg.bind_hardware(_load(HW_PATH))          # cfg.hardware.stage(key) now returns the tuned plan
+    return HW_PATH
+
+
+def run_setup(cfg, *, optimize: bool = True, quick: bool = False, force: bool = False,
+              tmp_override: str | None = None, on_progress=None) -&gt; Path:
+    &quot;&quot;&quot;Profile the machine and (re)write hardware_settings.yaml. Idempotent: a valid profile
+    matching this machine&#x27;s fingerprint is kept unless `force`.&quot;&quot;&quot;
+    fp = _fingerprint(cfg)
+    if HW_PATH.exists() and not force and _load(HW_PATH).fingerprint == fp:
+        log.info(&quot;hardware_settings.yaml is current -- nothing to do (use --force to redo)&quot;)
+        return HW_PATH
+
+    # 1. hardware inventory (read-only probes)
+    gpus = _discover_gpus()                        # NVML: name, total/free VRAM, driver (&#x27;&#x27; -&gt; CPU-only box)
+    cpu_cores, ram_gb = _discover_cpu_ram()
+
+    # 2. the execution provider that ACTUALLY binds (GPU-first ladder; see inference/providers.py)
+    provider = _probe_bound_provider(cfg)          # &#x27;CUDAExecutionProvider&#x27; | &#x27;DmlEP&#x27; | ... | &#x27;CPUExecutionProvider&#x27;
+
+    # 3. tmp location: benchmark write speed + free space of candidate dirs, pick the FASTEST
+    #    LOCAL disk with enough headroom (avoid a slow HDD / network mount -- LM2 thrashed on that).
+    tmp_dir = Path(tmp_override) if tmp_override else _choose_tmp_dir(cfg, min_free_gb=50)
+
+    # 4. per-stage throughput optimization via short DRY RUNS (the slow, once-only part)
+    stages = {}
+    for st in _gpu_stages(cfg):                    # detectors + segmenter + ruler classifier
+        stages[st.key] = (_optimize_stage(st, gpus, provider, quick=quick, on_progress=on_progress)
+                          if optimize and gpus else _heuristic_stage(st, gpus))
+    for st in _cpu_stages(cfg):                    # phenology / ruler_cf / grounding / reporter
+        stages[st.key] = {&quot;workers&quot;: max(1, cpu_cores - 2)}
+
+    profile = HardwareSettings(
+        fingerprint=fp, provider=provider, precision=_best_precision(gpus, provider),
+        gpus=[asdict(g) for g in gpus], cpu_cores=cpu_cores, ram_gb=ram_gb,
+        tmp_dir=str(tmp_dir), io_workers=max(1, cpu_cores - 2), stages=stages)
+    _write(HW_PATH, profile)
+    log.info(&quot;wrote %s | %d GPU(s) | provider=%s | tmp=%s&quot;, HW_PATH, len(gpus), provider, tmp_dir)
+    return HW_PATH
+
+
+def _optimize_stage(stage, gpus, provider, *, quick, on_progress) -&gt; dict:
+    &quot;&quot;&quot;Sweep (batch, workers_per_gpu) on a small sample of representative crops; keep the
+    throughput-optimal combo that fits VRAM with the safety margin.
+
+        best = None
+        for batch in ([1, 2, 4] if quick else [1, 2, 4, 8, 16, 32]):
+            for wpg in _candidate_worker_counts(gpus[0], est_footprint(stage, batch)):
+                imgs_per_s, peak_vram = _bench(stage, batch, wpg, provider,
+                                               n=(8 if quick else 40))     # a real dry run
+                if peak_vram &lt;= _vram_budget(gpus[0]) and (best is None or imgs_per_s &gt; best.rate):
+                    best = Plan(batch, wpg, imgs_per_s, peak_vram)
+                on_progress and on_progress(stage.key, batch, wpg, imgs_per_s)
+        # queue size follows the pool: bounded at 2 x total workers (backpressure).
+        return {&quot;batch&quot;: best.batch, &quot;workers_per_gpu&quot;: best.workers_per_gpu,
+                &quot;queue_size&quot;: 2 * best.workers_per_gpu * len(gpus),
+                &quot;measured_imgs_per_s&quot;: round(best.rate, 1), &quot;peak_vram_mb&quot;: best.peak_vram}
+    &quot;&quot;&quot;
+    ...
+
+# _discover_gpus / _discover_cpu_ram / _probe_bound_provider / _choose_tmp_dir / _bench /
+# _fingerprint / _best_precision / _load / _write are all read-only probes or short synthetic-
+# image benchmarks -- LM3_Setup NEVER touches user data, only measures and writes the yaml.
+...</code></pre></figure>
+<p>The resulting profile — read by every module, never hand-edited:</p>
+<figure class="code" data-lang="yaml"><figcaption><span class="fn">hardware_settings.yaml</span><span class="lang">yaml</span></figcaption><pre><code># hardware_settings.yaml -- MACHINE-DERIVED runtime settings, written by LM3_Setup
+# (python -m leafmachine3.setup). Reused by every module so runs never re-probe. Do NOT
+# hand-edit unless you know why; rerun LM3_Setup after a hardware / driver / model change.
+# Precedence: built-in defaults  &lt;  THIS file  &lt;  LM3_settings.yaml (explicit, non-&quot;auto&quot;)
+# &lt;  CLI. So an explicit `workers: 4` in LM3_settings.yaml still overrides the tuned value.
+generated_at: &quot;2026-07-23T13:20:00&quot;
+lm3_version: &quot;3.0.0&quot;
+
+# A normal run warns + suggests rerunning LM3_Setup if this drifts from the live machine.
+fingerprint:
+  os: &quot;Linux-6.8&quot;
+  cpu: &quot;AMD EPYC 7543&quot;
+  cpu_cores: 64
+  ram_gb: 512
+  gpus: [[&quot;NVIDIA RTX A6000&quot;, 49140], [&quot;NVIDIA RTX A6000&quot;, 49140]]
+  driver: &quot;560.35.03&quot;
+  ort_version: &quot;1.22.0&quot;
+  ort_providers: [&quot;CUDAExecutionProvider&quot;, &quot;CPUExecutionProvider&quot;]
+  model_hashes:                        # rerun triggers if an exported model file changes
+    plant_detector: &quot;sha256:9f1c8a…&quot;
+    leaf_segmenter: &quot;sha256:3ab740…&quot;
+
+# resolved runtime environment
+provider: &quot;CUDAExecutionProvider&quot;      # the EP that actually bound (GPU-first)
+precision: &quot;fp16&quot;                      # chosen after an fp16-vs-fp32 speed + parity check
+tmp_dir: &quot;/scratch/lm3_tmp&quot;            # fastest LOCAL disk with &gt;=50 GB free (benchmarked)
+io_workers: 62                         # ingest / decode pool (cpu_cores - 2)
+
+gpus:
+  - {index: 0, name: &quot;NVIDIA RTX A6000&quot;, total_vram_mb: 49140, free_vram_mb: 48600}
+  - {index: 1, name: &quot;NVIDIA RTX A6000&quot;, total_vram_mb: 49140, free_vram_mb: 48600}
+
+# per-stage tuned plan (throughput-optimal AND fits VRAM) from the dry-run sweep.
+# GPU stages get batch + workers_per_gpu + queue_size; cpu stages get a worker count.
+stages:
+  archival_detector:  {batch: 16, workers_per_gpu: 4, queue_size: 16, measured_imgs_per_s: 62.0, peak_vram_mb: 9200}
+  plant_detector:     {batch: 16, workers_per_gpu: 4, queue_size: 16, measured_imgs_per_s: 58.4, peak_vram_mb: 9600}
+  ruler_classifier:   {batch: 32, workers_per_gpu: 6, queue_size: 24, measured_imgs_per_s: 240.0, peak_vram_mb: 4100}
+  leaf_segmenter:     {batch: 8,  workers_per_gpu: 3, queue_size: 12, measured_imgs_per_s: 21.7, peak_vram_mb: 14800}
+  phenology_detector: {workers: 62}
+  ruler_cf:           {workers: 16}
+  metric_grounding:   {workers: 62}
+  reporter:           {workers: 32}</code></pre></figure>
+</section>
+<section id="db"><h2><span class="num">8</span>Control surface #2 — the project database</h2>
+
+<p>One SQLite database per project (WAL mode) in the output dir. A <code>specimen</code> metadata table holds one
+row per input image; a table <em>per ML method</em> records every box/instance with provenance back to its parent;
+and <code>project_status</code> + <code>image_status</code> form the two-level ledger that drives resume.</p>
+<div class="call note"><div class="t">◆ Mask reconstruction — geometry, not pixels</div>
+<p>Each leaf instance stores its <b>polygon / COCO-RLE in parent (working) coordinates</b> plus its bbox and a
+link to the source detection — never a rendered PNG. Every Reporter view is then a pure function of
+<em>(original pixels, geometry)</em>, rebuilt on demand: binary mask, RGB-on-black, RGB-on-white, box+mask
+overlay, masked subset crop, or a derived dataset. Geometry is kilobytes (vs. many full-res PNGs per leaf),
+view-agnostic (the user picks views later in the YAML), and loss-free (color views resample the immutable
+original). Because ingest may downscale an oversized original, the specimen row also stores
+<code>original_width/height</code> and <code>work_scale</code>, and Reporter scales geometry by
+<code>1/work_scale</code> before compositing onto the full-res original — so overlays never misregister.</p></div>
+
+<figure class="code" data-lang="sql"><figcaption><span class="fn">leafmachine3/core/schema.sql</span><span class="lang">sql</span></figcaption><pre><code>-- ==========================================================================
+-- LeafMachine3 -- one SQLite database per project (in the YAML output dir).
+-- Applied once at init; idempotent (IF NOT EXISTS). Stage KEYS (project_status)
+-- are distinct from TABLE names: keys = archival_detector/plant_detector/... ;
+-- tables = archival_detection/plant_detection/... . One canonical key set only.
+-- ==========================================================================
+PRAGMA journal_mode = WAL;        -- concurrent readers while the single collector writes
+PRAGMA synchronous  = NORMAL;     -- safe under WAL; big throughput win
+PRAGMA foreign_keys = ON;         -- cascade + provenance integrity
+PRAGMA busy_timeout = 30000;
+
+-- specimen : raw/metadata table. ONE row per input image. Original is immutable.
+-- Key cross-stage OUTPUTS are duplicated here for cheap, join-free reporting.
+CREATE TABLE IF NOT EXISTS specimen (
+    specimen_id        INTEGER PRIMARY KEY,
+    image_name         TEXT NOT NULL,
+    image_stem         TEXT NOT NULL,
+    original_path      TEXT NOT NULL,          -- IMMUTABLE source
+    working_path       TEXT NOT NULL,          -- symlink into the working set (what stages open)
+    width              INTEGER,                -- WORKING-copy dims
+    height             INTEGER,
+    original_width     INTEGER,                -- ORIGINAL dims (Reporter renders on the original)
+    original_height    INTEGER,
+    work_scale         REAL NOT NULL DEFAULT 1.0,   -- working / original long-side ratio
+    orig_size_bytes    INTEGER,                -- ingest change-detection (moved/edited original)
+    orig_mtime         REAL,
+    normalized         INTEGER NOT NULL DEFAULT 0,  -- 1 if a tmp jpg copy was materialized
+    -- duplicated key outputs (authoritative copies live in the method tables):
+    cf_px_per_cm       REAL,                   -- from ruler_cf (the CF)
+    selected_ruler_cf_id INTEGER,              -- which ruler_cf row produced the CF (provenance)
+    ruler_unit_type    TEXT,
+    has_leaves         INTEGER, has_flowers INTEGER, has_fruits INTEGER,
+    ingested_at        TEXT NOT NULL DEFAULT (datetime(&#x27;now&#x27;)),
+    UNIQUE (image_stem),
+    UNIQUE (original_path)
+);
+
+-- archival_detection / plant_detection : one row per box. xyxy in WORKING coords.
+-- Idempotency is by delete-then-insert per specimen inside one txn (see ProjectDB),
+-- backed by a deterministic unique key so a torn write can&#x27;t duplicate.
+CREATE TABLE IF NOT EXISTS archival_detection (
+    detection_id INTEGER PRIMARY KEY,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    cls_id INTEGER NOT NULL, cls_name TEXT NOT NULL, conf REAL NOT NULL,
+    x1 REAL, y1 REAL, x2 REAL, y2 REAL,
+    tag TEXT, crop_path TEXT,                  -- tag is BARE (&quot;R&quot;); crop file adds __R__
+    UNIQUE (specimen_id, cls_id, x1, y1, x2, y2)
+);
+CREATE INDEX IF NOT EXISTS ix_arch_spec ON archival_detection (specimen_id, cls_name);
+
+CREATE TABLE IF NOT EXISTS plant_detection (
+    detection_id INTEGER PRIMARY KEY,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    cls_id INTEGER NOT NULL, cls_name TEXT NOT NULL, conf REAL NOT NULL,
+    x1 REAL, y1 REAL, x2 REAL, y2 REAL,
+    tag TEXT, crop_path TEXT,
+    UNIQUE (specimen_id, cls_id, x1, y1, x2, y2)
+);
+CREATE INDEX IF NOT EXISTS ix_plant_spec ON plant_detection (specimen_id, cls_name);
+
+-- phenology : per-specimen presence/absence (also mirrored onto specimen.has_*).
+CREATE TABLE IF NOT EXISTS phenology (
+    specimen_id INTEGER PRIMARY KEY REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    has_leaves INTEGER, has_flowers INTEGER, has_fruits INTEGER,
+    n_leaves INTEGER, n_flowers INTEGER, n_fruits INTEGER
+);
+
+-- ruler_classification : per Ruler crop -&gt; unit_type + the ensemble votes.
+CREATE TABLE IF NOT EXISTS ruler_classification (
+    ruler_class_id INTEGER PRIMARY KEY,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id)           ON DELETE CASCADE,
+    detection_id INTEGER NOT NULL REFERENCES archival_detection(detection_id) ON DELETE CASCADE,
+    unit_type TEXT NOT NULL, votes_json TEXT, conf REAL,
+    UNIQUE (detection_id)                      -- idempotent re-run
+);
+
+-- ruler_cf : per-ruler CF measurement. cf_px_per_cm = px_per_mm * 10; the WINNER is
+-- flagged is_selected and duplicated onto specimen.cf_px_per_cm.
+CREATE TABLE IF NOT EXISTS ruler_cf (
+    ruler_cf_id INTEGER PRIMARY KEY,
+    specimen_id    INTEGER NOT NULL REFERENCES specimen(specimen_id)                ON DELETE CASCADE,
+    ruler_class_id INTEGER NOT NULL REFERENCES ruler_classification(ruler_class_id) ON DELETE CASCADE,
+    unit_type TEXT, minimum_unit TEXT, second_unit TEXT,
+    px_per_mm REAL, cf_px_per_cm REAL, cf_px_per_inch REAL,
+    agreement REAL, n_ticks INTEGER, is_valid INTEGER NOT NULL DEFAULT 1,
+    is_selected INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (ruler_class_id)
+);
+
+-- leaf_segmentation : one row per INSTANCE mask. Polygon/RLE in PARENT (working) coords
+-- so Reporter rebuilds every view. Hole/Petiole link to their Leaf via parent_instance_index.
+CREATE TABLE IF NOT EXISTS leaf_segmentation (
+    leaf_id INTEGER PRIMARY KEY,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id)         ON DELETE CASCADE,
+    detection_id INTEGER NOT NULL REFERENCES plant_detection(detection_id) ON DELETE CASCADE,
+    instance_index INTEGER NOT NULL,
+    parent_instance_index INTEGER,             -- Hole/Petiole -&gt; owning Leaf instance; Leaf -&gt; itself
+    cls_id INTEGER NOT NULL, cls_name TEXT NOT NULL, conf REAL,   -- Leaf | Petiole | Hole
+    mask_format TEXT NOT NULL CHECK (mask_format IN (&#x27;polygon_xy&#x27;,&#x27;coco_rle&#x27;)),
+    mask_data TEXT NOT NULL,                   -- polygon rings JSON  OR  COCO-RLE counts (parent coords)
+    frame_width INTEGER NOT NULL, frame_height INTEGER NOT NULL,  -- coord frame = working dims
+    bbox_x1 REAL, bbox_y1 REAL, bbox_x2 REAL, bbox_y2 REAL,
+    num_parts INTEGER NOT NULL DEFAULT 1,
+    area_px REAL, perimeter_px REAL,
+    area_cm2 REAL, perimeter_cm REAL,          -- filled by MetricGrounding
+    bbox_w_cm REAL, bbox_h_cm REAL,
+    UNIQUE (detection_id, instance_index)      -- upsert -&gt; resume-safe
+);
+CREATE INDEX IF NOT EXISTS ix_leaf_spec ON leaf_segmentation (specimen_id);
+
+-- project_status : stage-level ledger. Drives whole-module skip + config-drift + restart.
+CREATE TABLE IF NOT EXISTS project_status (
+    stage_key   TEXT PRIMARY KEY,              -- canonical STAGE_KEYS, seeded at init
+    stage_order INTEGER NOT NULL,              -- 1..8
+    state       TEXT NOT NULL DEFAULT &#x27;pending&#x27;
+                    CHECK (state IN (&#x27;pending&#x27;,&#x27;running&#x27;,&#x27;done&#x27;,&#x27;error&#x27;)),
+    n_total INTEGER DEFAULT 0, n_done INTEGER DEFAULT 0,
+    settings_hash TEXT,                        -- hash of the resolved cfg block + model mtime/size
+    started_at TEXT, finished_at TEXT, error_msg TEXT
+);
+
+-- image_status : per (specimen x stage) completion ledger for mid-stage resume.
+-- no_work=1 marks a specimen a stage legitimately has nothing to do for (e.g. no
+-- ruler) so depends_on gating never stalls.
+CREATE TABLE IF NOT EXISTS image_status (
+    specimen_id INTEGER NOT NULL REFERENCES specimen(specimen_id)      ON DELETE CASCADE,
+    stage_key   TEXT    NOT NULL REFERENCES project_status(stage_key)  ON DELETE CASCADE,
+    state   TEXT NOT NULL DEFAULT &#x27;done&#x27; CHECK (state IN (&#x27;done&#x27;,&#x27;error&#x27;)),
+    no_work INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime(&#x27;now&#x27;)),
+    error_msg TEXT,
+    PRIMARY KEY (specimen_id, stage_key)
+);
+CREATE INDEX IF NOT EXISTS ix_imgstatus ON image_status (stage_key, state);
+
+-- report_manifest : exact artifact paths Reporter wrote, so --restart deletes them precisely.
+CREATE TABLE IF NOT EXISTS report_manifest (
+    specimen_id INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    path TEXT NOT NULL, kind TEXT,
+    PRIMARY KEY (specimen_id, path)
+);</code></pre></figure>
+<h3 id="projectdb">The data-access layer</h3>
+<p>All raw SQL lives in one <code>ProjectDB</code> class. Its method surface is the contract every stage calls; the collector is the sole writer, and detection writes are delete-then-insert inside one transaction so a torn write or a restart can never duplicate boxes.</p>
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/core/db.py</span><span class="lang">python</span></figcaption><pre><code>&quot;&quot;&quot;leafmachine3.core.db -- the ONLY module that issues raw SQL.
+
+One ProjectDB wraps one per-project SQLite DB (WAL). All stages read/write through
+these typed methods; no stage embeds SQL. The collector is the SINGLE writer, so
+row writes + the image_status flip happen together in transaction().&quot;&quot;&quot;
+from __future__ import annotations
+
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+
+from leafmachine3.pipeline import STAGE_ORDER   # canonical keys + order, single source of truth
+
+
+class ProjectDB:
+    def __init__(self, path: Path) -&gt; None:
+        self.path = Path(path); self._conn: sqlite3.Connection | None = None
+
+    # ---- lifecycle ------------------------------------------------------- #
+    @classmethod
+    def open_or_create(cls, path) -&gt; &quot;ProjectDB&quot;:
+        db = cls(path); db.connect(); db.init_schema(); return db
+
+    def connect(self):
+        self._conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+        self._conn.row_factory = sqlite3.Row
+        # apply the schema.sql PRAGMAs (WAL, synchronous=NORMAL, foreign_keys=ON, busy_timeout)
+        ...
+
+    def init_schema(self) -&gt; None:
+        # executescript(schema.sql); then seed project_status from the canonical order:
+        for order, cls in enumerate(STAGE_ORDER, start=1):
+            self._exec(&quot;INSERT OR IGNORE INTO project_status(stage_key, stage_order) VALUES (?,?)&quot;,
+                       (cls.key, order))
+
+    @contextmanager
+    def transaction(self):
+        &quot;&quot;&quot;BEGIN IMMEDIATE / COMMIT; ROLLBACK on error. The collector wraps each item&#x27;s
+        row-writes AND its mark_image_done in one of these -&gt; torn-write safe.&quot;&quot;&quot;
+        ...
+
+    # ---- specimen (raw/metadata) ---------------------------------------- #
+    def upsert_specimen(self, rec) -&gt; int: ...          # keyed on image_stem; returns specimen_id
+    def clear_specimens(self) -&gt; None: ...              # ON DELETE CASCADE wipes all method rows
+    def iter_specimens(self): ...                       # rows for stages that consume raw images
+    def iter_specimen_ids(self): ...
+
+    def set_specimen_cf(self, specimen_id, cf_px_per_cm, *, ruler_cf_id, unit_type) -&gt; None:
+        # UPDATE specimen SET cf_px_per_cm=?, selected_ruler_cf_id=?, ruler_unit_type=? ...
+        # + UPDATE ruler_cf SET is_selected=1 WHERE ruler_cf_id=?
+        ...
+
+    # ---- resume queries (set-based; race-free -- snapshot before dispatch) #
+    def pending_specimens(self, stage, *, depends_on=()) -&gt; list[int]:
+        # specimens whose every depends_on stage is &#x27;done&#x27; in image_status,
+        # MINUS those already done for `stage`. One LEFT JOIN, filtered in memory.
+        ...
+    def done_ids(self, stage) -&gt; set[int]: ...          # image_status done for this stage
+    def eligible_specimens(self, stage, depends_on) -&gt; list[int]: ...
+
+    # ---- per-method writers (called ONLY by the collector) --------------- #
+    def record_detections(self, table, specimen_id, rows) -&gt; list[int]:
+        # in ONE txn: DELETE FROM {table} WHERE specimen_id=? ; then INSERT the rows.
+        # delete-then-insert makes re-detect + resume idempotent (no dup boxes).
+        assert table in (&quot;archival_detection&quot;, &quot;plant_detection&quot;)
+        ...
+    def record_phenology(self, specimen_id, out) -&gt; None: ...      # phenology row + specimen.has_*
+    def record_ruler_classifications(self, specimen_id, rows) -&gt; None: ...
+    def record_ruler_cf(self, specimen_id, rows) -&gt; list[int]: ...
+    def record_leaf_instances(self, specimen_id, rows) -&gt; None: ... # upsert (detection_id, instance_index)
+    def set_leaf_metrics_cm(self, grounded) -&gt; None: ...            # area_cm2/perimeter_cm/bbox_*_cm
+    def record_report_manifest(self, specimen_id, written) -&gt; None: ...
+
+    # ---- reader helpers for collect_items (parent-side) ------------------ #
+    def detections(self, table, specimen_id): ...
+    def crops(self, table, specimen_id, *, cls_name=None, cls_in=None): ...
+    def specimens_with_rows(self, table): ...
+    def specimens_with_crops(self, table, *, cls_name=None, cls_in=None): ...
+    def ruler_classifications(self, specimen_id): ...
+    def leaf_instances(self, specimen_id): ...
+    def specimen_cf(self, specimen_id): ...
+
+    # ---- ledgers --------------------------------------------------------- #
+    def mark_image_done(self, specimen_id, stage, *, no_work=False) -&gt; None:
+        # UPSERT image_status(state=&#x27;done&#x27;, no_work=?) ; n_done kept via SET n_done=n_done+1
+        # (single writer -&gt; race-free; no O(n) COUNT(*) on the write path).
+        ...
+    def mark_image_error(self, specimen_id, stage, msg) -&gt; None: ...
+    def mark_stage_running(self, stage, n_total) -&gt; None: ...
+    def mark_stage_done(self, stage) -&gt; None: ...
+    def mark_stage_error(self, stage, msg=None) -&gt; None: ...
+    def stage_state(self, stage) -&gt; str: ...            # &#x27;pending&#x27;|&#x27;running&#x27;|&#x27;done&#x27;|&#x27;error&#x27;
+    def reclaim_running(self) -&gt; None:                  # crash recovery at startup
+        # UPDATE project_status SET state=&#x27;pending&#x27; WHERE state=&#x27;running&#x27;
+        ...
+
+    # ---- settings-hash + restart cascade --------------------------------- #
+    def stage_settings_hash(self, stage) -&gt; str | None: ...
+    def set_stage_settings_hash(self, stage, h) -&gt; None: ...
+
+    def reset_stages(self, keys, stages_by_key) -&gt; None:
+        &quot;&quot;&quot;--restart: for each key, in ONE transaction:
+           1. DELETE the stage&#x27;s owns_tables rows (FK CASCADE cleans children),
+           2. NULL the duplicated specimen columns that stage owns
+              (cf/unit/selected_ruler_cf_id for ruler_cf; has_* for phenology; *_cm for grounding),
+           3. delete tracked artifact files (crop_path / report_manifest.path),
+           4. DELETE image_status + reset project_status to &#x27;pending&#x27;.
+           Dependents are already in `keys` (the caller passed the closure).&quot;&quot;&quot;
+        ...</code></pre></figure>
+</section>
+<section id="concurrency"><h2><span class="num">9</span>The concurrency engine</h2>
+
+<p>This is what turns "sequential stages" into "sequential stages that each pin every GPU at 100%." Persistent
+worker <b>processes</b> (spawn — own CUDA context, own ORT session, GIL-free, crash-isolated) <b>pull</b>
+<code>WorkItem</code>s from a bounded queue as they finish, so a slow 12k-pixel sheet never head-of-line-stalls
+the others and memory stays flat under backpressure. Worker count is sized by <b>probing one warm worker's real
+VRAM footprint</b> on a large image and dividing the free budget — not a static guess — with staggered warm-loads
+so peak VRAM ≈ steady state. The parent is the single writer, checkpointing each result atomically.</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/core/executor.py</span><span class="lang">python</span></figcaption><pre><code>&quot;&quot;&quot;leafmachine3.core.executor -- per-stage GPU/CPU saturation with per-image checkpointing.
+
+Model in one paragraph: stages are SEQUENTIAL (a hard barrier between them). WITHIN a
+stage, a pool of persistent WORKER PROCESSES (spawn: own CUDA context / own ORT session,
+GIL-free, crash-isolated) PULL WorkItems from a BOUNDED queue as they finish -- not
+pool.map, so a slow 12k-px sheet never head-of-line-stalls the others and memory stays
+flat via backpressure. Workers are PURE (build_model + infer, no DB). The PARENT is the
+SINGLE DB WRITER: as each result lands it runs stage.persist(...) AND mark_image_done in
+ONE transaction, so a kill leaves exactly the finished items marked done -&gt; clean resume.
+&quot;&quot;&quot;
+from __future__ import annotations
+
+import logging
+import multiprocessing as mp
+import os
+import queue
+import threading
+from dataclasses import dataclass
+
+log = logging.getLogger(&quot;leafmachine3.executor&quot;)
+_CTX = mp.get_context(&quot;spawn&quot;)
+_STOP = None                                 # sentinel: one per worker
+
+
+@dataclass(frozen=True)
+class Device:
+    kind: str                                # &quot;cuda&quot; | &quot;cpu&quot;
+    index: int = 0
+    @property
+    def torch_str(self): return &quot;cuda:0&quot; if self.kind == &quot;cuda&quot; else &quot;cpu&quot;   # pinned -&gt; always :0
+    def ort_providers(self):
+        return ([(&quot;CUDAExecutionProvider&quot;, {&quot;device_id&quot;: 0}), &quot;CPUExecutionProvider&quot;]
+                if self.kind == &quot;cuda&quot; else [&quot;CPUExecutionProvider&quot;])
+
+
+class DeviceManager:
+    &quot;&quot;&quot;Discover GPUs and size workers by PROBING one warm worker&#x27;s real footprint --
+    not a static guess -- then staggering the rest so peak VRAM ~= steady state.&quot;&quot;&quot;
+    def __init__(self, cfg, stage): self.cfg, self.stage = cfg, stage
+
+    def plan(self) -&gt; list[Device]:
+        hw = self.cfg.hardware.stage(self.stage.key)         # LM3_Setup&#x27;s tuned plan (None on first run)
+        if self.stage.device_kind == &quot;cpu&quot; or self.cfg.compute.devices == &quot;cpu&quot;:
+            return [Device(&quot;cpu&quot;)] * ((hw and hw.workers) or self.cfg.io_workers())
+        gpus = self.cfg.resolve_gpus()                       # &#x27;auto&#x27; -&gt; all visible ordinals
+        if hw and not self.cfg.force_reprobe:                # FAST PATH: reuse LM3_Setup&#x27;s cached optimum
+            return [Device(&quot;cuda&quot;, g)                        #   (workers_per_gpu / batch / queue) -- NO per-run probe
+                    for g in gpus for _ in range(hw.workers_per_gpu)]
+        per_worker = self.cfg.probe_vram_mb(self.stage)      # fallback: live-probe ONE warm worker on a big image
+        plan = []
+        for g in gpus:
+            free = free_vram_mb(g)                            # torch.cuda.mem_get_info / NVML, model-free
+            n = int((free * self.cfg.compute.vram.safety_fraction - self.cfg.compute.vram.reserve_mb)
+                    // per_worker)
+            plan += [Device(&quot;cuda&quot;, g)] * max(1, min(n, self.cfg.compute.vram.max_workers_per_gpu))
+        return plan or [Device(&quot;cpu&quot;)]
+
+    @staticmethod
+    def ensure_cuda_libpath():
+        &quot;&quot;&quot;onnxruntime-gpu SILENTLY runs on CPU if the venv&#x27;s bundled NVIDIA libs aren&#x27;t on
+        LD_LIBRARY_PATH at process start. The loader reads it at launch, so we set it in the
+        LAUNCH env (spawn children inherit) and re-exec once if it was missing.&quot;&quot;&quot;
+        ...
+
+
+def _worker(device, stage, task_q, result_q, load_gate):
+    &quot;&quot;&quot;Persistent worker: pin the GPU, warm-load ONCE (staggered behind load_gate so N
+    workers don&#x27;t warm-load simultaneously and OOM), then pull-and-infer until _STOP.&quot;&quot;&quot;
+    if device.kind == &quot;cuda&quot;:
+        os.environ[&quot;CUDA_VISIBLE_DEVICES&quot;] = str(device.index)   # BEFORE any torch/ort import
+    with load_gate:                                              # serialize first warm-load
+        model = stage.build_model(device)
+    while True:
+        item = task_q.get()
+        if item is _STOP:
+            break
+        try:
+            result_q.put((&quot;ok&quot;, item, stage.infer(item, model)))
+        except FatalDeviceError:                                 # CUDA OOM / wedged context
+            result_q.put((&quot;requeue&quot;, item, None)); break         # let parent respawn a replacement
+        except Exception as exc:                                 # recoverable per-image error
+            result_q.put((&quot;err&quot;, item, repr(exc)))               # isolation: pool keeps going
+
+
+class StageExecutor:
+    def __init__(self, cfg, stage): self.cfg, self.stage = cfg, stage
+
+    def run(self, project, items) -&gt; None:
+        DeviceManager.ensure_cuda_libpath()
+        done = project.db.done_ids(self.stage.key)               # snapshot BEFORE dispatch (race-free)
+        todo = [it for it in items if it.specimen_id not in done]
+
+        # no-work seeding: eligible specimens with NO WorkItem are marked done(no_work=1)
+        # so per-image depends_on gating downstream never stalls waiting on them.
+        have = {it.specimen_id for it in items}
+        for sid in project.db.eligible_specimens(self.stage.key, self.stage.depends_on):
+            if sid not in have and sid not in done:
+                project.db.mark_image_done(sid, self.stage.key, no_work=True)
+        if not todo:
+            return
+
+        devices = DeviceManager(self.cfg, self.stage).plan()
+        n = min(len(devices), len(todo))                          # don&#x27;t spawn 6 workers for 1 image
+        task_q, result_q = _CTX.Queue(maxsize=2 * n), _CTX.Queue(maxsize=4 * n)
+        gate = _CTX.Semaphore(1)                                  # stagger warm-loads
+        workers = [_CTX.Process(target=_worker, args=(devices[i], self.stage, task_q, result_q, gate),
+                                name=f&quot;{self.stage.key}-w{i}&quot;, daemon=True) for i in range(n)]
+        for w in workers: w.start()
+        feeder = threading.Thread(target=self._feed, args=(task_q, todo, n), daemon=True); feeder.start()
+
+        try:
+            self._collect(project, result_q, len(todo), workers, task_q)
+        finally:
+            self._shutdown(workers, task_q, result_q)             # sentinels -&gt; join -&gt; terminate stragglers
+
+    def _feed(self, task_q, todo, n):
+        for it in todo: task_q.put(it)                            # blocks at maxsize -&gt; backpressure
+        for _ in range(n): task_q.put(_STOP)
+
+    def _collect(self, project, result_q, expected, workers, task_q):
+        seen = 0
+        while seen &lt; expected:
+            try:
+                status, item, payload = result_q.get(timeout=120)
+            except queue.Empty:
+                if not any(w.is_alive() for w in workers):        # LIVENESS: dead pool, no hang
+                    log.error(&quot;all workers died with %d items outstanding&quot;, expected - seen)
+                    break
+                continue
+            seen += 1
+            with project.db.transaction():                        # SINGLE writer, ONE atomic checkpoint
+                if status == &quot;ok&quot;:
+                    self.stage.persist(project, item, payload)
+                    project.db.mark_image_done(item.specimen_id, self.stage.key)
+                elif status == &quot;err&quot;:
+                    project.db.mark_image_error(item.specimen_id, self.stage.key, payload)
+                else:                                             # &quot;requeue&quot;: worker hit a fatal device error
+                    task_q.put(item); self._respawn(workers)      # keep pool size; item retried
+                    seen -= 1
+            if self.cfg.fail_fast and status == &quot;err&quot;:
+                raise StageError(f&quot;{self.stage.key} failed on {item.specimen_id}: {payload}&quot;)
+
+    def _respawn(self, workers): ...     # start a replacement worker after a fatal device error
+    def _shutdown(self, workers, task_q, result_q):
+        for w in workers:
+            w.join(timeout=30)
+            if w.is_alive(): w.terminate()                        # no zombie GPU workers
+        task_q.cancel_join_thread(); result_q.cancel_join_thread()</code></pre></figure>
+
+<div class="call warn"><div class="t">▲ The onnxruntime silent-CPU trap</div>
+<p>GPU onnxruntime silently falls back to CPU (10× slower) if the venv's bundled CUDA libs aren't on
+<code>LD_LIBRARY_PATH</code> when the session is created. The loader reads that variable at <em>process start</em>,
+so LM3 sets it in the launch environment (spawn children inherit it) and re-execs once if it was missing — then
+asserts the CUDA EP actually bound unless <code>allow_cpu_fallback</code> is set.</p></div>
+
+</section>
+<section id="ingest"><h2><span class="num">10</span>Image ingestion &amp; the immutability contract</h2>
+
+<p>Originals are strictly read-only and never modified. If an image isn't exactly <code>.jpg</code> or exceeds the
+working-dimension cap, a converted copy (q≈100) is written to <code>_tmp</code> and <b>symlinked</b> into the
+working set; otherwise the original is symlinked unchanged. Downstream, every stage opens one path —
+<code>working_path</code> — and never branches on "modified vs. original." Ingestion is idempotent and resumable:
+a re-run skips originals whose size+mtime are unchanged and whose symlink still resolves.</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/core/ingest.py</span><span class="lang">python</span></figcaption><pre><code>&quot;&quot;&quot;leafmachine3.core.ingest -- image ingestion &amp; working-copy normalization.
+
+machine3() calls ImageIngestor right after the DB is built and BEFORE stage 1. It
+guarantees the immutability contract: originals are strictly READ-ONLY, and the
+pipeline only ever operates on a working-copy SYMLINK. Why symlink-to-tmp rather than
+copy-everything: the vast majority of herbarium inputs are already usable, so we
+symlink them in place and only materialize a real .jpg in _tmp for the small fraction
+that need conversion/downscale -- minimal disk, preserved provenance (the symlink
+target is exactly what the pipeline read), and ONE downstream code path.
+&quot;&quot;&quot;
+from __future__ import annotations
+
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+from PIL import Image
+
+log = logging.getLogger(__name__)
+JPEG_EXTS = {&quot;.jpg&quot;, &quot;.jpeg&quot;}
+SUPPORTED = JPEG_EXTS | {&quot;.png&quot;, &quot;.tif&quot;, &quot;.tiff&quot;, &quot;.bmp&quot;, &quot;.webp&quot;}
+
+
+class ImageIngestor:
+    def __init__(self, cfg, db):
+        self.cfg, self.db = cfg, db
+        self.max_dim = cfg.ingest.max_working_dim          # long-side cap for the working copy
+        self.q = cfg.ingest.jpg_quality                    # ~100
+
+    def run(self, restart: bool = False):
+        &quot;&quot;&quot;Scan inputs, normalize, register specimens. Idempotent + resumable: a re-run
+        skips originals whose (size, mtime) are unchanged and whose symlink still exists.&quot;&quot;&quot;
+        if restart:
+            self._clean_working_set(); self.db.clear_specimens()
+        originals = self._scan()                           # recurse; quarantine non-images to INVALID/
+        prior = self.db.ingest_signatures()                # {original_path: (size, mtime)}
+        with ThreadPoolExecutor(self.cfg.io_workers()) as pool:   # ingest is I/O-bound
+            futs = [pool.submit(self._one, p, prior.get(str(p))) for p in originals]
+            for f in as_completed(futs):
+                f.result()                                 # each _one upserts + checkpoints itself
+
+    def _one(self, original: Path, prior):
+        sig = (original.stat().st_size, original.stat().st_mtime)
+        if prior == sig and self._link_ok(original):
+            return                                         # unchanged -&gt; skip (resume)
+        try:
+            meta = self._probe(original)                   # verify() then read w/h/mode/format
+        except Exception:
+            self._quarantine(original, &quot;corrupt&quot;); return
+        if original.suffix.lower() not in JPEG_EXTS or max(meta.w, meta.h) &gt; self.max_dim:
+            src = self._normalize(original, meta)          # RGB jpg q~100 into _tmp, downscale to max_dim
+            work_w, work_h = self._probe(src).wh
+        else:
+            src, (work_w, work_h) = original, (meta.w, meta.h)
+        link = self._link_into_working_set(src, original.stem)   # symlink; hash-suffix on stem collision
+        self.db.upsert_specimen(SpecimenRecord(
+            image_name=original.name, image_stem=link.stem,
+            original_path=original, working_path=link,
+            width=work_w, height=work_h, original_width=meta.w, original_height=meta.h,
+            work_scale=max(work_w, work_h) / max(meta.w, meta.h),   # Reporter&#x27;s 1/work_scale upscaler
+            orig_size_bytes=sig[0], orig_mtime=sig[1], normalized=(src is not original)))
+
+    # _scan / _probe / _normalize / _link_into_working_set / _quarantine / _clean_working_set:
+    #   read-only originals; only _tmp copies + working-set symlinks are ever written; the
+    #   INVALID/ set gets a marker for non-image/corrupt files (never moves the original).
+    ...</code></pre></figure>
+</section>
+<section id="resume"><h2><span class="num">11</span>Resumability — how the surfaces cooperate</h2>
+
+<p>The YAML says <em>what</em> to do; <code>project_status</code> says <em>how far we got</em>. Together they make
+a run fully restartable at two grains:</p>
+<ul>
+<li><b>Whole-module skip.</b> <code>is_complete</code> is true only when a stage is <code>done</code> <em>and</em>
+its per-image ledger is drained. So a finished stage is skipped — but a batch of newly-ingested images (or images
+left in <code>error</code>) re-opens it automatically.</li>
+<li><b>Within-module resume.</b> The executor snapshots the done set before dispatch and processes only the
+remainder; each finished image is checkpointed atomically, so a <code>kill -9</code> mid-stage resumes exactly
+where it stopped. A crashed worker is detected by a liveness timeout rather than hanging the run, and stale
+<code>running</code> state is reclaimed to <code>pending</code> at startup.</li>
+<li><b>No-work seeding.</b> A sheet with no ruler has no work for the ruler stages; the executor marks those
+<code>image_status</code> rows <code>done (no_work=1)</code> so a downstream <code>depends_on</code> gate never
+stalls waiting on a checkpoint that would never arrive.</li>
+<li><b>Restart cascade.</b> <code>--restart&nbsp;ruler_cf</code> purges that stage's rows, nulls the specimen
+columns it owns, deletes its tracked crop/report files, resets the ledgers, <em>and</em> recurses into its
+dependents — so grounded areas can't keep an old CF.</li>
+<li><b>Config-drift guard.</b> A per-stage <code>settings_hash</code> forces a rerun when the resolved settings
+or the model file changed, so the DB never silently disagrees with the YAML.</li>
+</ul>
+
+</section>
+<section id="hardening"><h2><span class="num">12</span>Hardening decisions from adversarial review</h2>
+
+<p>This blueprint was produced by seven design agents and then attacked by four independent critics (consistency,
+concurrency, reconstruction, resumability). Every fix below is folded into the code above; they are the difference
+between "reads plausibly" and "actually runs correctly and resumes."</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Risk found</th><th>Decision baked in</th></tr></thead>
+<tbody>
+<tr><td>Four different stage-key vocabularies → ledger FK crash on image #1</td><td>One canonical <code>STAGE_KEYS</code> in <code>pipeline.py</code>; every layer imports it; keys stay distinct from SQL table names</td></tr>
+<tr><td>Workers sharing one SQLite connection / un-picklable stage on <code>spawn</code></td><td>Single-writer collector; workers are pure (no DB); <code>__getstate__</code> drops model/DB</td></tr>
+<tr><td>Non-atomic "write rows then mark done" → duplicate boxes on resume</td><td>Rows + <code>image_status</code> flip in one transaction; detections use delete-then-insert with a unique key</td></tr>
+<tr><td>A crashed worker hangs the collector forever</td><td>Liveness timeout + respawn; fatal device errors requeue the item</td></tr>
+<tr><td>Static VRAM guess → simultaneous startup OOM</td><td>Probe one warm worker on a large image, then size + stagger warm-loads</td></tr>
+<tr><td>Stage marked <code>done</code> despite errored / new images</td><td><code>done</code> only when the per-image ledger is drained; <code>fail_fast</code> honored</td></tr>
+<tr><td>Geometry in working coords rendered on the full-res original → misregistration</td><td>Store <code>original_width/height</code> + <code>work_scale</code>; Reporter upscales by <code>1/work_scale</code></td></tr>
+<tr><td>Holes/petioles not linked to their leaf → wrong "leaf" mask &amp; area</td><td><code>parent_instance_index</code> groups Hole/Petiole to the owning Leaf; masks subtract holes</td></tr>
+<tr><td>Which ruler produced the specimen CF was unrecoverable</td><td><code>specimen.selected_ruler_cf_id</code> + <code>ruler_cf.is_selected</code></td></tr>
+<tr><td><code>--restart</code> left stale rows / crops / CF behind; changed YAML silently ignored</td><td>Cascade purge (rows + columns + files + dependents); per-stage <code>settings_hash</code></td></tr>
+<tr><td>Sheets with no ruler/leaf stalled downstream <code>depends_on</code> gates</td><td>No-work seeding marks those images <code>done(no_work=1)</code></td></tr>
+</tbody></table></div>
+
+</section>
+<section id="deploy"><h2><span class="num">13</span>Packaging &amp; deployment — beating pip-install hell</h2>
+
+<p>The single biggest lever: <b>LM3 runs exported ONNX/OpenVINO models at inference, so the heavy training stack
+shrinks dramatically.</b> The runtime tree is a GPU-capable <code>onnxruntime</code> + <code>numpy</code> +
+<code>opencv-headless</code> + <code>pillow</code> + <code>fastapi</code>/<code>uvicorn</code> — small enough to
+bundle cleanly, which is what turns packaging from "impossible" (LM2's reputation) into a solved pattern.</p>
+<div class="call good"><div class="t">✓ GPU is the default at runtime — CPU is only the fallback</div>
+<p>Two questions get conflated. <b>(1) Runtime:</b> the pipeline defaults to <code>devices: auto</code>, which is
+<em>GPU-first</em> — it uses every visible NVIDIA GPU and drops to CPU <em>only</em> when no accelerator exists.
+The whole VRAM-saturation engine is GPU-centric, and a GPU that is present but whose EP fails to bind is a
+<em>hard error</em>, not a silent slow CPU run. So "everything is CPU by default" is never how you run it.
+<b>(2) Distribution:</b> the only real choice is which onnxruntime the installer ships — and the base install is
+GPU-capable, so an NVIDIA card is used automatically.</p></div>
+<p>Provider selection is GPU-first and automatic: NVIDIA <b>CUDA / TensorRT</b> whenever available, then a
+non-CUDA GPU path (<b>DirectML</b> on any Windows DX12 GPU, <b>CoreML</b> on Apple Silicon, <b>OpenVINO</b> on
+Intel), and CPU only as the backstop when no GPU is found:</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/inference/providers.py</span><span class="lang">python</span></figcaption><pre><code># leafmachine3/inference/providers.py -- GPU-FIRST auto-selection. NVIDIA CUDA (or
+# TensorRT) is chosen whenever its EP is genuinely available; a non-CUDA GPU path is
+# next; CPU is used ONLY when the machine has no usable accelerator. A GPU that is
+# PRESENT but whose EP fails to bind is a HARD error -- never a silent slow CPU run.
+import onnxruntime as ort
+
+AVAIL = set(ort.get_available_providers())     # what THIS onnxruntime build actually exposes
+
+def build_providers(cfg) -&gt; list:
+    ladder = []
+    # 1. NVIDIA first (the default): TensorRT &gt; CUDA when both are present.
+    if &quot;TensorrtExecutionProvider&quot; in AVAIL and cfg.compute.tensorrt:
+        ladder.append((&quot;TensorrtExecutionProvider&quot;, {&quot;device_id&quot;: 0}))
+    if &quot;CUDAExecutionProvider&quot; in AVAIL:
+        ladder.append((&quot;CUDAExecutionProvider&quot;, {&quot;device_id&quot;: 0}))
+    # 2. non-NVIDIA GPU paths -- still GPU, no CUDA install needed:
+    if &quot;DmlExecutionProvider&quot; in AVAIL:      ladder.append(&quot;DmlExecutionProvider&quot;)      # Win: any DX12 GPU
+    if &quot;CoreMLExecutionProvider&quot; in AVAIL:   ladder.append(&quot;CoreMLExecutionProvider&quot;)   # Apple GPU / ANE
+    if &quot;OpenVINOExecutionProvider&quot; in AVAIL: ladder.append(&quot;OpenVINOExecutionProvider&quot;) # Intel iGPU / NPU
+    # 3. CPU backstop -- reached only when NO accelerator EP is available.
+    ladder.append(&quot;CPUExecutionProvider&quot;)
+    return ladder
+
+def make_session(model_path, cfg) -&gt; ort.InferenceSession:
+    sess = ort.InferenceSession(str(model_path), providers=build_providers(cfg))
+    bound = sess.get_providers()[0]
+    log.info(&quot;ONNXRuntime bound EP: %s&quot;, bound)
+    # GPU hardware present but we bound CPU =&gt; misconfig (CUDA libs not on LD_LIBRARY_PATH,
+    # or the CPU-only onnxruntime got installed). Do NOT silently run slow -- fail loud.
+    # A machine with genuinely no GPU falls through to CPU without error.
+    if nvidia_gpu_present() and bound == &quot;CPUExecutionProvider&quot; and not cfg.compute.allow_cpu_fallback:
+        raise RuntimeError(
+            &quot;NVIDIA GPU detected but ONNXRuntime bound the CPU provider. Install onnxruntime-gpu &quot;
+            &quot;and put the CUDA libs on LD_LIBRARY_PATH (loader reads it at process start), or set &quot;
+            &quot;compute.allow_cpu_fallback: true to run on CPU anyway.&quot;)
+    return sess
+
+# nvidia_gpu_present() probes the HARDWARE (pynvml / nvidia-smi), independent of which
+# onnxruntime build is installed -- so a missing GPU runtime is caught as a config error.</code></pre></figure>
+<h3 id="server">Server mode + the Electron sidecar</h3>
+
+<p><code>lm3 serve</code> is a thin FastAPI shell over the same <code>machine3()</code> pipeline — one project DB
+per job, so it inherits resume for free. It runs one heavy job at a time and lets each stage's internal queue
+saturate the hardware, exactly as the CLI does; HTTP concurrency is only for status/SSE reads.</p>
+
+<figure class="code" data-lang="python"><figcaption><span class="fn">leafmachine3/server/app.py</span><span class="lang">python</span></figcaption><pre><code># leafmachine3/server/app.py -- optional local server (lm3 serve). A thin FastAPI shell
+# over the SAME machine3() pipeline, so it inherits resume for free (one project DB / job).
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, UploadFile
+from fastapi.concurrency import run_in_threadpool
+import asyncio
+
+jobs_q: asyncio.Queue = asyncio.Queue(maxsize=64)      # bounded FIFO of job ids
+
+@asynccontextmanager                                   # modern lifespan (not @app.on_event)
+async def lifespan(app):
+    worker = asyncio.create_task(_worker()); yield; worker.cancel()
+
+app = FastAPI(title=&quot;LeafMachine3&quot;, lifespan=lifespan)
+
+@app.post(&quot;/v1/jobs&quot;)                                  # multipart image(s) or {&quot;input_dir&quot;: ...}
+async def create_job(files: list[UploadFile] | None = None):
+    job = jobs.create(files)                            # stage inputs -&gt; job dir; write LM3_settings.yaml
+    await jobs_q.put(job.id); return {&quot;job_id&quot;: job.id}
+
+async def _worker():
+    while True:
+        job = jobs.get(await jobs_q.get())
+        # machine3() is blocking and saturates the hardware itself -&gt; run ONE job at a time,
+        # off the event loop, so /events keeps streaming progress from the project DB.
+        await run_in_threadpool(machine3, job.cfg_path)
+        jobs.mark_done(job.id)
+
+@app.get(&quot;/v1/jobs/{jid}&quot;)                              # {status, stage, images_done/total, cf_px_per_cm}
+async def status(jid): return jobs.status(jid)          # reads project_status + image_status
+@app.get(&quot;/v1/jobs/{jid}/events&quot;)                       # SSE: tail the per-image ledger
+async def events(jid): return sse(tail_progress(jobs.db_path(jid)))
+@app.get(&quot;/v1/jobs/{jid}/results&quot;)                      # detections, CF, mask refs, grounded areas
+async def results(jid): return jobs.results(jid)
+@app.get(&quot;/healthz&quot;)                                    # {status, version, bound_provider}
+async def healthz(): return {&quot;status&quot;: &quot;ok&quot;, &quot;provider&quot;: current_ep()}
+
+# ---- LM3_Setup (rerunnable from the GUI&#x27;s &quot;Hardware Setup&quot; panel) ----
+@app.post(&quot;/v1/setup&quot;)                                  # (re)run the machine profiler; streams sweep progress
+async def setup(optimize: bool = True, force: bool = False):
+    job = jobs.create_setup()
+    asyncio.create_task(run_in_threadpool(run_setup, load_cfg(), optimize=optimize,
+                                          force=force, on_progress=job.emit))
+    return {&quot;job_id&quot;: job.id}                            # GET /v1/setup/events for the live dry-run sweep
+@app.get(&quot;/v1/hardware&quot;)                                # the current hardware_settings.yaml as JSON for the panel
+async def hardware(): return read_hardware_settings()
+
+# lm3 serve == uvicorn.run(app, host=&quot;127.0.0.1&quot;, port=PORT). Bind loopback, random port,
+# require a Bearer shared secret so no other local process can drive the pipeline.</code></pre></figure>
+
+<p>The desktop app is Electron (or Tauri) owning the UI and <b>spawning that Python server as a bundled child
+process</b>, talking to it over loopback HTTP + SSE. The renderer is just a web client; on a crash the main
+process restarts the sidecar and the job resumes from its SQLite DB.</p>
+
+<figure class="code" data-lang="javascript"><figcaption><span class="fn">main/sidecar.js</span><span class="lang">javascript</span></figcaption><pre><code>// main/sidecar.js  (Electron main process) -- the SIDECAR pattern: Electron owns the UI
+// and spawns the bundled Python LM3 server as a child, talking to it over 127.0.0.1 HTTP+SSE.
+// The renderer never touches Python; it is just a web client of the local server.
+const { spawn } = require(&#x27;child_process&#x27;);
+
+async function startSidecar() {
+  const port  = await getFreePort();
+  const token = crypto.randomBytes(24).toString(&#x27;hex&#x27;);
+  const bin   = sidecarPath();                    // -&gt; resources/pyenv/bin/python  OR  a frozen exe
+
+  const py = spawn(bin, [&#x27;-m&#x27;, &#x27;leafmachine3.server&#x27;, &#x27;--host&#x27;, &#x27;127.0.0.1&#x27;, &#x27;--port&#x27;, String(port)], {
+    env: { ...process.env, LM3_TOKEN: token,
+           // CRITICAL: the sidecar&#x27;s bundled onnxruntime/CUDA libs must be on the search path,
+           // or GPU onnxruntime silently falls back to CPU.
+           LD_LIBRARY_PATH: libDir(), PATH: `${libDir()}${path.delimiter}${process.env.PATH}` } });
+
+  await waitForHealthz(`http://127.0.0.1:${port}/healthz`, { timeoutMs: 30000 });
+  app.on(&#x27;will-quit&#x27;, () =&gt; py.kill());            // never orphan the server
+  return { base: `http://127.0.0.1:${port}`, token };
+}
+// Renderer: fetch POST /v1/jobs, then an EventSource on /events drives a per-stage progress
+// bar (Archival -&gt; Plant -&gt; ... -&gt; Reporter) + an &quot;N / total&quot; counter; results view lazy-loads
+// overlays. On a crash the main process restarts the sidecar and the job RESUMES from its DB.
+//
+// A &quot;Hardware Setup&quot; panel shows GET /v1/hardware (detected GPUs / VRAM / tmp / tuned plan) and a
+// &quot;Re-run optimization&quot; button -&gt; POST /v1/setup, streaming the dry-run sweep over /v1/setup/events.
+// The installer&#x27;s post-install step (or first launch) fires setup once so the app is tuned on day one.
+// (Tauri v2 uses the identical sidecar API at a fraction of the installer size -- swap-in later.)</code></pre></figure>
+<h3 id="recommend">The recommendation</h3>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Strategy</th><th>GPU story</th><th>Non-technical friendliness</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td>PyInstaller / Nuitka freeze</td><td>✗ fragile (hand-shipping CUDA DLLs → silent CPU fallback)</td><td>good (single artifact)</td><td>CPU-tier fallback only</td></tr>
+<tr><td>micromamba / <code>constructor</code> env</td><td>✓ conda-forge resolves CUDA cleanly</td><td>good (signed per-OS installer)</td><td><span class="tag">primary sidecar</span></td></tr>
+<tr><td>Docker / OCI + launcher</td><td>✓ nvidia-container-toolkit (Linux)</td><td>✗ Docker Desktop is a dealbreaker</td><td>lab-server / IT only</td></tr>
+<tr><td>GPU-first base + optional CPU/TensorRT packs</td><td>✓ NVIDIA GPU by default (CUDA on Linux · DirectML on Win)</td><td>✓ double-click; GPU auto-used</td><td><span class="tag">overall pick</span></td></tr>
+</tbody></table></div>
+<div class="call key"><div class="t">◆ Recommended path — GPU-first, platform-aware base install</div>
+<p><b>An Electron (or Tauri) desktop app bundling a Python sidecar built as a relocatable conda-forge environment
+via <code>constructor</code> + <code>micromamba</code>, GPU-capable by default.</b> Runtime behavior is GPU-first
+with automatic CPU fallback everywhere; the base install ships a GPU runtime so an NVIDIA card is used out of the
+box:</p>
+<ul>
+<li><b>Linux</b> (your lab box) — bundle <b>onnxruntime-gpu + CUDA + cuDNN</b> via conda-forge, so every NVIDIA
+GPU runs on GPU by default. Heavier (~2–3&nbsp;GB CUDA) but it is the <em>only</em> GPU path on Linux and exactly
+how you run the multi-GPU pipeline. An optional <b>lean CPU-only</b> build covers headless / no-GPU boxes.</li>
+<li><b>Windows</b> — bundle the <b>DirectML</b> EP: NVIDIA (and AMD/Intel) GPUs accelerate with <em>zero CUDA
+install</em>, small download. Optional <b>CUDA/TensorRT max-throughput pack</b> for NVIDIA power users who want
+the last bit of speed.</li>
+<li><b>macOS</b> — bundle <b>CoreML</b> (Apple GPU / Neural Engine); no NVIDIA or CUDA exists on modern Macs.</li>
+</ul>
+<p><b>Why conda-forge / <code>constructor</code>:</b> it resolves onnxruntime + CUDA + cuDNN + opencv as ordinary
+packages (no hand-assembled DLL sets → no silent-CPU trap) and emits signable per-OS installers that drop straight
+into the Electron <code>resources/pyenv/</code>. CPU is the automatic fallback, never the intended default.
+Docker ships too, for lab servers / IT.</p></div>
+<p><b>Cross-platform + trust:</b> Authenticode/EV signing on Windows to dodge SmartScreen; a Developer-ID signed
+<em>and notarized</em> build on macOS (a loose pip tree of unsigned <code>.so</code>s fails notarization — another
+reason to control the env via <code>constructor</code>); an AppImage plus the Docker image on Linux. Auto-update
+via <code>electron-updater</code>, with the base app and the optional CUDA/TensorRT pack on <em>separate</em>
+channels so a routine app update never drags CUDA behind it. The project DB records the pipeline + model version
+that produced it — reproducibility for a science audience.</p>
+
+</section>
+<section id="roadmap"><h2><span class="num">14</span>Roadmap — from this plan to a running repo</h2>
+
+<ol>
+<li><b>Scaffold the package</b> — <code>leafmachine3/</code> with the layout above; port the four
+<code>inference/</code> wrappers verbatim from the training repo.</li>
+<li><b>Core spine first</b> — <code>config.py</code>, <code>db.py</code> + <code>schema.sql</code>,
+<code>stage.py</code>, <code>executor.py</code>, <code>ingest.py</code>. Get a one-stage pipeline
+(ArchivalDetector) running end-to-end with real checkpointing before adding stages.</li>
+<li><b>LM3_Setup</b> — the machine profiler + <code>hardware_settings.yaml</code>; start with the quick heuristic
+profile, then add the dry-run sweep. Every later step reads its tuned worker/batch/tmp values instead of guessing.</li>
+<li><b>Fill in stages 2→8</b> one at a time; each is "implement three methods + one <code>STAGE_ORDER</code>
+line." Verify resume and <code>--restart</code> after each.</li>
+<li><b>Golden-run tests</b> — a tiny fixture project asserting: kill-and-resume produces identical rows; a changed
+conf triggers a config-drift rerun; a 0-ruler and a 2-ruler sheet ground correctly.</li>
+<li><b>Server + desktop</b> — <code>lm3 serve</code>, then the Electron sidecar and the <code>constructor</code>
+CPU bundle; add the GPU Pack channel last.</li>
+</ol>
+<p>The payoff of running exported models instead of the training stack is one uniform pipeline, portable
+artifacts, and layered acceleration — a tool a biologist can actually install.</p>
+
+</section>
+
+<footer>
+LeafMachine3 architecture &amp; build plan · symbolic design, reconciled from a multi-agent design + adversarial-review workflow.
+Class taxonomies and inference interfaces verified against the /datac/Labelbox_Dump training repo. Code shown is
+symbolic (real signatures &amp; control flow; bodies elided) — a blueprint, not a finished implementation.
+</footer>
+
+</main></div>
+<script>
+function tt(){var r=document.documentElement;var c=r.getAttribute('data-theme');
+var n=c==='dark'?'light':(c==='light'?'dark':(matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark'));
+r.setAttribute('data-theme',n);}
+</script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+# ============================================================================
+# LM3_settings.yaml  --  LeafMachine3's single user control surface (INTENT).
+# Paths may be absolute or relative to project.output.dir. Machine-derived perf
+# settings live in hardware_settings.yaml (written by LM3_Setup); per-crop RESULTS
+# live in the per-project SQLite DB. Precedence: defaults < hardware_settings.yaml
+# < THIS file (explicit, non-"auto") < CLI.
+# ============================================================================
+version: 3
+
+project:
+  run_name: "demo"
+  input:
+    dirs: ["examples/images"]           # folder(s) of ORIGINAL images
+    recursive: true
+    image_extensions: [".jpg", ".jpeg", ".png", ".tif", ".tiff"]
+  output:
+    dir: "runs"                         # <dir>/<run_name>/ holds db, crops, reports, logs
+    tmp_dir: "auto"                     # 'auto' -> hardware_settings.tmp_dir else <run>/_tmp
+    keep_tmp: false
+  run_mode:
+    overwrite: false
+    restart: []                         # [] resume | "all" | ["leaf_segmenter", ...]
+    fail_fast: false
+  logging: { level: "INFO", to_file: true, to_console: true }
+
+compute:
+  devices: "auto"                       # GPU-first: every visible NVIDIA GPU; CPU only if none | [0,1] | "cpu"
+  tensorrt: false
+  mock: false                           # true = deterministic synthetic models (no weights/GPU) for testing
+  vram: { safety_fraction: 0.90, reserve_mb: 1024, per_worker_mb: "auto", max_workers_per_gpu: 6 }
+  workers: { default: "auto", ruler_cf: 8 }
+  onnxruntime: { providers: "auto", ld_library_path: "auto", allow_cpu_fallback: false }
+  precision: "fp16"
+
+ingest:
+  max_working_dim: 3200                 # long-side cap; larger originals get a resized _tmp jpg
+  jpg_quality: 100
+
+modules:
+
+  archival_detector:
+    enabled: true
+    model: { path: "models/archival_detector/model.onnx", format: "onnx" }
+    imgsz: 1280
+    conf: 0.25
+    iou: 0.60
+    max_det: 300
+    min_box_area: 256
+    classes: [Ruler, Barcode, Colorcard, Label, Map, Envelope, Photo, Attached_Item, Weights]
+
+  plant_detector:
+    enabled: true
+    model: { path: "models/plant_detector/model.onnx", format: "onnx" }
+    imgsz: 1280
+    conf: 0.30
+    iou: 0.55
+    max_det: 500
+    min_box_area: 400
+    classes: [Leaf_WHOLE, Leaf_PARTIAL, Seed_Fruit_ONE, Seed_Fruit_MANY,
+              Flower_ONE, Flower_MANY, Bud, Roots, Wood]
+
+  phenology_detector:
+    enabled: true
+    targets:
+      leaves:  { min_conf: 0.35, min_count: 1 }
+      flowers: { min_conf: 0.40, min_count: 1 }
+      fruits:  { min_conf: 0.40, min_count: 1 }
+
+  ruler_classifier:
+    enabled: true
+    models_dir: "models/ruler_classifier"    # dir holding the ONNX ensemble members
+    ensemble_members: [yolo26x_cls_224, yolo26n_cls_224, dinov2_frozen_mlp]
+    min_conf: 0.35
+
+  ruler_cf:
+    enabled: false                      # NOT YET IMPLEMENTED (tick-spacing math not ported) -- stub stage
+    tick: { min_units: 3 }
+    agree_tol: 0.05
+    second_unit: { enabled: true, cross_tol: 0.03 }
+    cf_policy: "max_quality"
+    on_failure: "null_cf"
+
+  leaf_segmenter:
+    enabled: true
+    model: { path: "models/leaf_segmenter/model.pt", format: "pytorch" }   # exported .onnx when available
+    include_partial: false
+    imgsz: 1024
+    conf: 0.30
+    iou: 0.50
+    retina_masks: true
+    max_det: 50
+    mask_storage: { format: "polygon_xy", min_area_px: 64 }   # polygon_xy (no extra deps) | coco_rle
+
+  metric_grounding:
+    enabled: true                       # runs, but no-ops until ruler_cf provides a CF
+    missing_cf_policy: "skip"
+    round_ndigits: 4
+
+  reporter:
+    enabled: true
+
+report:
+  # ---- Summary_Image overlay -------------------------------------------------
+  # ALL overlay colors AND per-part display flags live here so users can fully
+  # restyle the overlay without touching code. Colors are [R, G, B] (0-255); the
+  # defaults below are the LeafMachine2 palette. `show: false` hides that class.
+  overlay:
+    enabled: true
+    # global part toggles
+    draw_boxes_archival: true       # draw ArchivalDetector boxes (Ruler, Label, ...)
+    draw_boxes_plant: true          # draw PlantDetector boxes (Leaf_WHOLE, Flower, ...)
+    draw_masks: true                # draw LeafSegmenter instance masks (Leaf/Petiole/Hole)
+    draw_labels: true               # draw the class-name text on each box/mask
+    draw_confidence: true           # append the confidence score to the label
+    draw_cf_banner: true            # print the derived CF (px/cm) banner on the sheet
+    # global style
+    alpha: 0.45                     # mask/box fill transparency, 0 (clear) .. 1 (opaque)
+    line_width_archival: 3          # box outline width for archival detections
+    line_width_plant: 3             # box outline width for plant detections
+    line_width_mask: 2              # mask outline width
+    font_scale: 1.0                 # label text size multiplier
+    label_text_color: [255, 255, 255]
+    cf_banner_color: [255, 255, 255]
+    # per-class color [R,G,B] + visibility. Defaults = LeafMachine2 palette.
+    classes:
+      archival:
+        Ruler:         { color: [255, 0, 70],    show: true }
+        Barcode:       { color: [0, 137, 65],    show: true }
+        Colorcard:     { color: [242, 255, 0],   show: true }
+        Label:         { color: [0, 0, 255],     show: true }
+        Map:           { color: [0, 251, 255],   show: true }
+        Envelope:      { color: [163, 0, 89],    show: true }
+        Photo:         { color: [255, 205, 220], show: true }
+        Attached_Item: { color: [255, 172, 40],  show: true }
+        Weights:       { color: [140, 140, 140], show: true }
+      plant:
+        Leaf_WHOLE:      { color: [0, 255, 55],   show: true }
+        Leaf_PARTIAL:    { color: [0, 255, 250],  show: true }
+        Leaflet:         { color: [255, 203, 0],  show: true }
+        Seed_Fruit_ONE:  { color: [252, 255, 0],  show: true }
+        Seed_Fruit_MANY: { color: [0, 0, 80],     show: true }
+        Flower_ONE:      { color: [255, 52, 255],  show: true }
+        Flower_MANY:     { color: [154, 0, 255],  show: true }
+        Bud:             { color: [255, 0, 9],    show: true }
+        Specimen:        { color: [0, 0, 0],      show: true }
+        Roots:           { color: [255, 134, 0],  show: true }
+        Wood:            { color: [144, 22, 22],  show: true }
+      segmentation:
+        Leaf:    { color: [46, 255, 0],   show: true }
+        Petiole: { color: [255, 0, 150],  show: true }
+        Hole:    { color: [200, 0, 255],  show: true }
+  # ---- other exports ---------------------------------------------------------
+  export_binary_masks: true         # one binary PNG per leaf (holes subtracted)
+  export_rgb_on_black: true         # leaf pixels on a black canvas
+  export_rgb_on_white: false        # leaf pixels on a white canvas
+  export_masked_subsets: false      # per-instance masked subset crops
+  derived_dataset: { enabled: false, task: "yolo_seg", split: { train: 0.8, val: 0.2 } }
+  formats: { image_ext: "jpg", jpg_quality: 100, mask_ext: "png" }

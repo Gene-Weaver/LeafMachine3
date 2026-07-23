@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leafmachine3"
+version = "0.1.0"
+description = "LeafMachine3 — herbarium specimen image analysis pipeline (runtime)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "William Weaver", email = "willwe@umich.edu" }]
+keywords = ["herbarium", "computer-vision", "segmentation", "phenology", "botany"]
+
+# Runtime is EXPORTED models only — no torch/CUDA training stack required for CPU/DirectML/CoreML.
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "pillow>=10.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# GPU-first onnxruntime for NVIDIA boxes; swap for onnxruntime (CPU) / -directml / -openvino per platform.
+gpu = ["onnxruntime-gpu>=1.18", "pynvml>=11.5"]
+cpu = ["onnxruntime>=1.18"]
+# Ultralytics AutoBackend drives the YOLO26 detector/segmenter exports (.onnx and .pt).
+yolo = ["ultralytics>=8.3"]
+server = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9", "sse-starlette>=2.0"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+machine3 = "leafmachine3.machine3:main"
+lm3-setup = "leafmachine3.setup.hardware_setup:main"
+
+[project.urls]
+Homepage = "https://github.com/Gene-Weaver/LeafMachine3"
+
+[tool.setuptools.packages.find]
+include = ["leafmachine3*"]
+
+[tool.setuptools.package-data]
+leafmachine3 = ["core/schema.sql"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

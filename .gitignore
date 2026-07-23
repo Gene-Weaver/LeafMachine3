@@ -1,0 +1,45 @@
+# ---- LeafMachine3 ----
+# Trained model artifacts are NOT committed (shipped separately / linked in).
+models/**/*.onnx
+models/**/*.pt
+models/**/*.torchscript
+models/**/*_openvino_model/
+models/**/*.mlpackage
+models/ruler_classifier
+
+# machine-derived + run outputs
+hardware_settings.yaml
+/runs/
+/output/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+_tmp/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- OS / editor ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# example / test data + generated demo artifacts (not committed)
+examples/images/
+examples/images_subset/
+examples/demo_*.yaml
+examples/_overlay_smoke.jpg
