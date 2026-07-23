@@ -10,7 +10,8 @@ Two rotated-bbox methods are available via ``polygon_morphology(..., method=...)
   1-degree steps until the axis-aligned bounding box's long side matches the diameter of the
   minimum enclosing circle, then report the rotation angle, long/short sides and 4 corners.
 * ``"minarearect"`` — OpenCV ``cv2.minAreaRect``: the true minimum-AREA rotated rectangle in
-  one call (cleaner / tighter, but numbers won't match LM2).
+  one call. Geometrically tighter, but in practice the cv2 method does not perform as well as
+  ``"lm2"`` for leaf length/width, so ``"lm2"`` is the default/preferred method.
 
 Elliptic Fourier descriptors are not ported yet — the module is structured so an ``efds``
 field can be added later.
