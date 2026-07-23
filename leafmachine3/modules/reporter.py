@@ -2,21 +2,21 @@
 
 The Reporter never re-runs inference. It reconstructs every requested view on demand from
 the per-project database and the images. Each output is a folder (named exactly as below)
-and can be toggled independently in ``report`` of ``LM3_settings.yaml``:
+and can be toggled independently in ``report`` of ``LM3_settings.yaml``. The layout mirrors
+``Crops`` — a category folder with per-output subfolders::
 
-* ``Overlay``                        — Summary_Image: boxes + masks + CF banner (``report.overlay``)
-* ``Binary_Masks_Full_Image__<Cls>`` — one binary PNG per specimen, all masks in the FULL image frame
-* ``Binary_Masks__<Cls>``            — one binary PNG per leaf CROP (crop frame)
-* ``RGB_Masks_Full_Image__<Cls>``    — one image per specimen, RGB pixels under the masks (flat bg)
-* ``RGB_Masks__<Cls>``               — one image per leaf CROP, RGB pixels under the mask (flat bg)
-* ``Crops/RGB__<Cls>``               — the raw RGB bounding-box crops, one folder per class, from
-                                       BOTH detectors (``report.crops``; ``classes: all`` or a list)
+    Overlay/<stem>__Overlay.<ext>
+    Crops/RGB__<friendly>/<stem>__BBOX-<friendly>__x_y_x_y.<ext>
+    Binary_Masks/Binary_Masks_Full_Image__<Cls>/<stem>__MaskFull-<friendly>.<ext>
+    Binary_Masks/Binary_Masks__<Cls>/<stem>__SEG-<friendly>__x_y_x_y.<ext>
+    RGB_Masks/RGB_Masks_Full_Image__<Cls>/<stem>__MaskFull-<friendly>.<ext>
+    RGB_Masks/RGB_Masks__<Cls>/<stem>__SEG-<friendly>__x_y_x_y.<ext>
 
 ``<Cls>`` (masks) is each segmentation class in ``report.masks.classes`` (default ``Leaf``);
-crop folders use the friendly class name. Per-crop / crop files are named
-``<stem>__<PREFIX>-<friendly>__x1_y1_x2_y2.<ext>`` so they can be reinserted into the parent
-by filename. Full-image mask outputs render on the immutable original (geometry scaled by
-``1/work_scale``); per-crop outputs use the working-copy pixels the crop was cut from.
+``Crops`` covers both detectors (``report.crops``; ``classes: all`` or a list). Files are named
+so they can be reinserted into the parent by filename. Full-image mask outputs render on the
+immutable original (geometry scaled by ``1/work_scale``); per-crop outputs use the working-copy
+pixels the crop was cut from.
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ class Reporter(PipelineStage):
             summary = build_summary_image(
                 read(b.original_path), b.detections, b.leaves, b.cf_px_per_cm, style, b.work_scale
             )
-            path = reports / "Overlay" / f"{stem}.{img_ext}"
+            path = reports / "Overlay" / f"{stem}__Overlay.{img_ext}"
             save_image(summary, path, quality=quality)
             written.append((str(path), "Overlay"))
 
@@ -128,24 +128,29 @@ class Reporter(PipelineStage):
 
         for cls in classes:
             holes_wanted = subtract_holes and cls == _LEAF
-            label = crop_label(self.cfg, "seg", cls)           # e.g. SEG-leaf
+            seg_label = crop_label(self.cfg, "seg", cls)         # SEG-leaf   (per-crop files)
+            full_label = crop_label(self.cfg, "mask_full", cls)   # MaskFull-leaf (full-image files)
 
             # -- FULL-IMAGE (one file per specimen, original frame) --------
+            #    reports/{Binary,RGB}_Masks/<Binary,RGB>_Masks_Full_Image__<Cls>/<stem>__MaskFull-<friendly>.<ext>
             if need_full and original is not None:
                 fg = [scale_polygon(p, scale) for (_d, cn, p) in parsed if cn == cls]
                 holes = [scale_polygon(p, scale) for (_d, cn, p) in parsed if cn == _HOLE] if holes_wanted else []
                 if fg:
                     binary = _binary(original.shape, fg, holes)
                     if enabled["Binary_Masks_Full_Image"]:
-                        p = reports / f"Binary_Masks_Full_Image__{cls}" / f"{stem}.{mask_ext}"
+                        sub = f"Binary_Masks_Full_Image__{cls}"
+                        p = reports / "Binary_Masks" / sub / f"{stem}__{full_label}.{mask_ext}"
                         save_image((binary.astype(np.uint8) * 255), p)
-                        written.append((str(p), f"Binary_Masks_Full_Image__{cls}"))
+                        written.append((str(p), f"Binary_Masks/{sub}"))
                     if enabled["RGB_Masks_Full_Image"]:
-                        p = reports / f"RGB_Masks_Full_Image__{cls}" / f"{stem}.{img_ext}"
+                        sub = f"RGB_Masks_Full_Image__{cls}"
+                        p = reports / "RGB_Masks" / sub / f"{stem}__{full_label}.{img_ext}"
                         save_image(composite(original, binary, bg=bg), p, quality=quality)
-                        written.append((str(p), f"RGB_Masks_Full_Image__{cls}"))
+                        written.append((str(p), f"RGB_Masks/{sub}"))
 
             # -- PER-CROP (one file per leaf detection crop, crop frame) ----
+            #    reports/{Binary,RGB}_Masks/<Binary,RGB>_Masks__<Cls>/<stem>__SEG-<friendly>__x_y_x_y.<ext>
             if need_crop:
                 by_det = _group_by_detection(parsed, cls, holes_wanted)
                 for did, grp in by_det.items():
@@ -158,19 +163,21 @@ class Reporter(PipelineStage):
                     holes = [offset_polygon(p, -x1, -y1) for p in grp["holes"]] if holes_wanted else []
                     binary = _binary((ch, cw), fg, holes)
                     if enabled["Binary_Masks"]:
-                        name = crop_filename(stem, label, (x1, y1, x2, y2), mask_ext)
-                        p = reports / f"Binary_Masks__{cls}" / name
+                        sub = f"Binary_Masks__{cls}"
+                        name = crop_filename(stem, seg_label, (x1, y1, x2, y2), mask_ext)
+                        p = reports / "Binary_Masks" / sub / name
                         save_image((binary.astype(np.uint8) * 255), p)
-                        written.append((str(p), f"Binary_Masks__{cls}"))
+                        written.append((str(p), f"Binary_Masks/{sub}"))
                     if enabled["RGB_Masks"] and working is not None:
                         crop = working[max(0, y1):y2, max(0, x1):x2]
                         mh, mw = crop.shape[:2]
                         if mh and mw:
                             comp = composite(crop, binary[:mh, :mw], bg=bg)
-                            name = crop_filename(stem, label, (x1, y1, x2, y2), img_ext)
-                            p = reports / f"RGB_Masks__{cls}" / name
+                            sub = f"RGB_Masks__{cls}"
+                            name = crop_filename(stem, seg_label, (x1, y1, x2, y2), img_ext)
+                            p = reports / "RGB_Masks" / sub / name
                             save_image(comp, p, quality=quality)
-                            written.append((str(p), f"RGB_Masks__{cls}"))
+                            written.append((str(p), f"RGB_Masks/{sub}"))
         return written
 
     # ---- raw RGB crop exports (both detectors) --------------------------- #

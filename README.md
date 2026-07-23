@@ -49,19 +49,25 @@ weights or GPU) — used by the test suite to exercise ingest → detect → seg
 Every output is a folder under `<run>/reports/`, each toggleable in `report` of
 `LM3_settings.yaml`:
 
-| Folder | What |
-|---|---|
-| `Overlay/` | Summary_Image: boxes + masks + CF banner (colors/flags in `report.overlay`) |
-| `Binary_Masks_Full_Image__Leaf/` | one binary PNG per specimen (full-image frame) |
-| `Binary_Masks__Leaf/` | one binary PNG per leaf crop (crop frame) |
-| `RGB_Masks_Full_Image__Leaf/` | RGB pixels under the masks, per specimen |
-| `RGB_Masks__Leaf/` | RGB pixels under the mask, per leaf crop |
-| `Crops/RGB__<class>/` | raw RGB bbox crops, one folder per class, from both detectors |
+Each category is a folder with per-output subfolders (harmonized with `Crops/`):
 
-Crops and masks are named so they can be reinserted into the parent by filename:
-`<stem>__<PREFIX>-<friendly>__x1_y1_x2_y2.<ext>`, where `PREFIX` is `BBOX` (detection box) or
-`SEG` (segmentation mask). Class → friendly-name mapping (e.g. `Leaf_WHOLE → leaf`,
-`Leaf_PARTIAL → leafReject`) lives in `naming.friendly_names` — edit freely.
+```
+reports/
+  Overlay/                       <stem>__Overlay.jpg
+  Crops/RGB__<friendly>/         <stem>__BBOX-<friendly>__x_y_x_y.jpg   (both detectors)
+  Binary_Masks/
+    Binary_Masks_Full_Image__Leaf/  <stem>__MaskFull-leaf.png          (per specimen)
+    Binary_Masks__Leaf/             <stem>__SEG-leaf__x_y_x_y.png       (per leaf crop)
+  RGB_Masks/
+    RGB_Masks_Full_Image__Leaf/     <stem>__MaskFull-leaf.jpg           (per specimen)
+    RGB_Masks__Leaf/                <stem>__SEG-leaf__x_y_x_y.jpg       (per leaf crop)
+```
+
+Files are named so they can be reinserted into the parent by filename:
+`<stem>__<PREFIX>-<friendly>__x_y_x_y.<ext>`, where `PREFIX` is `BBOX` (detection box),
+`SEG` (per-crop mask), or `MaskFull` (full-image mask, no coords). Class → friendly-name
+mapping (e.g. `Leaf_WHOLE → leaf`, `Leaf_PARTIAL → leafReject`) and the prefixes live in
+`naming` — edit freely. Every output folder toggles independently in `report`.
 
 ## Layout
 

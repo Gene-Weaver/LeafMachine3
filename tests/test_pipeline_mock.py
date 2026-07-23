@@ -65,20 +65,22 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     finally:
         conn.close()
 
-    # Reporter wrote an overlay JPEG per specimen (folder is named exactly "Overlay")
+    # Reporter wrote one overlay per specimen, files carry the __Overlay suffix
     reports = project.dirs.reports
-    overlays = sorted((reports / "Overlay").glob("*.jpg"))
+    overlays = sorted((reports / "Overlay").glob("*__Overlay.jpg"))
     assert len(overlays) == 2
     assert all(p.stat().st_size > 0 for p in overlays)
 
-    # the named mask outputs each produced their folder + files
-    assert list((reports / "Binary_Masks_Full_Image__Leaf").glob("*.png")), "no full-image binary masks"
-    assert list((reports / "RGB_Masks_Full_Image__Leaf").glob("*.jpg")), "no full-image RGB masks"
-    per_crop_bin = list((reports / "Binary_Masks__Leaf").glob("*.png"))
+    # mask outputs are grouped under Binary_Masks/ and RGB_Masks/ (harmonized with Crops/)
+    full_bin = list((reports / "Binary_Masks" / "Binary_Masks_Full_Image__Leaf").glob("*.png"))
+    assert full_bin, "no full-image binary masks"
+    assert list((reports / "RGB_Masks" / "RGB_Masks_Full_Image__Leaf").glob("*.jpg")), "no full-image RGB masks"
+    per_crop_bin = list((reports / "Binary_Masks" / "Binary_Masks__Leaf").glob("*.png"))
     assert per_crop_bin, "no per-crop binary masks"
 
-    # per-crop / crop filenames follow <stem>__<PREFIX>-<friendly>__x1_y1_x2_y2.<ext>
+    # full-image files carry the MaskFull-<friendly> label; per-crop files carry SEG-<friendly>__coords
     from leafmachine3.core.imaging import parse_crop_filename
+    assert "__MaskFull-leaf." in full_bin[0].name, full_bin[0].name
     parsed = parse_crop_filename(per_crop_bin[0].name)
     assert parsed and parsed["prefix"] == "SEG" and parsed["friendly"] == "leaf"
     assert len(parsed["xyxy"]) == 4

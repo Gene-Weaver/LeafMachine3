@@ -42,8 +42,9 @@ ingest:
 # values however you like — these are the defaults and drive folder + file names.
 # ----------------------------------------------------------------------------
 naming:
-  bbox_prefix: "BBOX"
-  seg_prefix: "SEG"
+  bbox_prefix: "BBOX"                   # detection bbox crops:  <stem>__BBOX-<friendly>__x_y_x_y
+  seg_prefix: "SEG"                     # per-crop seg masks:    <stem>__SEG-<friendly>__x_y_x_y
+  mask_full_prefix: "MaskFull"          # full-image masks:      <stem>__MaskFull-<friendly>
   friendly_names:                       # real class name -> friendly name used in filenames
     # archival
     Ruler: ruler
@@ -80,8 +81,8 @@ modules:
     imgsz: 1280
     conf: 0.25
     iou: 0.60
-    max_det: 300
-    min_box_area: 256
+    max_det: 100
+    min_box_area: 128
     classes: [Ruler, Barcode, Colorcard, Label, Map, Envelope, Photo, Attached_Item, Weights]
 
   plant_detector:
@@ -91,7 +92,7 @@ modules:
     conf: 0.30
     iou: 0.55
     max_det: 1000
-    min_box_area: 400
+    min_box_area: 40
     classes: [Leaf_WHOLE, Leaf_PARTIAL, Seed_Fruit_ONE, Seed_Fruit_MANY,
               Flower_ONE, Flower_MANY, Bud, Roots, Wood]
 
