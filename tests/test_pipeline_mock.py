@@ -14,7 +14,7 @@ import yaml
 
 from leafmachine3.machine3 import machine3
 
-from tests.conftest import build_mock_config
+from tests.conftest import build_mock_config, fresh_out_dir
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -29,8 +29,11 @@ def _count(conn: sqlite3.Connection, table: str) -> int:
 
 @pytest.fixture
 def run_env(synthetic_images: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Write the mock config and chdir into an isolated dir (so hardware_settings lands there)."""
-    output_dir = tmp_path / "runs"
+    """Write the mock config and chdir into an isolated dir (so hardware_settings lands there).
+
+    Pipeline artifacts (DB, crops, overlays) land in ``examples_out/pipeline_mock`` for inspection.
+    """
+    output_dir = fresh_out_dir("pipeline_mock")
     cfg = build_mock_config(synthetic_images, output_dir, run_name="e2e")
     cfg_path = tmp_path / "LM3_settings.yaml"
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")

@@ -41,5 +41,8 @@ htmlcov/
 # example / test data + generated demo artifacts (not committed)
 examples/images/
 examples/images_subset/
-examples/demo_*.yaml
+examples/*.yaml
 examples/_overlay_smoke.jpg
+
+# test/run outputs (one subdir per test/run name)
+examples_out/

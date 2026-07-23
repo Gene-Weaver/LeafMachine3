@@ -20,6 +20,21 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# All test/run artifacts land here (gitignored), one subdir per test name, so a human can
+# inspect the DB + overlays after a run instead of digging through pytest tmp dirs.
+EXAMPLES_OUT = _REPO_ROOT / "examples_out"
+
+
+def fresh_out_dir(name: str) -> Path:
+    """Return (and clear) ``examples_out/<name>`` so each test run starts clean."""
+    import shutil
+
+    d = EXAMPLES_OUT / name
+    if d.exists():
+        shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
 
 def make_specimen_image(path: Path, seed: int) -> Path:
     """Write one deterministic synthetic specimen JPEG (a green 'leaf' on a pale sheet)."""
@@ -117,7 +132,7 @@ def build_mock_config(
 @pytest.fixture
 def mock_config_path(synthetic_images: Path, tmp_path: Path) -> Path:
     """Write a mock ``LM3_settings.yaml`` and return its path."""
-    output_dir = tmp_path / "runs"
+    output_dir = fresh_out_dir("mock_config")
     cfg = build_mock_config(synthetic_images, output_dir)
     cfg_path = tmp_path / "LM3_settings.yaml"
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
