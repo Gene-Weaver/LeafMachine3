@@ -270,6 +270,11 @@ class Config:
     def report(self) -> Section:
         return self._raw.get("report", Section())
 
+    @property
+    def naming(self) -> Section:
+        """Crop/mask filename settings (``bbox_prefix``/``seg_prefix``/``friendly_names``)."""
+        return self._raw.get("naming", Section())
+
     # -- stage access ------------------------------------------------------- #
     def stage(self, key: str) -> Section:
         """Return the ``modules.<key>`` Section (empty Section if absent)."""

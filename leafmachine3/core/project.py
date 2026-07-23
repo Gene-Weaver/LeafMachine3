@@ -40,6 +40,8 @@ class Project:
             detections=self.db.overlay_detections(specimen_id),
             leaves=self.db.leaf_instances(specimen_id),
             reports_dir=str(self.dirs.reports),
+            working_path=str(_g(s, "working_path")),
+            crop_boxes=self.db.detection_boxes(specimen_id, "plant_detection"),
         )
 
 

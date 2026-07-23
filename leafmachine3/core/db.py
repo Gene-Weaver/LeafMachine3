@@ -509,6 +509,20 @@ class ProjectDB:
             (specimen_id,),
         )
 
+    def detection_boxes(self, specimen_id: int, table: str) -> dict[int, tuple]:
+        """Map ``detection_id -> (x1, y1, x2, y2)`` (working coords) for one specimen's boxes.
+
+        Used by the Reporter to recover each leaf crop's parent-frame box for per-crop mask exports.
+        """
+        assert table in _DETECTION_TABLES, f"unknown detection table {table!r}"
+        return {
+            int(r["detection_id"]): (float(r["x1"]), float(r["y1"]), float(r["x2"]), float(r["y2"]))
+            for r in self._query(
+                f"SELECT detection_id, x1, y1, x2, y2 FROM {table} WHERE specimen_id = ?",
+                (specimen_id,),
+            )
+        }
+
     def crops(
         self,
         table: str,

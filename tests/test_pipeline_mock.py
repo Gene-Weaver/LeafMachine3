@@ -65,10 +65,30 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     finally:
         conn.close()
 
-    # Reporter wrote an overlay JPEG per specimen
-    overlays = sorted((project.dirs.reports / "overlay").glob("*.jpg"))
+    # Reporter wrote an overlay JPEG per specimen (folder is named exactly "Overlay")
+    reports = project.dirs.reports
+    overlays = sorted((reports / "Overlay").glob("*.jpg"))
     assert len(overlays) == 2
     assert all(p.stat().st_size > 0 for p in overlays)
+
+    # the named mask outputs each produced their folder + files
+    assert list((reports / "Binary_Masks_Full_Image__Leaf").glob("*.png")), "no full-image binary masks"
+    assert list((reports / "RGB_Masks_Full_Image__Leaf").glob("*.jpg")), "no full-image RGB masks"
+    per_crop_bin = list((reports / "Binary_Masks__Leaf").glob("*.png"))
+    assert per_crop_bin, "no per-crop binary masks"
+
+    # per-crop / crop filenames follow <stem>__<PREFIX>-<friendly>__x1_y1_x2_y2.<ext>
+    from leafmachine3.core.imaging import parse_crop_filename
+    parsed = parse_crop_filename(per_crop_bin[0].name)
+    assert parsed and parsed["prefix"] == "SEG" and parsed["friendly"] == "leaf"
+    assert len(parsed["xyxy"]) == 4
+
+    # raw RGB crop exports land under Crops/RGB__<friendly>/ for both models' classes
+    crop_dirs = sorted(d.name for d in (reports / "Crops").iterdir() if d.is_dir())
+    assert crop_dirs and all(name.startswith("RGB__") for name in crop_dirs)
+    a_crop = next((reports / "Crops").rglob("*.jpg"))
+    ap = parse_crop_filename(a_crop.name)
+    assert ap and ap["prefix"] == "BBOX"
 
 
 def test_pipeline_resumes_without_duplicates(run_env: Path) -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from leafmachine3.core.imaging import read_image, save_crop
+from leafmachine3.core.naming import crop_label
 from leafmachine3.core.records import DetRow
 from leafmachine3.core.stage import PipelineStage, WorkItem
 from leafmachine3.inference import load_detector
@@ -24,19 +25,6 @@ class ArchivalDetector(PipelineStage):
     depends_on: tuple[str, ...] = ()
     owns_tables: tuple[str, ...] = ("archival_detection",)
     device_kind: str = "cuda"
-
-    #: bare crop tags (``save_crop`` wraps them as ``<stem>__<TAG>__x1-y1-x2-y2.jpg``).
-    TAGS = {
-        "Ruler": "R",
-        "Barcode": "BC",
-        "Colorcard": "CC",
-        "Label": "L",
-        "Map": "M",
-        "Envelope": "E",
-        "Photo": "PH",
-        "Attached_Item": "AI",
-        "Weights": "WT",
-    }
 
     def build_model(self, device):
         """Warm-load the archival detector backend once per worker."""
@@ -55,9 +43,9 @@ class ArchivalDetector(PipelineStage):
         img = read_image(unit.working_path)
         rows: list[DetRow] = []
         for det in model.predict(img):
-            tag = self.TAGS.get(det.cls_name, "X")
-            crop_path = save_crop(img, det.xyxy, unit.stem, tag, unit.crops_dir)
-            rows.append(DetRow(det.cls_id, det.cls_name, det.conf, det.xyxy, tag, crop_path))
+            label = crop_label(self.cfg, "bbox", det.cls_name)   # e.g. BBOX-ruler
+            crop_path = save_crop(img, det.xyxy, unit.stem, label, unit.crops_dir)
+            rows.append(DetRow(det.cls_id, det.cls_name, det.conf, det.xyxy, label, crop_path))
         return rows
 
     def persist(self, project, item: WorkItem, rows: list[DetRow]) -> None:

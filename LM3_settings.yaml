@@ -36,6 +36,42 @@ ingest:
   max_working_dim: 3200                 # long-side cap; larger originals get a resized _tmp jpg
   jpg_quality: 100
 
+# ----------------------------------------------------------------------------
+# NAMING — crop / mask filenames are <stem>__<PREFIX>-<friendly>__x1_y1_x2_y2.<ext>
+# (PREFIX = BBOX for detection boxes, SEG for segmentation masks). Rename the friendly
+# values however you like — these are the defaults and drive folder + file names.
+# ----------------------------------------------------------------------------
+naming:
+  bbox_prefix: "BBOX"
+  seg_prefix: "SEG"
+  friendly_names:                       # real class name -> friendly name used in filenames
+    # archival
+    Ruler: ruler
+    Barcode: barcode
+    Colorcard: colorcard
+    Label: label
+    Map: map
+    Envelope: envelope
+    Photo: photo
+    Attached_Item: attachedItem
+    Weights: weights
+    # plant organs
+    Leaf_WHOLE: leaf
+    Leaf_PARTIAL: leafReject
+    Leaflet: leaflet
+    Seed_Fruit_ONE: fruit
+    Seed_Fruit_MANY: fruitMany
+    Flower_ONE: flower
+    Flower_MANY: flowerMany
+    Bud: bud
+    Specimen: specimen
+    Roots: roots
+    Wood: wood
+    # segmentation instance classes
+    Leaf: leaf
+    Petiole: petiole
+    Hole: hole
+
 modules:
 
   archival_detector:
@@ -54,7 +90,7 @@ modules:
     imgsz: 1280
     conf: 0.30
     iou: 0.55
-    max_det: 500
+    max_det: 1000
     min_box_area: 400
     classes: [Leaf_WHOLE, Leaf_PARTIAL, Seed_Fruit_ONE, Seed_Fruit_MANY,
               Flower_ONE, Flower_MANY, Bud, Roots, Wood]
@@ -149,10 +185,22 @@ report:
         Leaf:    { color: [46, 255, 0],   show: true }
         Petiole: { color: [255, 0, 150],  show: true }
         Hole:    { color: [200, 0, 255],  show: true }
-  # ---- other exports ---------------------------------------------------------
-  export_binary_masks: true         # one binary PNG per leaf (holes subtracted)
-  export_rgb_on_black: true         # leaf pixels on a black canvas
-  export_rgb_on_white: false        # leaf pixels on a white canvas
-  export_masked_subsets: false      # per-instance masked subset crops
-  derived_dataset: { enabled: false, task: "yolo_seg", split: { train: 0.8, val: 0.2 } }
+  # ---- segmentation mask exports --------------------------------------------
+  # Each toggle writes a folder named <toggle>__<Class> for every class in `classes`.
+  # Full_Image variants = one file per specimen (original frame); the others = one file
+  # per leaf CROP (crop frame), named <stem>__SEG-<friendly>__x1_y1_x2_y2.<ext>.
+  masks:
+    classes: ["Leaf"]                   # segmentation classes to export (Leaf | Petiole | Hole)
+    background: "black"                 # black | white  (RGB_* outputs)
+    subtract_holes: true                # Leaf minus Hole for binary/rgb
+    Binary_Masks_Full_Image: true       # -> Binary_Masks_Full_Image__Leaf/<stem>.png
+    Binary_Masks: true                  # -> Binary_Masks__Leaf/<stem>__SEG-leaf__x_y_x_y.png
+    RGB_Masks_Full_Image: true          # -> RGB_Masks_Full_Image__Leaf/<stem>.jpg
+    RGB_Masks: false                    # -> RGB_Masks__Leaf/<stem>__SEG-leaf__x_y_x_y.jpg
+  # ---- raw RGB crop exports (both detectors) --------------------------------
+  # Exports the plain bbox crops into Crops/RGB__<friendly>/ (one folder per class).
+  crops:
+    enabled: true
+    classes: "all"                      # "all", or a list of real class names e.g. [Leaf_WHOLE, Ruler]
+    source: "working"                   # working (matches detector crops) | original (full-res)
   formats: { image_ext: "jpg", jpg_quality: 100, mask_ext: "png" }

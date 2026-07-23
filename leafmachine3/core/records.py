@@ -144,5 +144,7 @@ class ReportBundle:
     work_scale: float
     cf_px_per_cm: Optional[float]
     detections: list[Any]              # box rows with .cls_name/.conf/.xyxy/.source ('archival'|'plant')
-    leaves: list[Any]                  # leaf rows with mask geometry (parent coords)
+    leaves: list[Any]                  # leaf rows with mask geometry (parent/working coords)
     reports_dir: str
+    working_path: str = ""             # for per-crop mask exports (crop-frame pixels)
+    crop_boxes: dict = field(default_factory=dict)   # plant detection_id -> (x1,y1,x2,y2) working coords

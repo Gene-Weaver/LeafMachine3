@@ -119,11 +119,24 @@ def build_mock_config(
             "metric_grounding": {"enabled": True, "round_ndigits": 4},
             "reporter": {"enabled": True},
         },
+        "naming": {
+            "bbox_prefix": "BBOX",
+            "seg_prefix": "SEG",
+            "friendly_names": {"Leaf_WHOLE": "leaf", "Leaf_PARTIAL": "leafReject",
+                               "Ruler": "ruler", "Label": "label", "Leaf": "leaf"},
+        },
         "report": {
             "overlay": {"enabled": True, "draw_masks": True, "draw_labels": True},
-            "export_binary_masks": True,
-            "export_rgb_on_black": True,
-            "export_rgb_on_white": False,
+            "masks": {
+                "classes": ["Leaf"],
+                "background": "black",
+                "subtract_holes": True,
+                "Binary_Masks_Full_Image": True,
+                "Binary_Masks": True,
+                "RGB_Masks_Full_Image": True,
+                "RGB_Masks": True,
+            },
+            "crops": {"enabled": True, "classes": "all", "source": "working"},
             "formats": {"image_ext": "jpg", "jpg_quality": 95, "mask_ext": "png"},
         },
     }

@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from leafmachine3.core.imaging import read_image, save_crop
+from leafmachine3.core.naming import crop_label
 from leafmachine3.core.records import DetRow
 from leafmachine3.core.stage import PipelineStage, WorkItem
 from leafmachine3.inference import load_detector
@@ -25,19 +26,6 @@ class PlantDetector(PipelineStage):
     depends_on: tuple[str, ...] = ()
     owns_tables: tuple[str, ...] = ("plant_detection",)
     device_kind: str = "cuda"
-
-    #: bare crop tags (``save_crop`` wraps them as ``<stem>__<TAG>__x1-y1-x2-y2.jpg``).
-    TAGS = {
-        "Leaf_WHOLE": "LW",
-        "Leaf_PARTIAL": "LP",
-        "Seed_Fruit_ONE": "SF1",
-        "Seed_Fruit_MANY": "SFM",
-        "Flower_ONE": "FL1",
-        "Flower_MANY": "FLM",
-        "Bud": "BD",
-        "Roots": "RT",
-        "Wood": "WD",
-    }
 
     def build_model(self, device):
         """Warm-load the plant detector backend once per worker."""
@@ -56,9 +44,9 @@ class PlantDetector(PipelineStage):
         img = read_image(unit.working_path)
         rows: list[DetRow] = []
         for det in model.predict(img):
-            tag = self.TAGS.get(det.cls_name, "X")
-            crop_path = save_crop(img, det.xyxy, unit.stem, tag, unit.crops_dir)
-            rows.append(DetRow(det.cls_id, det.cls_name, det.conf, det.xyxy, tag, crop_path))
+            label = crop_label(self.cfg, "bbox", det.cls_name)   # e.g. BBOX-leaf
+            crop_path = save_crop(img, det.xyxy, unit.stem, label, unit.crops_dir)
+            rows.append(DetRow(det.cls_id, det.cls_name, det.conf, det.xyxy, label, crop_path))
         return rows
 
     def persist(self, project, item: WorkItem, rows: list[DetRow]) -> None:

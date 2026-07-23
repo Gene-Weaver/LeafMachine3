@@ -34,17 +34,55 @@ def save_image(img, path, quality: int = 100):
     return str(path)
 
 
-def save_crop(img, xyxy, stem: str, tag: str, crops_dir) -> str:
-    """Crop ``img`` to ``xyxy`` and save as ``<stem>__<TAG>__x1-y1-x2-y2.jpg`` (LM2 naming)."""
-    h, w = img.shape[:2]
+def crop_filename(stem: str, label: str, xyxy, ext: str = "jpg") -> str:
+    """Build the canonical crop filename ``<stem>__<label>__x1_y1_x2_y2.<ext>``.
+
+    ``label`` is the class part, e.g. ``BBOX-ruler`` or ``SEG-leaf``. The four bbox
+    corners are integers joined by single ``_`` (the three logical parts are joined by
+    ``__``), so the parent stem and coords keep their own single underscores and the name
+    round-trips through :func:`parse_crop_filename`.
+    """
     x1, y1, x2, y2 = (int(round(v)) for v in xyxy)
-    x1, y1 = max(0, x1), max(0, y1)
-    x2, y2 = min(w, x2), min(h, y2)
+    suffix = f".{str(ext).lstrip('.')}" if ext else ""
+    return f"{stem}__{label}__{x1}_{y1}_{x2}_{y2}{suffix}"
+
+
+def parse_crop_filename(name: str) -> dict | None:
+    """Inverse of :func:`crop_filename`. Returns stem, prefix (BBOX/SEG), friendly class,
+    label, and the integer ``xyxy`` — enough to reinsert a crop/mask into its parent.
+    """
+    base = str(name).rsplit(".", 1)[0]
+    parts = base.split("__")
+    if len(parts) < 3:
+        return None
+    coords, label, stem = parts[-1], parts[-2], "__".join(parts[:-2])
+    try:
+        xyxy = tuple(int(v) for v in coords.split("_"))
+    except ValueError:
+        return None
+    if len(xyxy) != 4:
+        return None
+    prefix, _, friendly = label.partition("-")
+    return {"stem": stem, "prefix": prefix, "friendly": friendly, "label": label, "xyxy": xyxy}
+
+
+def save_crop(img, xyxy, stem: str, label: str, crops_dir, ext: str = "jpg", quality: int = 100) -> str:
+    """Crop ``img`` to ``xyxy`` and save as ``<stem>__<label>__x1_y1_x2_y2.<ext>``.
+
+    The filename encodes the RAW detection box (so it matches the DB row and can be
+    reinserted into the parent); the pixel slice is clamped to the image bounds.
+    """
+    h, w = img.shape[:2]
+    rx1, ry1, rx2, ry2 = (int(round(v)) for v in xyxy)
+    cx1, cy1 = max(0, rx1), max(0, ry1)
+    cx2, cy2 = min(w, rx2), min(h, ry2)
     os.makedirs(str(crops_dir), exist_ok=True)
-    path = os.path.join(str(crops_dir), f"{stem}__{tag}__{x1}-{y1}-{x2}-{y2}.jpg")
-    crop = img[y1:y2, x1:x2]
+    name = crop_filename(stem, label, (rx1, ry1, rx2, ry2), ext)
+    path = os.path.join(str(crops_dir), name)
+    crop = img[cy1:cy2, cx1:cx2]
     if crop.size:
-        cv2.imwrite(path, crop, [cv2.IMWRITE_JPEG_QUALITY, 100])
+        params = [cv2.IMWRITE_JPEG_QUALITY, int(quality)] if name.lower().endswith((".jpg", ".jpeg")) else []
+        cv2.imwrite(path, crop, params)
     return path
 
 
