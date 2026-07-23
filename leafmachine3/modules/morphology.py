@@ -41,6 +41,9 @@ class Morphology(PipelineStage):
     def _find_min_bbox(self) -> bool:
         return bool(_get(self.cfg.stage(self.key), "find_minimum_bounding_box", default=True))
 
+    def _method(self) -> str:
+        return str(_get(self.cfg.stage(self.key), "method", default="lm2"))
+
     def collect_items(self, project) -> list[WorkItem]:
         return [
             WorkItem(sid, (project.db.leaf_instances(sid),
@@ -52,6 +55,7 @@ class Morphology(PipelineStage):
         leaves, crop_boxes = item.payload
         classes = self._classes()
         find_min = self._find_min_bbox()
+        method = self._method()
         rows: list[MorphRow] = []
         for r in leaves:
             cls_name = str(_row_get(r, "cls_name", ""))
@@ -66,7 +70,7 @@ class Morphology(PipelineStage):
                 poly = decode_polygon(str(data))
             except Exception:
                 continue
-            m = polygon_morphology(poly, find_min_bbox=find_min)
+            m = polygon_morphology(poly, find_min_bbox=find_min, method=method)
             if m is None:
                 continue
             did = int(_row_get(r, "detection_id", -1))

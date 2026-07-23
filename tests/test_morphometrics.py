@@ -50,5 +50,16 @@ def test_circularity_of_circle_near_one():
     assert m.convexity > 0.95                            # convex shape
 
 
+def test_minarearect_recovers_tight_dims():
+    # cv2.minAreaRect is exact: a 400x120 ellipse -> dim_max ~ 400, dim_min ~ 120, any rotation
+    m = polygon_morphology(_ellipse(200, 60, angle=37), method="minarearect")
+    assert m is not None
+    assert m.dim_max >= m.dim_min > 0
+    assert abs(m.dim_max - 400) < 25, m.dim_max
+    assert abs(m.dim_min - 120) < 25, m.dim_min
+    assert len(m.rotated_bbox) == 4
+
+
 def test_degenerate_polygon_returns_none():
     assert polygon_morphology(np.array([[0, 0], [1, 1]]), find_min_bbox=True) is None
+    assert polygon_morphology(np.array([[0, 0], [1, 1]]), method="minarearect") is None

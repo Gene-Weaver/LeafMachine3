@@ -17,8 +17,10 @@ hardware internally; the pipeline is resumable and driven by one YAML settings f
 
 **Morphology** (runs after LeafSegmenter) computes LeafMachine2-style shape metrics per leaf
 mask — area, perimeter, centroid, convex hull, convexity/concavity, circularity, aspect ratio —
-plus the rotated (minimum) bounding box via LM2's `fit_min_bbox` (rotation angle +
-`rotated_bbox_dim_max`/`dim_min` = leaf length/width), stored in the `leaf_morphology` table. The
+plus the rotated (minimum) bounding box (rotation angle + `rotated_bbox_dim_max`/`dim_min` =
+leaf length/width), stored in the `leaf_morphology` table. The rotated-bbox algorithm is
+selectable via `modules.morphology.method`: `lm2` (LM2's `fit_min_bbox`, the default) or
+`minarearect` (OpenCV `cv2.minAreaRect`, the true min-area rectangle). The
 Reporter overlay can draw leaf boxes as the rotated min box (`report.overlay.box_style: rotated`,
 default) or the axis-aligned YOLO box (`yolo`).
 

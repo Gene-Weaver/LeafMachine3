@@ -4,11 +4,16 @@ Pure functions over a polygon (Nx2 array in the working/parent pixel frame). Sca
 metrics (area, perimeter, centroid, convex hull, convexity/concavity, circularity,
 aspect ratio, vertex count) plus the rotated (minimum) bounding box.
 
-The rotated bbox follows LM2's ``fit_min_bbox`` EXACTLY: rotate the simplified polygon in
-1-degree steps until the axis-aligned bounding box's long side matches the diameter of the
-minimum enclosing circle, then report the rotation angle and the long/short side lengths
-(leaf length / width) and the four rotated corners. Elliptic Fourier descriptors are not
-ported yet — the module is structured so an ``efds`` field can be added later.
+Two rotated-bbox methods are available via ``polygon_morphology(..., method=...)``:
+
+* ``"lm2"`` (default) — LM2's ``fit_min_bbox`` EXACTLY: rotate the simplified polygon in
+  1-degree steps until the axis-aligned bounding box's long side matches the diameter of the
+  minimum enclosing circle, then report the rotation angle, long/short sides and 4 corners.
+* ``"minarearect"`` — OpenCV ``cv2.minAreaRect``: the true minimum-AREA rotated rectangle in
+  one call (cleaner / tighter, but numbers won't match LM2).
+
+Elliptic Fourier descriptors are not ported yet — the module is structured so an ``efds``
+field can be added later.
 """
 from __future__ import annotations
 
@@ -96,8 +101,30 @@ def fit_min_bbox(polygon, polygon_approx, cx: int, cy: int, *, find_min: bool = 
     return float(angle), float(max_len), float(min_len), bbox_min, circle
 
 
-def polygon_morphology(polygon, *, find_min_bbox: bool = True) -> Morphometrics | None:
-    """Compute all scalar morphology + the rotated bbox for one polygon (working coords)."""
+_MIN_AREA_RECT_ALIASES = {"minarearect", "min_area_rect", "cv2", "cv2.minarearect"}
+
+
+def min_area_rect_bbox(polygon):
+    """OpenCV minimum-AREA rotated rectangle.
+
+    Returns ``(angle, dim_max, dim_min, corners, (cir_x, cir_y, radius))`` matching
+    :func:`fit_min_bbox`'s signature so the two methods are drop-in interchangeable.
+    """
+    poly_f = np.asarray(polygon, dtype=np.float32).reshape(-1, 2)
+    (cx, cy), (w, h), angle = cv2.minAreaRect(poly_f)
+    box = cv2.boxPoints(((cx, cy), (w, h), angle))
+    (cir_x, cir_y), radius = cv2.minEnclosingCircle(poly_f)
+    dim_max, dim_min = (max(w, h), min(w, h))
+    return (float(angle), float(dim_max), float(dim_min),
+            [[int(x), int(y)] for x, y in box], (float(cir_x), float(cir_y), float(radius)))
+
+
+def polygon_morphology(polygon, *, find_min_bbox: bool = True, method: str = "lm2") -> Morphometrics | None:
+    """Compute all scalar morphology + the rotated bbox for one polygon (working coords).
+
+    ``method`` selects the rotated-bbox algorithm: ``"lm2"`` (default, LM2 ``fit_min_bbox``)
+    or ``"minarearect"`` (OpenCV ``cv2.minAreaRect``).
+    """
     poly = np.asarray(polygon, dtype=float).reshape(-1, 2)
     if len(poly) < 3:
         return None
@@ -115,12 +142,15 @@ def polygon_morphology(polygon, *, find_min_bbox: bool = True) -> Morphometrics 
     bx, by, bw, bh = cv2.boundingRect(closed.astype(np.int32))
     bbox = (float(bx), float(by), float(bx + bw), float(by + bh))
 
-    approx = cv2.approxPolyDP(contour, 0.010 * perimeter, True).reshape(-1, 2)   # LM2 1% simplify
-    if len(approx) < 3:
-        approx = closed
-    angle, dim_max, dim_min, rotated_bbox, circle = fit_min_bbox(
-        closed, approx, int(round(cx)), int(round(cy)), find_min=find_min_bbox
-    )
+    if str(method).lower() in _MIN_AREA_RECT_ALIASES:
+        angle, dim_max, dim_min, rotated_bbox, circle = min_area_rect_bbox(closed)
+    else:
+        approx = cv2.approxPolyDP(contour, 0.010 * perimeter, True).reshape(-1, 2)   # LM2 1% simplify
+        if len(approx) < 3:
+            approx = closed
+        angle, dim_max, dim_min, rotated_bbox, circle = fit_min_bbox(
+            closed, approx, int(round(cx)), int(round(cy)), find_min=find_min_bbox
+        )
     aspect_ratio = (dim_max / dim_min) if dim_min else 0.0
 
     return Morphometrics(

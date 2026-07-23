@@ -131,7 +131,8 @@ modules:
   morphology:                           # runs right after leaf_segmenter
     enabled: true
     classes: ["Leaf"]                   # seg classes to measure (Petiole / Hole addable later)
-    find_minimum_bounding_box: true     # LM2 rotated-bbox procedure (angle + length/width)
+    method: "lm2"                       # rotated-bbox algorithm: "lm2" (fit_min_bbox) | "minarearect" (cv2)
+    find_minimum_bounding_box: true     # (lm2 only) run the rotate-to-min-circle procedure
 
   metric_grounding:
     enabled: true                       # runs, but no-ops until ruler_cf provides a CF
