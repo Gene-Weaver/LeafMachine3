@@ -42,6 +42,7 @@ CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "ruler_classifier",
     "ruler_cf",
     "leaf_segmenter",
+    "morphology",
     "metric_grounding",
     "reporter",
 )
@@ -209,6 +210,7 @@ def builtin_defaults() -> dict[str, Any]:
             "ruler_classifier": {"enabled": True},
             "ruler_cf": {"enabled": False},
             "leaf_segmenter": {"enabled": True},
+            "morphology": {"enabled": True},
             "metric_grounding": {"enabled": True},
             "reporter": {"enabled": True},
         },

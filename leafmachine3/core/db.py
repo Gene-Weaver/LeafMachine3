@@ -57,6 +57,7 @@ _CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "ruler_classifier",
     "ruler_cf",
     "leaf_segmenter",
+    "morphology",
     "metric_grounding",
     "reporter",
 )
@@ -482,6 +483,43 @@ class ProjectDB:
                 """,
                 (g.area_cm2, g.perimeter_cm, g.bbox_w_cm, g.bbox_h_cm, int(g.leaf_id)),
             )
+
+    def record_leaf_morphology(self, specimen_id: int, rows: Sequence[Any]) -> None:
+        """DELETE the specimen's morphology rows then insert one per leaf instance."""
+        self._exec("DELETE FROM leaf_morphology WHERE specimen_id = ?", (specimen_id,))
+        for r in rows:
+            cx1, cy1, cx2, cy2 = r.crop_box
+            bx1, by1, bx2, by2 = r.bbox
+            cen_x, cen_y = r.centroid
+            cir_x, cir_y, cir_r = r.circle
+            self._exec(
+                """
+                INSERT INTO leaf_morphology
+                    (leaf_id, specimen_id, detection_id, instance_index, cls_name,
+                     crop_x1, crop_y1, crop_x2, crop_y2,
+                     area_px, perimeter_px, centroid_x, centroid_y,
+                     convex_hull_area, convexity, concavity, circularity, aspect_ratio, n_vertices,
+                     bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                     rotate_angle, rotated_bbox_dim_max, rotated_bbox_dim_min, rotated_bbox_json,
+                     circle_cx, circle_cy, circle_radius)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (int(r.leaf_id), specimen_id, int(r.detection_id), int(r.instance_index), r.cls_name,
+                 cx1, cy1, cx2, cy2,
+                 r.area_px, r.perimeter_px, cen_x, cen_y,
+                 r.convex_hull_area, r.convexity, r.concavity, r.circularity, r.aspect_ratio, r.n_vertices,
+                 bx1, by1, bx2, by2,
+                 r.rotate_angle, r.dim_max, r.dim_min, r.rotated_bbox_json,
+                 cir_x, cir_y, cir_r),
+            )
+
+    def leaf_morphology(self, specimen_id: int) -> list[sqlite3.Row]:
+        """All leaf_morphology rows for a specimen (rotated bbox, shape metrics, links)."""
+        return self._query(
+            "SELECT * FROM leaf_morphology WHERE specimen_id = ? ORDER BY leaf_id",
+            (specimen_id,),
+        )
 
     def record_report_manifest(self, specimen_id: int, written: Sequence[Any]) -> None:
         """Record the artifact paths Reporter wrote (so ``--restart`` can delete them).

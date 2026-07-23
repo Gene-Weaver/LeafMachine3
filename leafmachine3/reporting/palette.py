@@ -64,6 +64,7 @@ class OverlayStyle:
     font_scale: float = 1.0
     label_text_color: RGB = (255, 255, 255)
     cf_banner_color: RGB = (255, 255, 255)
+    box_style: str = "rotated"        # leaf boxes: "rotated" (min bbox) | "yolo" (axis-aligned)
     # {lowercased class name: (color, show)} merged from config over the defaults
     _classes: dict[str, tuple[RGB, bool]] | None = None
 
@@ -95,6 +96,7 @@ class OverlayStyle:
             font_scale=float(_getk(ov, "font_scale", 1.0)),
             label_text_color=tuple(_getk(ov, "label_text_color", (255, 255, 255))),
             cf_banner_color=tuple(_getk(ov, "cf_banner_color", (255, 255, 255))),
+            box_style=str(_getk(ov, "box_style", "rotated")).lower(),
             _classes=classes,
         )
 

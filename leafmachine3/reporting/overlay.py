@@ -13,6 +13,7 @@ before it is rendered.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Optional, Sequence
 
@@ -30,6 +31,7 @@ log = logging.getLogger("leafmachine3.overlay")
 
 _FONT = cv2.FONT_HERSHEY_SIMPLEX if cv2 is not None else 0
 _BASE_FONT_SCALE = 0.6
+_LEAF_DET_CLASSES = {"Leaf_WHOLE", "Leaf_PARTIAL"}   # plant detections replaced by rotated boxes
 
 
 # -- small tolerant accessors (rows are sqlite3.Row | dataclass | dict) ------------
@@ -60,6 +62,7 @@ def build_summary_image(
     cf_px_per_cm: Optional[float],
     style: OverlayStyle,
     work_scale: float = 1.0,
+    morphology: Sequence[Any] = (),
 ) -> np.ndarray:
     """Render the Summary_Image overlay onto a copy of ``image_bgr``.
 
@@ -80,10 +83,16 @@ def build_summary_image(
     out = image_bgr.copy()
     scale = 1.0 / float(work_scale or 1.0)
 
+    # In "rotated" mode leaf boxes come from Morphology's rotated (min) bounding box; the
+    # axis-aligned YOLO leaf boxes are suppressed. Falls back to YOLO if no morphology exists.
+    rotated_mode = style.box_style == "rotated" and bool(morphology)
+
     # Masks are painted first (under boxes/labels) so outlines stay crisp on top.
     if style.draw_masks:
         _draw_masks(out, leaves, style, scale)
-    _draw_boxes(out, detections, style, scale)
+    _draw_boxes(out, detections, style, scale, skip_plant_leaf=rotated_mode)
+    if rotated_mode and style.draw_boxes_plant:
+        _draw_rotated_boxes(out, morphology, style, scale)
     if style.draw_cf_banner and cf_px_per_cm:
         _draw_cf_banner(out, float(cf_px_per_cm), style)
     return out
@@ -127,7 +136,10 @@ def _draw_masks(out: np.ndarray, leaves: Sequence[Any], style: OverlayStyle, sca
 
 
 # -- boxes + labels ----------------------------------------------------------------
-def _draw_boxes(out: np.ndarray, detections: Sequence[dict], style: OverlayStyle, scale: float) -> None:
+def _draw_boxes(
+    out: np.ndarray, detections: Sequence[dict], style: OverlayStyle, scale: float,
+    skip_plant_leaf: bool = False,
+) -> None:
     for d in detections:
         source = str(d.get("source", "plant"))
         if source == "archival" and not style.draw_boxes_archival:
@@ -135,6 +147,8 @@ def _draw_boxes(out: np.ndarray, detections: Sequence[dict], style: OverlayStyle
         if source == "plant" and not style.draw_boxes_plant:
             continue
         cls_name = str(d.get("cls_name", ""))
+        if skip_plant_leaf and source == "plant" and cls_name in _LEAF_DET_CLASSES:
+            continue  # drawn as a rotated bounding box from Morphology instead
         if not style.show(cls_name):
             continue
         x1, y1, x2, y2 = (float(v) * scale for v in d["xyxy"])
@@ -147,6 +161,30 @@ def _draw_boxes(out: np.ndarray, detections: Sequence[dict], style: OverlayStyle
             if style.draw_confidence and d.get("conf") is not None:
                 text = f"{cls_name} {float(d['conf']):.2f}"
             _draw_label(out, text, p1, bgr, style)
+
+
+# -- rotated (minimum) bounding boxes from Morphology ------------------------------
+def _draw_rotated_boxes(out: np.ndarray, morphology: Sequence[Any], style: OverlayStyle, scale: float) -> None:
+    """Draw each leaf's rotated minimum bounding box (LM2 procedure) as a tilted rectangle."""
+    for m in morphology:
+        cls_name = str(_row_get(m, "cls_name", "Leaf"))
+        if not style.show(cls_name):
+            continue
+        raw = _row_get(m, "rotated_bbox_json")
+        if not raw:
+            continue
+        try:
+            corners = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            continue
+        pts = (np.asarray(corners, dtype=float) * scale).round().astype(np.int32).reshape(-1, 1, 2)
+        if len(pts) < 3:
+            continue
+        bgr = _bgr(style.color_for(cls_name))
+        cv2.polylines(out, [pts], True, bgr, max(1, style.line_width_plant), cv2.LINE_AA)
+        if style.draw_labels:
+            top = min(range(len(pts)), key=lambda i: int(pts[i][0][1]))   # topmost corner
+            _draw_label(out, cls_name, (int(pts[top][0][0]), int(pts[top][0][1])), bgr, style)
 
 
 def _draw_label(

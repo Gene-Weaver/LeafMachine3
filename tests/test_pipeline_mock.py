@@ -55,6 +55,19 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         assert _count(conn, "phenology") == 2
         assert _count(conn, "leaf_segmentation") > 0
 
+        # Morphology ran after LeafSegmenter: a row per leaf instance with the rotated bbox
+        assert _count(conn, "leaf_morphology") > 0
+        m = conn.execute(
+            "SELECT rotated_bbox_dim_max, rotated_bbox_dim_min, rotate_angle, rotated_bbox_json, "
+            "area_px, circularity, leaf_id, detection_id, specimen_id FROM leaf_morphology LIMIT 1"
+        ).fetchone()
+        assert m is not None
+        assert m["rotated_bbox_dim_max"] >= m["rotated_bbox_dim_min"] > 0   # length >= width > 0
+        assert m["area_px"] > 0
+        import json as _json
+        assert len(_json.loads(m["rotated_bbox_json"])) == 4                # 4 rotated corners
+        assert m["leaf_id"] and m["detection_id"] and m["specimen_id"]      # links to parent
+
         # phenology mirrored leaf presence onto the specimen (mock emits a Leaf_WHOLE box)
         leaf_flags = [r["has_leaves"] for r in conn.execute("SELECT has_leaves FROM specimen")]
         assert all(flag == 1 for flag in leaf_flags)

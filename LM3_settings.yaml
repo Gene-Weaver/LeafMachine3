@@ -128,6 +128,11 @@ modules:
     max_det: 50
     mask_storage: { format: "polygon_xy", min_area_px: 64 }   # polygon_xy (no extra deps) | coco_rle
 
+  morphology:                           # runs right after leaf_segmenter
+    enabled: true
+    classes: ["Leaf"]                   # seg classes to measure (Petiole / Hole addable later)
+    find_minimum_bounding_box: true     # LM2 rotated-bbox procedure (angle + length/width)
+
   metric_grounding:
     enabled: true                       # runs, but no-ops until ruler_cf provides a CF
     missing_cf_policy: "skip"
@@ -146,6 +151,7 @@ report:
     # global part toggles
     draw_boxes_archival: true       # draw ArchivalDetector boxes (Ruler, Label, ...)
     draw_boxes_plant: true          # draw PlantDetector boxes (Leaf_WHOLE, Flower, ...)
+    box_style: "rotated"            # leaf boxes: "rotated" (min bounding box from Morphology) | "yolo"
     draw_masks: true                # draw LeafSegmenter instance masks (Leaf/Petiole/Hole)
     draw_labels: true               # draw the class-name text on each box/mask
     draw_confidence: true           # append the confidence score to the label

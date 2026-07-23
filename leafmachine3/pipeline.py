@@ -23,6 +23,7 @@ from leafmachine3.modules.phenology_detector import PhenologyDetector
 from leafmachine3.modules.ruler_classifier import RulerClassifier
 from leafmachine3.modules.ruler_conversion_factor import RulerConversionFactor
 from leafmachine3.modules.leaf_segmenter import LeafSegmenter
+from leafmachine3.modules.morphology import Morphology
 from leafmachine3.modules.metric_grounding import MetricGrounding
 from leafmachine3.modules.reporter import Reporter
 
@@ -44,9 +45,10 @@ STAGE_ORDER: tuple[type, ...] = (
     RulerClassifier,         # 4  Ruler crops -> unit-type            (CF step a)
     RulerConversionFactor,   # 5  unit-type + crop -> CF (px per cm)  (CF step b)
     LeafSegmenter,           # 6  Leaf_WHOLE crops -> instance masks
+    Morphology,              # 7  leaf masks -> shape metrics + rotated (min) bounding box
     # <---------- extensible slot: new PipelineStage subclasses go here ---------->
-    MetricGrounding,         # 7  apply CF: area_px -> cm^2, perimeter_px -> cm
-    Reporter,                # 8  overlays / mask PNGs / RGB crops / derived datasets
+    MetricGrounding,         # 8  apply CF: area_px -> cm^2, perimeter_px -> cm
+    Reporter,                # 9  overlays / mask PNGs / RGB crops / derived datasets
 )
 STAGE_KEYS: tuple[str, ...] = tuple(cls.key for cls in STAGE_ORDER)  # the canonical id set
 

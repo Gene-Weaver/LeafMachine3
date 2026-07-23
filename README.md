@@ -12,7 +12,15 @@ hardware internally; the pipeline is resumable and driven by one YAML settings f
 ## Pipeline
 
 `ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerClassifier →
-[RulerConversionFactor — stub] → LeafSegmenter → MetricGrounding (no-op until CF) → Reporter`
+[RulerConversionFactor — stub] → LeafSegmenter → Morphology → MetricGrounding (no-op until CF)
+→ Reporter`
+
+**Morphology** (runs after LeafSegmenter) computes LeafMachine2-style shape metrics per leaf
+mask — area, perimeter, centroid, convex hull, convexity/concavity, circularity, aspect ratio —
+plus the rotated (minimum) bounding box via LM2's `fit_min_bbox` (rotation angle +
+`rotated_bbox_dim_max`/`dim_min` = leaf length/width), stored in the `leaf_morphology` table. The
+Reporter overlay can draw leaf boxes as the rotated min box (`report.overlay.box_style: rotated`,
+default) or the axis-aligned YOLO box (`yolo`).
 
 ## Two control surfaces + a hardware profile
 

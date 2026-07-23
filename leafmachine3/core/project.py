@@ -42,6 +42,7 @@ class Project:
             reports_dir=str(self.dirs.reports),
             working_path=str(_g(s, "working_path")),
             crop_boxes=self.db.detection_boxes(specimen_id, "plant_detection"),
+            morphology=self.db.leaf_morphology(specimen_id),
         )
 
 

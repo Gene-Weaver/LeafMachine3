@@ -116,6 +116,7 @@ def build_mock_config(
             },
             "ruler_cf": {"enabled": False},
             "leaf_segmenter": {"enabled": True, "include_partial": False},
+            "morphology": {"enabled": True, "classes": ["Leaf"], "find_minimum_bounding_box": True},
             "metric_grounding": {"enabled": True, "round_ndigits": 4},
             "reporter": {"enabled": True},
         },
@@ -126,7 +127,7 @@ def build_mock_config(
                                "Ruler": "ruler", "Label": "label", "Leaf": "leaf"},
         },
         "report": {
-            "overlay": {"enabled": True, "draw_masks": True, "draw_labels": True},
+            "overlay": {"enabled": True, "draw_masks": True, "draw_labels": True, "box_style": "rotated"},
             "masks": {
                 "classes": ["Leaf"],
                 "background": "black",

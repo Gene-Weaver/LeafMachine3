@@ -111,6 +111,32 @@ class LeafRow:
 
 
 @dataclass
+class MorphRow:
+    """One leaf-instance morphology row (working-frame pixels). See core.morphometrics."""
+    leaf_id: int
+    detection_id: int
+    instance_index: int
+    cls_name: str
+    crop_box: XYXY                     # plant_detection leaf box (working coords)
+    area_px: float
+    perimeter_px: float
+    centroid: tuple[float, float]
+    convex_hull_area: float
+    convexity: float
+    concavity: float
+    circularity: float
+    aspect_ratio: float
+    n_vertices: int
+    bbox: XYXY                         # axis-aligned (working coords)
+    rotate_angle: float
+    dim_max: float                     # leaf length (rotated long side)
+    dim_min: float                     # leaf width  (rotated short side)
+    rotated_bbox_json: str             # JSON [[x,y],...] 4 corners, working coords
+    circle: tuple[float, float, float] # min enclosing circle (cx, cy, radius)
+    morph_id: Optional[int] = None
+
+
+@dataclass
 class Grounded:
     leaf_id: int
     area_cm2: Optional[float] = None
@@ -148,3 +174,4 @@ class ReportBundle:
     reports_dir: str
     working_path: str = ""             # for per-crop mask exports (crop-frame pixels)
     crop_boxes: dict = field(default_factory=dict)   # plant detection_id -> (x1,y1,x2,y2) working coords
+    morphology: list[Any] = field(default_factory=list)   # leaf_morphology rows (rotated bbox etc.)

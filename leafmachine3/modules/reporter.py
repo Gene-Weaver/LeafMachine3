@@ -57,7 +57,7 @@ class Reporter(PipelineStage):
     device_kind: str = "cpu"
     depends_on: tuple[str, ...] = (
         "archival_detector", "plant_detector", "phenology_detector",
-        "ruler_cf", "leaf_segmenter", "metric_grounding",
+        "ruler_cf", "leaf_segmenter", "morphology", "metric_grounding",
     )
     owns_tables: tuple[str, ...] = ()
 
@@ -89,7 +89,8 @@ class Reporter(PipelineStage):
         if _flag(overlay_cfg, "enabled", True):
             style = OverlayStyle.from_config(self.cfg)
             summary = build_summary_image(
-                read(b.original_path), b.detections, b.leaves, b.cf_px_per_cm, style, b.work_scale
+                read(b.original_path), b.detections, b.leaves, b.cf_px_per_cm, style, b.work_scale,
+                morphology=b.morphology,
             )
             path = reports / "Overlay" / f"{stem}__Overlay.{img_ext}"
             save_image(summary, path, quality=quality)

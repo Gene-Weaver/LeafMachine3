@@ -108,6 +108,39 @@ CREATE TABLE IF NOT EXISTS leaf_segmentation (
 );
 CREATE INDEX IF NOT EXISTS ix_leaf_spec ON leaf_segmentation (specimen_id);
 
+-- leaf_morphology : one row per leaf INSTANCE mask (Morphology stage). Scalar shape metrics
+-- + the LeafMachine2 rotated (minimum) bounding box. Geometry is in WORKING (parent) coords.
+-- Links back to the parent via specimen_id / detection_id / leaf_id (+ the crop box).
+CREATE TABLE IF NOT EXISTS leaf_morphology (
+    morph_id       INTEGER PRIMARY KEY,
+    leaf_id        INTEGER NOT NULL REFERENCES leaf_segmentation(leaf_id)   ON DELETE CASCADE,
+    specimen_id    INTEGER NOT NULL REFERENCES specimen(specimen_id)         ON DELETE CASCADE,
+    detection_id   INTEGER NOT NULL REFERENCES plant_detection(detection_id) ON DELETE CASCADE,
+    instance_index INTEGER NOT NULL,
+    cls_name       TEXT NOT NULL,               -- Leaf | Petiole | Hole
+    -- parent-linking crop box (the plant_detection leaf box, working coords)
+    crop_x1 REAL, crop_y1 REAL, crop_x2 REAL, crop_y2 REAL,
+    -- scalar morphology (working-frame pixels)
+    area_px REAL, perimeter_px REAL,
+    centroid_x REAL, centroid_y REAL,
+    convex_hull_area REAL, convexity REAL, concavity REAL, circularity REAL,
+    aspect_ratio REAL, n_vertices INTEGER,
+    -- axis-aligned bbox (working coords)
+    bbox_x1 REAL, bbox_y1 REAL, bbox_x2 REAL, bbox_y2 REAL,
+    -- LM2 rotated (minimum) bounding box: rotation angle + long/short + 4 corners
+    rotate_angle REAL,
+    rotated_bbox_dim_max REAL,                  -- leaf LENGTH (long side)
+    rotated_bbox_dim_min REAL,                  -- leaf WIDTH  (short side)
+    rotated_bbox_json TEXT,                     -- [[x,y],...] 4 corners, working coords
+    -- minimum enclosing circle (LM2 uses its diameter to find the rotation)
+    circle_cx REAL, circle_cy REAL, circle_radius REAL,
+    -- grounded (nullable; a future MetricGrounding pass fills these when a CF exists)
+    area_cm2 REAL, perimeter_cm REAL, length_cm REAL, width_cm REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (leaf_id)                            -- one morphology row per leaf instance
+);
+CREATE INDEX IF NOT EXISTS ix_morph_spec ON leaf_morphology (specimen_id);
+
 -- project_status : stage-level ledger. Drives whole-module skip + config-drift + restart.
 CREATE TABLE IF NOT EXISTS project_status (
     stage_key   TEXT PRIMARY KEY,              -- canonical STAGE_KEYS, seeded at init
