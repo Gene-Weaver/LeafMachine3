@@ -10,6 +10,14 @@ ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerCla
 
 See `docs/LM3_Plan.html` for the architecture. Legend: **⛔ blocked** · **▶ ready** · **… planned**.
 
+> **Design note — rotated bbox vs. leaf orientation (two separate concerns).**
+> The Morphology rotated bounding box (currently **PCA**) is used **only for measurement** — it
+> yields the leaf's width and height (`rotated_bbox_dim_min` / `dim_max`). It is *not* the leaf's
+> orientation and is not used to rotate anything. **Actual leaf orientation** (which way is up,
+> petiole → apex) will come from the **`LM3_Landmark_Detector`** (#1), and *that* is what will be
+> used to physically orient leaves for downstream steps (petiole width, canonical crops, etc.).
+> Keep these decoupled: the bbox measures, the landmarks orient.
+
 ---
 
 ## 1. Petiole width  ⛔ (blocked — needs leaf orientation)
