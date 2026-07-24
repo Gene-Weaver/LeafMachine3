@@ -48,6 +48,22 @@ via the ruler CF (#3).
 **Reference:** `leafmachine2/analysis/petiole_project_measure_petioles.py`
 (`SegmentationMaskProcessor`); `_parallel` variant; `petiole_project_compare_gt_with_LM2.py`.
 
+### 1a. Oriented length vs width  (same orientation unblocks it)
+
+Morphology already stores the rotated box's two **side lengths** as `rotated_bbox_dim_max` /
+`rotated_bbox_dim_min` — but these are the **geometric** long/short sides. Length vs width is an
+*orientation* call: some leaves are wider than long, so `dim_max` is sometimes the **width**.
+
+Two nullable columns are **already reserved in `leaf_morphology`**: `rotated_bbox_length` and
+`rotated_bbox_width` (NULL until orientation exists).
+
+**How we'll fill them:** the `LM3_Landmark_Detector` predicts the **lamina tip** on the *same*
+image the (pre-oriented) rotated bbox was computed from; after orientation the tip is at the
+top. Apply the **same translate/rotate that orients the leaf** to the rotated bbox → the box side
+that runs along the **tip→base** axis becomes `rotated_bbox_length`, the perpendicular side
+becomes `rotated_bbox_width` (independent of which one is max vs min). No new geometry — just an
+axis-aware assignment of the two existing side lengths, done in the orientation step.
+
 ---
 
 ## 2. Export to .xlsx  … (planned)

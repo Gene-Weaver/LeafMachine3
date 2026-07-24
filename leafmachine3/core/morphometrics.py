@@ -44,12 +44,12 @@ class Morphometrics:
     convexity: float
     concavity: float
     circularity: float
-    aspect_ratio: float                     # dim_max / dim_min (rotated), i.e. length / width
+    aspect_ratio: float                     # dim_max / dim_min (rotated long/short side ratio)
     n_vertices: int
     bbox: tuple[float, float, float, float]  # axis-aligned (x1, y1, x2, y2), working coords
     rotate_angle: float                     # degrees
-    dim_max: float                          # rotated bbox LONG side  = leaf length
-    dim_min: float                          # rotated bbox SHORT side = leaf width
+    dim_max: float                          # rotated box LONG side  (geometric max; not always length)
+    dim_min: float                          # rotated box SHORT side (geometric min; not always width)
     rotated_bbox: list[list[int]]           # 4 corners [[x, y], ...], working coords
     circle: tuple[float, float, float]      # min enclosing circle (cx, cy, radius)
 

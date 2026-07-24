@@ -127,11 +127,17 @@ CREATE TABLE IF NOT EXISTS leaf_morphology (
     aspect_ratio REAL, n_vertices INTEGER,
     -- axis-aligned bbox (working coords)
     bbox_x1 REAL, bbox_y1 REAL, bbox_x2 REAL, bbox_y2 REAL,
-    -- LM2 rotated (minimum) bounding box: rotation angle + long/short + 4 corners
+    -- rotated bounding box: rotation angle + long/short side lengths + 4 corners.
+    -- dim_max/dim_min are the GEOMETRIC long/short SIDE lengths (distances between adjacent
+    -- vertices) -- NOT necessarily biological length/width (some leaves are wider than long).
     rotate_angle REAL,
-    rotated_bbox_dim_max REAL,                  -- leaf LENGTH (long side)
-    rotated_bbox_dim_min REAL,                  -- leaf WIDTH  (short side)
+    rotated_bbox_dim_max REAL,                  -- long side (geometric max dim)
+    rotated_bbox_dim_min REAL,                  -- short side (geometric min dim)
     rotated_bbox_json TEXT,                     -- [[x,y],...] 4 corners, working coords
+    -- oriented length/width: NULL until LM3_Landmark_Detector orientation exists, then a future
+    -- step assigns dim_max/dim_min to length/width via the lamina-tip axis (see TODO #1).
+    rotated_bbox_length REAL,                   -- tip->base extent  (reserved; NULL for now)
+    rotated_bbox_width REAL,                    -- perpendicular extent (reserved; NULL for now)
     -- minimum enclosing circle (LM2 uses its diameter to find the rotation)
     circle_cx REAL, circle_cy REAL, circle_radius REAL,
     -- grounded (nullable; a future MetricGrounding pass fills these when a CF exists)
