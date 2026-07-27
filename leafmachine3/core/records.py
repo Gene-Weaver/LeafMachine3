@@ -161,6 +161,7 @@ class LandmarkMeasureRow:
     instance_index: int
     lamina_trace_length: Optional[float] = None
     lamina_extent: Optional[float] = None
+    lamina_tip_base_length: Optional[float] = None
     leaf_width: Optional[float] = None
     apex_angle: Optional[float] = None
     apex_angle_type: Optional[str] = None

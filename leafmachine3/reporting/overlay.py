@@ -25,7 +25,7 @@ except Exception:  # pragma: no cover
     cv2 = None
 
 from leafmachine3.core.imaging import decode_polygon, scale_polygon
-from leafmachine3.core.landmarks import KPT_GROUP, SKELETON
+from leafmachine3.core.landmarks import KPT_GROUP, MIDVEIN_N, SKELETON
 from leafmachine3.reporting.palette import RGB, LandmarkStyle, OverlayStyle
 
 log = logging.getLogger("leafmachine3.overlay")
@@ -128,10 +128,19 @@ def _draw_landmark_skeleton(
     if lm_style.draw_skeleton:
         lw = max(1, lm_style.line_width)
         for a, b, kind in SKELETON:
+            if kind == "lamina_length":
+                continue   # the extent chord is drawn below between the first/last PRESENT midvein
             if ok(a) and ok(b):
                 pa = (int(round(pt[a][0])), int(round(pt[a][1])))
                 pb = (int(round(pt[b][0])), int(round(pt[b][1])))
                 cv2.line(out, pa, pb, _bgr(lm_style.color_for_kind(kind)), lw, cv2.LINE_AA)
+        # lamina_extent (white line): chord between the first and last PRESENT midvein points, so it
+        # matches the lamina_extent metric exactly even when an endpoint keypoint is occluded.
+        present_mv = [pt[f"midvein_{i}"] for i in range(MIDVEIN_N) if ok(f"midvein_{i}")]
+        if len(present_mv) >= 2:
+            pa = (int(round(present_mv[0][0])), int(round(present_mv[0][1])))
+            pb = (int(round(present_mv[-1][0])), int(round(present_mv[-1][1])))
+            cv2.line(out, pa, pb, _bgr(lm_style.color_for_kind("lamina_length")), lw, cv2.LINE_AA)
     if lm_style.draw_points:
         r = max(1, lm_style.point_radius)
         for name, (x, y) in pt.items():

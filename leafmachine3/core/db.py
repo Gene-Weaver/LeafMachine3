@@ -568,14 +568,14 @@ class ProjectDB:
                 """
                 INSERT INTO leaf_landmark_measurement
                     (specimen_id, detection_id, instance_index,
-                     lamina_trace_length, lamina_extent, leaf_width,
+                     lamina_trace_length, lamina_extent, lamina_tip_base_length, leaf_width,
                      apex_angle, apex_angle_type, base_angle, base_angle_type,
                      petiole_trace_length, lamina_curvature,
                      lamina_centroid_x, lamina_centroid_y, n_present)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (specimen_id, int(r.detection_id), int(r.instance_index),
-                 r.lamina_trace_length, r.lamina_extent, r.leaf_width,
+                 r.lamina_trace_length, r.lamina_extent, r.lamina_tip_base_length, r.leaf_width,
                  r.apex_angle, r.apex_angle_type, r.base_angle, r.base_angle_type,
                  r.petiole_trace_length, r.lamina_curvature,
                  r.lamina_centroid_x, r.lamina_centroid_y, int(r.n_present)),

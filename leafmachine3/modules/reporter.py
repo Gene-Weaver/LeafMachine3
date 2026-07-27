@@ -294,6 +294,7 @@ def _landmark_measure_lines(m) -> list[str]:
     return [
         f"lamina_trace: {as_int('lamina_trace_length')} px",
         f"lamina_extent: {as_int('lamina_extent')} px",
+        f"tip_base: {as_int('lamina_tip_base_length')} px",
         f"leaf_width: {as_int('leaf_width')} px",
         f"apex: {angle('apex_angle', 'apex_angle_type')}",
         f"base: {angle('base_angle', 'base_angle_type')}",

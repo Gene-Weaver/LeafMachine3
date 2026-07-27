@@ -65,6 +65,7 @@ class LandmarkMeasurements(PipelineStage):
                 instance_index=inst_index,
                 lamina_trace_length=m.lamina_trace_length,
                 lamina_extent=m.lamina_extent,
+                lamina_tip_base_length=m.lamina_tip_base_length,
                 leaf_width=m.leaf_width,
                 apex_angle=m.apex_angle,
                 apex_angle_type=m.apex_angle_type,

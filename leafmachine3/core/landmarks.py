@@ -73,9 +73,11 @@ SKELETON: list[tuple[str, str, str]] = (
     # apex angle (vertex apex_center) and base angle (vertex base_center)
     + [("apex_left", "apex_center", "apex"), ("apex_center", "apex_right", "apex")]
     + [("base_left", "base_center", "base"), ("base_center", "base_right", "base")]
-    # lamina width and lamina length (tip -> base)
+    # lamina width, and the lamina EXTENT chord (the white line): first->last midvein point, the
+    # same endpoints lamina_trace_length runs between, so curvature = arc/chord. NOT tip->base
+    # (that straight distance is reported separately as lamina_tip_base_length).
     + [("width_left", "width_right", "width")]
-    + [("lamina_tip", "lamina_base", "lamina_length")]
+    + [("midvein_0", f"midvein_{MIDVEIN_N - 1}", "lamina_length")]
 )
 
 assert len(KPT_INDEX) == N_KPTS == 31

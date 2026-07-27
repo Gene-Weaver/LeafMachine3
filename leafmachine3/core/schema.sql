@@ -192,7 +192,8 @@ CREATE TABLE IF NOT EXISTS leaf_landmark_measurement (
     detection_id   INTEGER NOT NULL REFERENCES plant_detection(detection_id) ON DELETE CASCADE,
     instance_index INTEGER NOT NULL,            -- matches leaf_landmark instance
     lamina_trace_length  REAL,                  -- summed dist along midvein trace pts (midvein_0..14)
-    lamina_extent        REAL,                  -- straight lamina_tip -> lamina_base
+    lamina_extent        REAL,                  -- straight chord of first->last midvein pt (== curvature denom)
+    lamina_tip_base_length REAL,                -- straight lamina_tip -> lamina_base (separate anchors)
     leaf_width           REAL,                  -- width_left -> width_right
     apex_angle           REAL,                  -- degrees at apex_center
     apex_angle_type      TEXT,                  -- acute | obtuse | reflex | NULL

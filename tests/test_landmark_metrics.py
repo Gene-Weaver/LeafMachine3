@@ -76,7 +76,8 @@ def _full_leaf() -> dict:
 def test_full_leaf_all_metrics_sane():
     m = compute_measurements(_full_leaf())
     assert m.n_present == 31
-    assert m.lamina_extent == pytest.approx(280, abs=1)
+    assert m.lamina_extent == pytest.approx(280, abs=1)          # chord midvein_0->midvein_14
+    assert m.lamina_tip_base_length == pytest.approx(280, abs=1)  # tip->base (coincide here)
     assert m.leaf_width == pytest.approx(110, abs=1)
     assert m.lamina_trace_length >= m.lamina_extent - 1e-6      # arc >= chord
     assert m.lamina_curvature == pytest.approx(1.0, abs=1e-3)   # straight midrib
@@ -103,7 +104,9 @@ def test_trace_length_sums_only_trace_points_not_anchors():
     m = compute_measurements(pts)
     assert m.lamina_trace_length == pytest.approx(20)    # 10 + 10, anchors excluded
     assert m.petiole_trace_length == pytest.approx(15)   # 5 + 10, anchors excluded
-    assert m.lamina_extent == pytest.approx(2000)        # extent uses the far tip/base
+    assert m.lamina_extent == pytest.approx(20)          # chord of first->last midvein (0..20)
+    assert m.lamina_tip_base_length == pytest.approx(2000)  # the far tip/base distance, reported separately
+    assert m.lamina_curvature == pytest.approx(1.0)      # straight midvein: arc == chord
 
 
 def test_curved_midrib_has_curvature_above_one():

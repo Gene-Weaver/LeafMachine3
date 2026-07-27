@@ -4,12 +4,18 @@ Turns the raw 31-keypoint pose (``core.landmarks`` / the ``leaf_landmark`` table
 biological measurements Will asked for:
 
     * ``lamina_trace_length``  -- summed distance along the midvein trace points (midvein_0..14)
-    * ``lamina_extent``        -- straight tip->base distance
+    * ``lamina_extent``        -- straight chord between the FIRST and LAST midvein trace points
+    * ``lamina_tip_base_length`` -- straight lamina_tip -> lamina_base distance (separate anchors)
     * ``leaf_width``           -- width_left -> width_right distance
     * ``apex_angle`` / type    -- angle at apex_center (acute / obtuse / reflex)
     * ``base_angle`` / type    -- angle at base_center (acute / obtuse / reflex)
     * ``petiole_trace_length`` -- summed distance along the petiole trace points (petiole_0..4)
-    * ``lamina_curvature``     -- lamina_trace_length / lamina_extent (~1 straight, >1 curved)
+    * ``lamina_curvature``     -- lamina_trace_length / lamina_extent (>= 1; both use the SAME
+                                  midvein endpoints, so it is a true arc/chord ratio)
+
+``lamina_extent`` deliberately spans the same first/last midvein points as ``lamina_trace_length``
+(NOT lamina_tip -> lamina_base), so the curvature ratio compares an arc and its chord over one
+identical point set and is always >= 1. The distinct tip->base distance is ``lamina_tip_base_length``.
 
 **Robust to occlusion.** The pose model always emits 31 keypoints, but occluded/uncertain ones
 come back with low confidence; the caller drops those below ``min_kpt_conf`` before building the
@@ -49,6 +55,7 @@ class LandmarkMeasurements:
 
     lamina_trace_length: Optional[float] = None
     lamina_extent: Optional[float] = None
+    lamina_tip_base_length: Optional[float] = None
     leaf_width: Optional[float] = None
     apex_angle: Optional[float] = None
     apex_angle_type: Optional[str] = None
@@ -149,12 +156,17 @@ def compute_measurements(points: dict[str, Point]) -> LandmarkMeasurements:
     """
     m = LandmarkMeasurements(n_present=len(points))
 
-    lamina_pts = _lamina_trace_points(points)
+    lamina_pts = _lamina_trace_points(points)          # present midvein points, tip->base order
     m.lamina_centroid = _mean(lamina_pts)
     m.lamina_trace_length = _polyline_length(lamina_pts)
 
+    # lamina_extent is the straight chord of the SAME midvein points the trace runs along (its first
+    # and last present point), so lamina_curvature = trace / extent is a true arc/chord ratio (>= 1).
+    # The lamina_tip -> lamina_base distance is kept separately as lamina_tip_base_length.
+    if len(lamina_pts) >= 2:
+        m.lamina_extent = _dist(lamina_pts[0], lamina_pts[-1])
     if "lamina_tip" in points and "lamina_base" in points:
-        m.lamina_extent = _dist(points["lamina_tip"], points["lamina_base"])
+        m.lamina_tip_base_length = _dist(points["lamina_tip"], points["lamina_base"])
 
     if m.lamina_trace_length is not None and m.lamina_extent and m.lamina_extent > _EPS:
         m.lamina_curvature = m.lamina_trace_length / m.lamina_extent
