@@ -278,9 +278,11 @@ report:
     background: "black"                 # black | white  (RGB_* outputs)
     subtract_holes: true                # Leaf minus Hole for binary/rgb
     Binary_Masks_Full_Image: true       # -> Binary_Masks_Full_Image__Leaf/<stem>.png  (whole sheet)
-    Binary_Masks: false                 # per-crop lamina masks now come from leaf_products (below)
     RGB_Masks_Full_Image: true          # -> RGB_Masks_Full_Image__Leaf/<stem>.jpg     (whole sheet)
-    RGB_Masks: false                    # per-crop lamina cutouts now come from leaf_products (below)
+    # LEGACY (off) — per-crop, unfitted, single-class masks. Superseded by the fitted per-leaf
+    # leaf_products (Original/Oriented Lamina_Mask + Lamina_RGB, etc.). Kept for back-compat only.
+    Binary_Masks: false                 # LEGACY -> Binary_Masks__Leaf/<stem>__SEG-leaf__x_y_x_y.png
+    RGB_Masks: false                    # LEGACY -> RGB_Masks__Leaf/<stem>__SEG-leaf__x_y_x_y.jpg
   # ---- raw RGB crop exports (non-leaf classes) ------------------------------
   # Exports the plain bbox crops into Crops/RGB__<friendly>/ (one folder per class). Leaf_WHOLE /
   # Leaf_PARTIAL are EXCLUDED here -- leaf bbox crops live in the leaf_products tree instead.
