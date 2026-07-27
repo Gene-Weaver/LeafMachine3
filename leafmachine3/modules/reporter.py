@@ -7,7 +7,8 @@ and can be toggled independently in ``report`` of ``LM3_settings.yaml``. The lay
 
     Overlay/Overlay_Summary/<stem>__Overlay.<ext>          (masks + boxes + landmarks on top)
     Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>  (one per leaf: keypoints + measures)
-    Crops/RGB__<friendly>/<stem>__BBOX-<friendly>__x_y_x_y.<ext>
+    Crops/RGB__<friendly>/<stem>__BBOX-<friendly>__x_y_x_y.<ext>   (NON-leaf detector classes)
+    {Original,Oriented}/<product>/<stem>__<PREFIX>-<friendly>__x_y_x_y.<ext>  (leaf products)
     Binary_Masks/Binary_Masks_Full_Image__<Cls>/<stem>__MaskFull-<friendly>.<ext>
     Binary_Masks/Binary_Masks__<Cls>/<stem>__SEG-<friendly>__x_y_x_y.<ext>
     RGB_Masks/RGB_Masks_Full_Image__<Cls>/<stem>__MaskFull-<friendly>.<ext>
@@ -40,6 +41,7 @@ from leafmachine3.core.imaging import (
 )
 from leafmachine3.core.naming import crop_label, friendly_name
 from leafmachine3.core.stage import PipelineStage, WorkItem
+from leafmachine3.reporting.leaf_products import PRODUCTS, PRODUCT_KEYS, render_leaf_products
 from leafmachine3.reporting.overlay import build_leaf_landmark_overlay, build_summary_image
 from leafmachine3.reporting.palette import LandmarkStyle, OverlayStyle
 
@@ -47,6 +49,8 @@ log = logging.getLogger("leafmachine3.reporter")
 
 _HOLE = "Hole"
 _LEAF = "Leaf"
+_PETIOLE = "Petiole"
+_LEAF_DET_CLASSES = ("Leaf_WHOLE", "Leaf_PARTIAL")   # leaf bbox crops come from the Leaf_Products tree
 _MASK_OUTPUTS = ("Binary_Masks_Full_Image", "RGB_Masks_Full_Image", "Binary_Masks", "RGB_Masks")
 
 
@@ -59,7 +63,7 @@ class Reporter(PipelineStage):
     depends_on: tuple[str, ...] = (
         "archival_detector", "plant_detector", "phenology_detector",
         "ruler_cf", "leaf_segmenter", "morphology",
-        "landmark_detector", "landmark_measurements", "metric_grounding",
+        "landmark_detector", "landmark_measurements", "leaf_orientation", "metric_grounding",
     )
     owns_tables: tuple[str, ...] = ()
 
@@ -111,10 +115,15 @@ class Reporter(PipelineStage):
         if any(enabled.values()) and b.leaves:
             written += self._export_masks(b, masks_cfg, enabled, reports, stem, img_ext, mask_ext, quality, read)
 
-        # ---- raw RGB crop exports ---------------------------------------
+        # ---- raw RGB crop exports (non-leaf classes; leaf crops -> Leaf_Products) ----
         crops_cfg = _sub(r, "crops")
         if _flag(crops_cfg, "enabled", False):
             written += self._export_crops(b, crops_cfg, reports, stem, img_ext, quality, read)
+
+        # ---- leaf products: Original/ + Oriented/ trees (5 products each) ----
+        lp_cfg = _sub(r, "leaf_products")
+        if _flag(lp_cfg, "enabled", True) and b.leaves:
+            written += self._export_leaf_products(b, lp_cfg, reports, stem, img_ext, mask_ext, quality, read)
 
         return written
 
@@ -209,6 +218,8 @@ class Reporter(PipelineStage):
         written: list[tuple[str, str]] = []
         for det in b.detections or []:
             cls = str(_row_get(det, "cls_name", ""))
+            if cls in _LEAF_DET_CLASSES:
+                continue                                        # leaf crops live in the Leaf_Products tree
             if wanted is not None and cls not in wanted:
                 continue
             xyxy = _row_get(det, "xyxy")
@@ -265,8 +276,99 @@ class Reporter(PipelineStage):
             written.append((str(path), "Overlay/Overlay_Landmarks"))
         return written
 
+    # ---- leaf products (Original + Oriented trees) ----------------------- #
+    def _export_leaf_products(self, b, lp_cfg, reports, stem, img_ext, mask_ext, quality, read):
+        """Render the 5 leaf products under ``Original/`` and (when orientation succeeded)
+        ``Oriented/``. Masks/cutouts are content-fitted; the bbox crop is not. Uses the working
+        image + segmentation polygons + the per-leaf rotation stored on ``leaf_morphology``.
+        """
+        if not b.working_path:
+            return []
+        want = _leaf_products_wanted(lp_cfg)
+        if not want:
+            return []
+        do_original = _flag(lp_cfg, "original", True)
+        do_oriented = _flag(lp_cfg, "oriented", True)
+        bg = 0 if str(_get(lp_cfg, "background", default="black")).lower() == "black" else 255
+        pad = int(_get(lp_cfg, "fit_pad", default=0))
+        working = read(b.working_path)
+        H, W = working.shape[:2]
+
+        # per-leaf-crop orientation (success + CW angle) from the morphology rows
+        orient: dict[int, tuple[bool, Optional[float]]] = {}
+        for m in b.morphology or []:
+            did = int(_row_get(m, "detection_id", -1))
+            orient[did] = (bool(_row_get(m, "oriented_leaf_success", 0)),
+                           _row_get(m, "oriented_leaf_rotation_angle_degreesCW", None))
+
+        by_det = _group_seg_by_detection(_parse_leaves(b.leaves))
+        written: list[tuple[str, str]] = []
+        for did, groups in by_det.items():
+            lam_polys = groups.get(_LEAF, [])
+            box = b.crop_boxes.get(did)
+            if not lam_polys or not box:
+                continue
+            x1, y1, x2, y2 = (int(round(v)) for v in box)
+            cx1, cy1, cx2, cy2 = max(0, x1), max(0, y1), min(W, x2), min(H, y2)
+            crop = working[cy1:cy2, cx1:cx2]
+            ch, cw = crop.shape[:2]
+            if ch == 0 or cw == 0:
+                continue
+
+            def raster(polys):
+                out = np.zeros((ch, cw), dtype=bool)
+                for p in polys:
+                    out |= polygon_mask(offset_polygon(p, -cx1, -cy1), (ch, cw))
+                return out
+
+            hole = raster(groups.get(_HOLE, []))
+            lamina = raster(lam_polys) & ~hole
+            pet_polys = groups.get(_PETIOLE, [])
+            laminapet = ((raster(lam_polys) | raster(pet_polys)) & ~hole) if pet_polys else None
+            det_box = (x1, y1, x2, y2)
+
+            if do_original:
+                products = render_leaf_products(crop, lamina, laminapet, angle_cw=None, bg=bg, want=want, pad=pad)
+                written += self._write_leaf_products(products, "Original", reports, stem, det_box, img_ext, mask_ext, quality)
+
+            success, angle = orient.get(did, (False, None))
+            if do_oriented and success and angle is not None:
+                products = render_leaf_products(crop, lamina, laminapet, angle_cw=float(angle), bg=bg, want=want, pad=pad)
+                written += self._write_leaf_products(products, "Oriented", reports, stem, det_box, img_ext, mask_ext, quality)
+        return written
+
+    def _write_leaf_products(self, products, tree, reports, stem, det_box, img_ext, mask_ext, quality):
+        """Save each rendered product to ``reports/<tree>/<folder>/<stem>__<PREFIX>-<friendly>__x_y_x_y.<ext>``."""
+        written: list[tuple[str, str]] = []
+        for p in PRODUCTS:
+            img = products.get(p.key)
+            if img is None:
+                continue
+            ext = mask_ext if p.is_mask else img_ext
+            name = crop_filename(stem, f"{p.prefix}-{p.friendly}", det_box, ext)
+            path = reports / tree / p.folder / name
+            save_image(img, path, quality=quality)
+            written.append((str(path), f"{tree}/{p.folder}"))
+        return written
+
 
 # -- geometry helpers --------------------------------------------------------------
+def _group_seg_by_detection(parsed) -> dict:
+    """Group parsed leaf polygons ``(detection_id, cls_name, poly)`` -> ``{det: {cls: [poly]}}``."""
+    by_det: dict[int, dict[str, list]] = {}
+    for did, cls, poly in parsed:
+        by_det.setdefault(did, {}).setdefault(cls, []).append(poly)
+    return by_det
+
+
+def _leaf_products_wanted(lp_cfg) -> set:
+    """Set of enabled product keys from ``report.leaf_products.products`` (default: all)."""
+    pcfg = _getk(lp_cfg, "products", None)
+    if pcfg is None:
+        return set(PRODUCT_KEYS)
+    return {k for k in PRODUCT_KEYS if _flag(pcfg, k, True)}
+
+
 def _group_landmark_rows(landmarks) -> dict:
     """Group leaf_landmark rows by ``(detection_id, instance_index)`` (one leaf per group)."""
     groups: dict = {}

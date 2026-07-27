@@ -60,6 +60,7 @@ _CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "morphology",
     "landmark_detector",
     "landmark_measurements",
+    "leaf_orientation",
     "metric_grounding",
     "reporter",
 )
@@ -71,6 +72,10 @@ _OWNED_SPECIMEN_COLS: dict[str, tuple[str, ...]] = {
 }
 _OWNED_LEAF_COLS: dict[str, tuple[str, ...]] = {
     "metric_grounding": ("area_cm2", "perimeter_cm", "bbox_w_cm", "bbox_h_cm"),
+}
+# leaf_morphology columns a stage OWNS (updates in place) -- nulled when that stage is reset.
+_OWNED_MORPH_COLS: dict[str, tuple[str, ...]] = {
+    "leaf_orientation": ("oriented_leaf_success", "oriented_leaf_rotation_angle_degreesCW"),
 }
 
 
@@ -530,6 +535,18 @@ class ProjectDB:
             (specimen_id,),
         )
 
+    def set_leaf_orientation(self, rows: Sequence[Any]) -> None:
+        """Update the orientation columns on each leaf's morphology row (LeafOrientation stage)."""
+        for r in rows:
+            self._exec(
+                """
+                UPDATE leaf_morphology
+                   SET oriented_leaf_success = ?, oriented_leaf_rotation_angle_degreesCW = ?
+                 WHERE leaf_id = ?
+                """,
+                (1 if r.success else 0, r.angle_cw, int(r.leaf_id)),
+            )
+
     def record_leaf_landmarks(self, specimen_id: int, rows: Sequence[Any]) -> None:
         """DELETE the specimen's landmark rows then insert one per (crop x instance x keypoint)."""
         self._exec("DELETE FROM leaf_landmark WHERE specimen_id = ?", (specimen_id,))
@@ -865,6 +882,8 @@ class ProjectDB:
                     self._exec(f"UPDATE specimen SET {col} = NULL")
                 for col in _OWNED_LEAF_COLS.get(key, ()):      # null cm-grounded leaf metrics
                     self._exec(f"UPDATE leaf_segmentation SET {col} = NULL")
+                for col in _OWNED_MORPH_COLS.get(key, ()):     # null orientation fields on morphology
+                    self._exec(f"UPDATE leaf_morphology SET {col} = NULL")
                 self._exec("DELETE FROM image_status WHERE stage_key = ?", (key,))
                 self._exec(
                     """

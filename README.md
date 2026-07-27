@@ -13,7 +13,7 @@ hardware internally; the pipeline is resumable and driven by one YAML settings f
 
 `ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerClassifier →
 [RulerConversionFactor — stub] → LeafSegmenter → Morphology → LandmarkDetector →
-LandmarkMeasurements → MetricGrounding (no-op until CF) → Reporter`
+LandmarkMeasurements → LeafOrientation → MetricGrounding (no-op until CF) → Reporter`
 
 **LandmarkDetector** (runs on leaf crops) predicts the 31-keypoint `mid15_pet5` pose skeleton
 (lamina tip/base, apex/base triples, midvein×15, petiole×5+tip, width×2) with the yolo26x-pose
@@ -42,6 +42,20 @@ rendered as a live schematic in
 [`modules/experiments/angle_checks.html`](leafmachine3/modules/experiments/angle_checks.html).
 See `core/landmark_metrics.py`. (Orientation-aware length/width assignment is still future —
 TODO #1a.)
+
+**LeafOrientation** (post-process, CPU) computes the clockwise rotation that stands each leaf
+tip-up / base-down from the keypoints — primary: the `lamina_tip`→`lamina_base` axis; fallback:
+PCA of the midvein (≥ `min_midvein` points) with the tip end chosen from the petiole / base / apex
+points; else no orientation. The angle + a success flag are stored on the leaf's `leaf_morphology`
+row (`oriented_leaf_rotation_angle_degreesCW`, `oriented_leaf_success`). See `core/orientation.py`.
+
+**Leaf products** (Reporter) are the highest-value output: five per-leaf products, each in a
+non-oriented **`Original/`** and an upright **`Oriented/`** tree — the Plant_Detector bbox crop,
+the lamina mask, the lamina+petiole mask, the lamina RGB cutout, and the lamina+petiole RGB cutout.
+Everything except the bbox crop is cropped tight to its mask ("fitted"); cutouts/rotated corners use
+the `report.leaf_products.background`. Oriented products are emitted only where LeafOrientation
+succeeded; lamina+petiole products are skipped for leaves without a petiole mask. Leaf bbox crops
+live here (not in `Crops/`, which now holds only non-leaf classes).
 
 **Morphology** (runs after LeafSegmenter) computes LeafMachine2-style shape metrics per leaf
 mask — area, perimeter, centroid, convex hull, convexity/concavity, circularity, aspect ratio —
@@ -97,7 +111,14 @@ reports/
   Overlay/
     Overlay_Summary/             <stem>__Overlay.jpg                   (masks + boxes + landmarks)
     Overlay_Landmarks/           <stem>__LM-leaf__x_y_x_y.jpg          (per leaf: keypoints + measures)
-  Crops/RGB__<friendly>/         <stem>__BBOX-<friendly>__x_y_x_y.jpg   (both detectors)
+  Original/                      (5 leaf products, non-oriented)
+    Leaf_BBox/                   <stem>__BBOX-leaf__x_y_x_y.jpg        (not fitted)
+    Lamina_Mask/                 <stem>__SEG-lamina__x_y_x_y.png       (fitted)
+    LaminaPetiole_Mask/          <stem>__SEG-laminaPetiole__x_y_x_y.png
+    Lamina_RGB/                  <stem>__RGB-lamina__x_y_x_y.jpg
+    LaminaPetiole_RGB/           <stem>__RGB-laminaPetiole__x_y_x_y.jpg
+  Oriented/                      (same 5 products, rotated tip-up)
+  Crops/RGB__<friendly>/         <stem>__BBOX-<friendly>__x_y_x_y.jpg   (NON-leaf classes)
   Binary_Masks/
     Binary_Masks_Full_Image__Leaf/  <stem>__MaskFull-leaf.png          (per specimen)
     Binary_Masks__Leaf/             <stem>__SEG-leaf__x_y_x_y.png       (per leaf crop)

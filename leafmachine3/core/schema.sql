@@ -142,6 +142,9 @@ CREATE TABLE IF NOT EXISTS leaf_morphology (
     circle_cx REAL, circle_cy REAL, circle_radius REAL,
     -- grounded (nullable; a future MetricGrounding pass fills these when a CF exists)
     area_cm2 REAL, perimeter_cm REAL, length_cm REAL, width_cm REAL,
+    -- leaf orientation (LeafOrientation stage): rotate the leaf so the lamina tip is up / base down.
+    oriented_leaf_success INTEGER,              -- 1 if an orientation was determined, 0 if not (no oriented output)
+    oriented_leaf_rotation_angle_degreesCW REAL, -- clockwise degrees to rotate the leaf products upright
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (leaf_id)                            -- one morphology row per leaf instance
 );

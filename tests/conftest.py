@@ -119,6 +119,7 @@ def build_mock_config(
             "morphology": {"enabled": True, "classes": ["Leaf"], "find_minimum_bounding_box": True},
             "landmark_detector": {"enabled": True, "source_classes": ["Leaf_WHOLE"], "include_partial": False},
             "landmark_measurements": {"enabled": True, "min_kpt_conf": 0.25},
+            "leaf_orientation": {"enabled": True, "min_kpt_conf": 0.25, "min_midvein": 5},
             "metric_grounding": {"enabled": True, "round_ndigits": 4},
             "reporter": {"enabled": True},
         },
@@ -143,6 +144,7 @@ def build_mock_config(
                 "RGB_Masks": True,
             },
             "crops": {"enabled": True, "classes": "all", "source": "working"},
+            "leaf_products": {"enabled": True, "original": True, "oriented": True, "background": "black"},
             "formats": {"image_ext": "jpg", "jpg_quality": 95, "mask_ext": "png"},
         },
     }

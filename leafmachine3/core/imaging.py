@@ -151,3 +151,41 @@ def composite(img, mask, bg=0):
     out = np.full_like(img, bg)
     out[mask] = img[mask]
     return out
+
+
+# ---- rotation + content-fit (leaf orientation products) ------------------------
+def rotate_image(img, angle_cw: float, bg: int = 0, nearest: bool = False):
+    """Rotate ``img`` CLOCKWISE by ``angle_cw`` degrees, expanding the canvas to fit the whole
+    rotated image; blank area filled with ``bg``. ``nearest`` (for masks) avoids interpolated edges.
+
+    cv2's rotation angle is counter-clockwise-positive, so a clockwise angle is passed negated.
+    """
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+    m = cv2.getRotationMatrix2D((cx, cy), -float(angle_cw), 1.0)
+    cos, sin = abs(m[0, 0]), abs(m[0, 1])
+    nw = int(round(h * sin + w * cos))
+    nh = int(round(h * cos + w * sin))
+    m[0, 2] += nw / 2.0 - cx
+    m[1, 2] += nh / 2.0 - cy
+    flags = cv2.INTER_NEAREST if nearest else cv2.INTER_LINEAR
+    border = (bg, bg, bg) if img.ndim == 3 else bg
+    return cv2.warpAffine(img, m, (nw, nh), flags=flags, borderValue=border)
+
+
+def mask_bbox(mask) -> tuple[int, int, int, int] | None:
+    """Tight ``(x1, y1, x2, y2)`` bounding box of a boolean/uint8 mask's True pixels, or ``None``."""
+    m = np.asarray(mask)
+    ys, xs = np.where(m > 0)
+    if xs.size == 0:
+        return None
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+
+def crop_to_box(img, box, pad: int = 0):
+    """Slice ``img`` to ``box=(x1,y1,x2,y2)`` (optionally padded, clamped to bounds)."""
+    h, w = img.shape[:2]
+    x1, y1, x2, y2 = box
+    x1, y1 = max(0, x1 - pad), max(0, y1 - pad)
+    x2, y2 = min(w, x2 + pad), min(h, y2 + pad)
+    return img[y1:y2, x1:x2]

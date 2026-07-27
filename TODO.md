@@ -6,7 +6,7 @@ post-analysis add-on after the primary pipeline:
 ```
 ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerClassifier
 → [RulerConversionFactor — stub] → LeafSegmenter → Morphology → LandmarkDetector
-→ LandmarkMeasurements → MetricGrounding → Reporter
+→ LandmarkMeasurements → LeafOrientation → MetricGrounding → Reporter
 ```
 
 See `docs/LM3_Plan.html` for the architecture. Legend: **⛔ blocked** · **▶ ready** · **… planned**.
@@ -22,12 +22,13 @@ See `docs/LM3_Plan.html` for the architecture. Legend: **⛔ blocked** · **▶ 
 
 ---
 
-## 1. Petiole width  ⛔ (blocked — needs landmark_measurements + leaf orientation)
+## 1. Petiole width  ▶ (ready — orientation now exists)
 
 **Goal:** measure petiole width (px) per leaf instance and store it, mirroring LM2's petiole
-project. Runs as an add-on **after Morphology**.
+project. Runs as an add-on **after Morphology**. Leaf orientation (step 3) is now DONE, so this is
+unblocked; consume the oriented `Petiole` masks (or the raw masks + `oriented_leaf_rotation_angle_degreesCW`).
 
-**Blocked by — must land first, in order:**
+**Prerequisites (status):**
 1. ✅ **`LM3_Landmark_Detector`** — DONE (alpha, `yolo26x_pose_640`): integrated as the
    `landmark_detector` stage → 31 keypoints per leaf in `leaf_landmark` (working coords),
    self-describing schema in `landmark_schema` / `landmark_skeleton`. (Alpha weights — will be
@@ -40,8 +41,11 @@ project. Runs as an add-on **after Morphology**.
    **tip→base orientation axis** (from `lamina_tip`/`lamina_base` + midvein fit) and **lobe count**;
    these two feed #1a and the orientation step below. (LM2 reference:
    `LM3_Landmark_Detector/landmark_postprocess.py` `reassemble()`.)
-3. **Leaf orientation code** — use the tip→base axis from #2 to know which end of the petiole
-   meets the blade (LM2 sidestepped this by requiring pre-rotated "Oriented_Masks").
+3. ✅ **Leaf orientation code** — DONE: the `leaf_orientation` stage (`core/orientation.py`) computes
+   the clockwise upright rotation per leaf (tip→base axis; PCA fallback with petiole/base/apex to pick
+   the tip end) → `leaf_morphology.oriented_leaf_rotation_angle_degreesCW` / `oriented_leaf_success`.
+   The Reporter emits `Original/` + `Oriented/` leaf-product trees from it. This also unblocks #1a.
+   Petiole-width can now consume the oriented `Petiole` masks (or the raw masks + this angle).
 
 **What / how:** consume the `Leaf` + `Petiole` instance masks per leaf crop. Skeletonize the
 petiole, BFS the centerline to find its two ends + skeletal length, then measure the
@@ -67,10 +71,9 @@ Morphology already stores the rotated box's two **side lengths** as `rotated_bbo
 Two nullable columns are **already reserved in `leaf_morphology`**: `rotated_bbox_length` and
 `rotated_bbox_width` (NULL until orientation exists).
 
-**How we'll fill them:** the `LM3_Landmark_Detector` already predicts the **`lamina_tip`** (and
-`lamina_base`) — available now in `leaf_landmark` (working coords) for the same crop the rotated
-bbox came from. Once `landmark_measurements` (#1 step 2) gives the tip→base axis, apply the same
-transform used to orient the leaf to the rotated bbox → the box side along the **tip→base** axis
+**How we'll fill them (now ready — `leaf_orientation` exists):** apply the stored
+`oriented_leaf_rotation_angle_degreesCW` (from `leaf_orientation`) to the rotated bbox and read off
+which side runs along the tip→base axis. The box side along the **tip→base** axis
 becomes `rotated_bbox_length`, the perpendicular side becomes `rotated_bbox_width` (independent of
 which one is max vs min). No new geometry — just an axis-aware assignment of the two existing side
 lengths, done in the orientation step.

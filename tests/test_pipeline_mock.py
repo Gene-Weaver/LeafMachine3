@@ -92,6 +92,13 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         assert mm["lamina_trace_length"] >= mm["lamina_extent"] - 1e-6     # arc >= chord (same endpoints)
         assert mm["lamina_curvature"] >= 0.0                              # max midvein bend (deg); 0 = straight
         assert mm["curvature_point"] is not None                          # most-bent midvein index
+
+        # Leaf Orientation ran: every mock leaf has tip+base -> success + a CW angle on morphology
+        orient = conn.execute(
+            "SELECT oriented_leaf_success, oriented_leaf_rotation_angle_degreesCW FROM leaf_morphology"
+        ).fetchall()
+        assert orient and all(o["oriented_leaf_success"] == 1 for o in orient)
+        assert all(0.0 <= o["oriented_leaf_rotation_angle_degreesCW"] < 360.0 for o in orient)
         assert 0.0 <= mm["apex_angle"] <= 360.0                           # degrees, incl. reflex
         assert mm["apex_angle_type"] in {"acute", "obtuse", "reflex"}
         assert mm["base_angle_type"] in {"acute", "obtuse", "reflex"}
@@ -119,6 +126,22 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     from leafmachine3.core.imaging import parse_crop_filename
     lp = parse_crop_filename(lm_overlays[0].name)
     assert lp and lp["prefix"] == "LM" and lp["friendly"] == "leaf" and len(lp["xyxy"]) == 4
+
+    # leaf products: Original/ + Oriented/ trees, each with bbox + fitted lamina mask + lamina cutout
+    # (mock leaves have no petiole, so the laminaPetiole products are correctly skipped).
+    for tree in ("Original", "Oriented"):
+        base = reports / tree
+        bbox = list((base / "Leaf_BBox").glob("*__BBOX-leaf__*.jpg"))
+        lam_mask = list((base / "Lamina_Mask").glob("*__SEG-lamina__*.png"))
+        lam_rgb = list((base / "Lamina_RGB").glob("*__RGB-lamina__*.jpg"))
+        assert bbox and lam_mask and lam_rgb, f"{tree}: missing leaf products"
+        assert not (base / "LaminaPetiole_Mask").exists()          # no petiole -> product skipped
+        # a fitted lamina mask is tight to content -> no larger than its bbox crop
+        import cv2 as _cv2
+        m = _cv2.imread(str(lam_mask[0]), _cv2.IMREAD_GRAYSCALE)
+        assert m is not None and (m > 0).any()                     # non-empty mask
+    # leaf bbox crops were moved OUT of Crops/ (only non-leaf classes remain there)
+    assert not (reports / "Crops" / "RGB__leaf").exists()
 
     # mask outputs are grouped under Binary_Masks/ and RGB_Masks/ (harmonized with Crops/)
     full_bin = list((reports / "Binary_Masks" / "Binary_Masks_Full_Image__Leaf").glob("*.png"))

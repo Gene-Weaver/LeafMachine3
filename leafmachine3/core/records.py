@@ -177,6 +177,15 @@ class LandmarkMeasureRow:
 
 
 @dataclass
+class OrientationRow:
+    """Per-leaf upright orientation (LeafOrientation stage), stored on the leaf_morphology row.
+    ``angle_cw`` is clockwise degrees to bring the lamina tip up; ``None`` when ``success`` is False."""
+    leaf_id: int
+    success: bool
+    angle_cw: Optional[float] = None
+
+
+@dataclass
 class Grounded:
     leaf_id: int
     area_cm2: Optional[float] = None
