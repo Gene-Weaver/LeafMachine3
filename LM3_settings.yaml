@@ -264,8 +264,9 @@ report:
   # LEFT half = the leaf crop with Leaf + Petiole masks filled (no border), the width sample probes
   # (light blue) + reported width band (blue), and a panel of the lamina areas + petiole width.
   # RIGHT half = the petiole in full color (optional background tint via overlay.petiole.zoom_bg_tint,
-  # off by default) blown up (pixelated) to the same height, with a 1-px blue line (width_color) at
-  # the exact reported-width location for checking.
+  # off by default), ROTATED to minimize its width (a long/curved petiole would otherwise make the
+  # image huge), blown up (pixelated) to the same height, with a 1-px blue line (width_color) at the
+  # exact reported-width location for checking.
   overlay_petiole:
     enabled: true                     # optional; on by default. Colors from overlay.petiole above.
   # ---- segmentation mask exports --------------------------------------------

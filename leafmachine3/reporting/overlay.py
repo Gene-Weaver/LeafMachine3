@@ -185,8 +185,10 @@ def _petiole_zoom_panel(
 ) -> Optional[np.ndarray]:
     """Fitted, full-color crop around the petiole -- the petiole keeps its original pixels while the
     background is tinted toward ``zoom_bg_color`` (so context stays visible but the petiole stands
-    out) -- nearest-neighbour blown up to ``target_h``, with the reported width location drawn as a
-    1-original-pixel line in ``width_color`` so the exact pixels the width spans are checkable."""
+    out) -- **rotated so the petiole's long axis is vertical** (a long petiole would otherwise blow
+    up to a huge width when scaled to the crop height), nearest-neighbour blown up to ``target_h``,
+    with the reported width location drawn as a 1-original-pixel line in ``width_color`` so the exact
+    pixels the width spans are checkable."""
     if not petiole_polys:
         return None
     h, w = crop_bgr.shape[:2]
@@ -195,19 +197,51 @@ def _petiole_zoom_panel(
         pts = np.round(np.asarray(poly, dtype=float)).astype(np.int32).reshape(-1, 1, 2)
         if len(pts) >= 3:
             cv2.fillPoly(mask, [pts], 1)
-    box = mask_bbox(mask)
+    if not mask.any():
+        return None
+
+    img = crop_bgr.astype(np.float32).copy()                 # full color; petiole keeps its pixels
+    tint = max(0.0, min(1.0, pet_style.zoom_bg_tint))
+    if tint > 0:                                             # background tinted toward zoom_bg_color
+        bg = ~mask.astype(bool)
+        img[bg] = img[bg] * (1.0 - tint) + np.array(_bgr(pet_style.zoom_bg_color), np.float32) * tint
+    img = img.astype(np.uint8)
+
+    # rotate the panel to the angle that MINIMISES the petiole's horizontal extent, so a long (or
+    # long-and-curved) petiole doesn't blow up the panel width when it is scaled to the crop height.
+    # A brute-force sweep (never worse than no rotation) beats PCA, which aligns the chord and can
+    # actually widen a curved petiole by turning its bulge sideways.
+    ys, xs = np.where(mask)
+    dx = xs.astype(np.float32) - float(xs.mean())
+    dy = ys.astype(np.float32) - float(ys.mean())
+    best_ang, best_w = 0.0, None
+    for a in range(0, 180, 3):
+        th = float(np.radians(a))
+        ext = float(np.ptp(np.cos(th) * dx + np.sin(th) * dy))   # width after cv2 rotation by a deg
+        if best_w is None or ext < best_w:
+            best_w, best_ang = ext, float(a)
+    cx, cy = w / 2.0, h / 2.0
+    m = cv2.getRotationMatrix2D((cx, cy), best_ang, 1.0)
+    cos, sin = abs(m[0, 0]), abs(m[0, 1])
+    nw, nh = int(round(h * sin + w * cos)), int(round(h * cos + w * sin))
+    m[0, 2] += nw / 2.0 - cx
+    m[1, 2] += nh / 2.0 - cy
+    rimg = cv2.warpAffine(img, m, (nw, nh), flags=cv2.INTER_NEAREST, borderValue=(0, 0, 0))
+    rmask = cv2.warpAffine(mask, m, (nw, nh), flags=cv2.INTER_NEAREST, borderValue=0) > 0
+
+    box = mask_bbox(rmask)
     if box is None:
         return None
     x1, y1, x2, y2 = box
-    cut = crop_bgr[y1:y2, x1:x2].astype(np.float32).copy()   # full color; petiole keeps its pixels
-    bg = ~mask[y1:y2, x1:x2].astype(bool)                     # background tinted toward zoom_bg_color
-    tint = max(0.0, min(1.0, pet_style.zoom_bg_tint))
-    cut[bg] = cut[bg] * (1.0 - tint) + np.array(_bgr(pet_style.zoom_bg_color), np.float32) * tint
-    cut = cut.astype(np.uint8)
-    if width_segment and len(width_segment) >= 2:           # 1-px line at the width (crop -> cutout frame)
-        p1 = _ipt((width_segment[0][0] - x1, width_segment[0][1] - y1))
-        p2 = _ipt((width_segment[1][0] - x1, width_segment[1][1] - y1))
-        cv2.line(cut, p1, p2, _bgr(pet_style.width_color), 1, cv2.LINE_8)     # crisp 1-px, no anti-alias
+    cut = rimg[y1:y2, x1:x2].copy()
+    if width_segment and len(width_segment) >= 2:           # 1-px width line, rotated + fitted into place
+
+        def _tf(p):
+            x = m[0, 0] * p[0] + m[0, 1] * p[1] + m[0, 2]
+            y = m[1, 0] * p[0] + m[1, 1] * p[1] + m[1, 2]
+            return _ipt((x - x1, y - y1))
+
+        cv2.line(cut, _tf(width_segment[0]), _tf(width_segment[1]), _bgr(pet_style.width_color), 1, cv2.LINE_8)
     ch, cw = cut.shape[:2]
     if ch == 0 or cw == 0:
         return None
