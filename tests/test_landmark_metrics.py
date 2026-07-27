@@ -82,8 +82,28 @@ def test_full_leaf_all_metrics_sane():
     assert m.lamina_curvature == pytest.approx(1.0, abs=1e-3)   # straight midrib
     assert m.apex_angle_type in {"acute", "obtuse"}             # convex apex
     assert m.base_angle_type in {"acute", "obtuse"}
-    assert m.petiole_trace_length == pytest.approx(30, abs=1)
+    # lamina trace = the 15 midvein pts (150,20)->(150,300); petiole trace = the 5 petiole pts
+    # (150,305)->(150,325); anchors (tip/base/petiole_tip) are NOT summed into the traces.
+    assert m.lamina_trace_length == pytest.approx(280, abs=1)
+    assert m.petiole_trace_length == pytest.approx(20, abs=1)
     assert m.lamina_centroid is not None
+
+
+def test_trace_length_sums_only_trace_points_not_anchors():
+    # midvein/petiole points are close together; the tip/base/petiole_tip anchors are FAR away.
+    # lamina_trace_length / petiole_trace_length must sum ONLY the trace points (anchors excluded),
+    # while lamina_extent DOES use the far tip/base.
+    pts = {
+        "lamina_tip": (0, -1000),
+        "midvein_0": (0, 0), "midvein_1": (0, 10), "midvein_2": (0, 20),
+        "lamina_base": (0, 1000),
+        "petiole_0": (0, 0), "petiole_1": (0, 5), "petiole_2": (0, 15),
+        "petiole_tip": (0, 5000),
+    }
+    m = compute_measurements(pts)
+    assert m.lamina_trace_length == pytest.approx(20)    # 10 + 10, anchors excluded
+    assert m.petiole_trace_length == pytest.approx(15)   # 5 + 10, anchors excluded
+    assert m.lamina_extent == pytest.approx(2000)        # extent uses the far tip/base
 
 
 def test_curved_midrib_has_curvature_above_one():

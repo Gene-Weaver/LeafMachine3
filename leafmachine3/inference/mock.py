@@ -120,8 +120,8 @@ class MockLandmarkPose:
         leaf["apex_left"] = (cx - 0.10 * w, 0.09 * h, 0.6)
         leaf["apex_right"] = (cx + 0.10 * w, 0.09 * h, 0.6)
         leaf["lamina_tip"] = (cx, 0.04 * h, 0.9)
-        for i in range(MIDVEIN_N):                          # tip -> base down the midline
-            leaf[f"midvein_{i}"] = (cx, (0.06 + 0.70 * i / (MIDVEIN_N - 1)) * h, 0.8)
+        for i in range(MIDVEIN_N):                          # tip -> base down the midline (spans tip..base)
+            leaf[f"midvein_{i}"] = (cx, (0.04 + 0.74 * i / (MIDVEIN_N - 1)) * h, 0.8)
         leaf["base_center"] = (cx, 0.76 * h, 0.7)
         leaf["base_left"] = (cx - 0.15 * w, 0.74 * h, 0.6)
         leaf["base_right"] = (cx + 0.15 * w, 0.74 * h, 0.6)

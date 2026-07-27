@@ -25,7 +25,8 @@ keypoint names + skeleton relationships are seeded, self-describing, into `landm
 
 **LandmarkMeasurements** (post-process, CPU; runs after LandmarkDetector) derives per-leaf
 biology from the keypoints into the `leaf_landmark_measurement` table: `lamina_trace_length`
-(midrib arc), `lamina_extent` (straight tip→base), `leaf_width` (width_left→width_right),
+(summed distance along the 15 midvein trace points), `lamina_extent` (straight tip→base),
+`leaf_width` (width_left→width_right),
 `apex_angle`/`base_angle` with `_type` in `{acute, obtuse, reflex}`, `petiole_trace_length`, and
 `lamina_curvature` (arc/extent). It is **occlusion-robust**: keypoints below
 `landmark_measurements.min_kpt_conf` are treated as absent and every metric that needs a missing

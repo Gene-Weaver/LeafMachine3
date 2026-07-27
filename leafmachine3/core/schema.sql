@@ -191,16 +191,16 @@ CREATE TABLE IF NOT EXISTS leaf_landmark_measurement (
     specimen_id    INTEGER NOT NULL REFERENCES specimen(specimen_id)         ON DELETE CASCADE,
     detection_id   INTEGER NOT NULL REFERENCES plant_detection(detection_id) ON DELETE CASCADE,
     instance_index INTEGER NOT NULL,            -- matches leaf_landmark instance
-    lamina_trace_length  REAL,                  -- midrib arc length (tip end -> base)
+    lamina_trace_length  REAL,                  -- summed dist along midvein trace pts (midvein_0..14)
     lamina_extent        REAL,                  -- straight lamina_tip -> lamina_base
     leaf_width           REAL,                  -- width_left -> width_right
     apex_angle           REAL,                  -- degrees at apex_center
     apex_angle_type      TEXT,                  -- acute | obtuse | reflex | NULL
     base_angle           REAL,                  -- degrees at base_center
     base_angle_type      TEXT,                  -- acute | obtuse | reflex | NULL
-    petiole_trace_length REAL,                  -- petiole arc length (base end -> tip)
-    lamina_curvature     REAL,                  -- lamina_trace_length / lamina_extent (>= 1)
-    lamina_centroid_x    REAL, lamina_centroid_y REAL,   -- mean of lamina-trace points (for QC/overlay)
+    petiole_trace_length REAL,                  -- summed dist along petiole trace pts (petiole_0..4)
+    lamina_curvature     REAL,                  -- lamina_trace_length / lamina_extent (~1 straight)
+    lamina_centroid_x    REAL, lamina_centroid_y REAL,   -- mean of midvein trace points (for QC/overlay)
     n_present            INTEGER,               -- how many confident keypoints fed the measurement
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (detection_id, instance_index)       -- one measurement row per leaf instance

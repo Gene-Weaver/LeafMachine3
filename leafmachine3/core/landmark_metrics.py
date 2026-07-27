@@ -3,13 +3,13 @@
 Turns the raw 31-keypoint pose (``core.landmarks`` / the ``leaf_landmark`` table) into the
 biological measurements Will asked for:
 
-    * ``lamina_trace_length``  -- arc length of the midrib polyline (tip end -> base)
+    * ``lamina_trace_length``  -- summed distance along the midvein trace points (midvein_0..14)
     * ``lamina_extent``        -- straight tip->base distance
     * ``leaf_width``           -- width_left -> width_right distance
     * ``apex_angle`` / type    -- angle at apex_center (acute / obtuse / reflex)
     * ``base_angle`` / type    -- angle at base_center (acute / obtuse / reflex)
-    * ``petiole_trace_length`` -- arc length of the petiole polyline (base end -> tip)
-    * ``lamina_curvature``     -- lamina_trace_length / lamina_extent (>= 1; 1 == straight)
+    * ``petiole_trace_length`` -- summed distance along the petiole trace points (petiole_0..4)
+    * ``lamina_curvature``     -- lamina_trace_length / lamina_extent (~1 straight, >1 curved)
 
 **Robust to occlusion.** The pose model always emits 31 keypoints, but occluded/uncertain ones
 come back with low confidence; the caller drops those below ``min_kpt_conf`` before building the
@@ -81,31 +81,21 @@ def _mean(points: list[Point]) -> Optional[Point]:
 
 # -- ordered traces ----------------------------------------------------------------
 def _lamina_trace_points(pts: dict[str, Point]) -> list[Point]:
-    """Ordered midrib polyline: lamina_tip -> midvein_0..N-1 -> lamina_base (present ones only).
+    """The lamina (midvein) trace: the present ``midvein_0..N-1`` points, index-ordered tip->base.
 
-    The midvein keypoints are index-ordered tip->base by the model, so filtering to the present
-    ones keeps the walk starting nearest the tip and ending nearest the base (Will's spec:
-    "starting with the lamina point closest to the lamina_tip and going all the way to
-    lamina_base"). The tip/base anchors are included when present for a complete midrib.
+    ``lamina_trace_length`` is the sum of consecutive distances along THESE points only --
+    ``midvein_0->midvein_1 + midvein_1->midvein_2 + ... + midvein_{N-2}->midvein_{N-1}``. The
+    ``lamina_tip`` / ``lamina_base`` anchors are NOT part of the trace (they define
+    ``lamina_extent``). Filtering to the present points keeps the walk correctly ordered.
     """
-    ordered: list[Point] = []
-    if "lamina_tip" in pts:
-        ordered.append(pts["lamina_tip"])
-    ordered += [pts[f"midvein_{i}"] for i in range(MIDVEIN_N) if f"midvein_{i}" in pts]
-    if "lamina_base" in pts:
-        ordered.append(pts["lamina_base"])
-    return ordered
+    return [pts[f"midvein_{i}"] for i in range(MIDVEIN_N) if f"midvein_{i}" in pts]
 
 
 def _petiole_trace_points(pts: dict[str, Point]) -> list[Point]:
-    """Ordered petiole polyline: lamina_base -> petiole_0..N-1 -> petiole_tip (present ones only)."""
-    ordered: list[Point] = []
-    if "lamina_base" in pts:
-        ordered.append(pts["lamina_base"])
-    ordered += [pts[f"petiole_{i}"] for i in range(PETIOLE_N) if f"petiole_{i}" in pts]
-    if "petiole_tip" in pts:
-        ordered.append(pts["petiole_tip"])
-    return ordered
+    """The petiole trace: the present ``petiole_0..N-1`` points, index-ordered. ``petiole_trace_length``
+    sums consecutive distances along these points only (``petiole_0->petiole_1 + ...``); the
+    ``lamina_base`` / ``petiole_tip`` anchors are NOT part of the trace."""
+    return [pts[f"petiole_{i}"] for i in range(PETIOLE_N) if f"petiole_{i}" in pts]
 
 
 # -- angles ------------------------------------------------------------------------
