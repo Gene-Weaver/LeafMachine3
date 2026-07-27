@@ -126,3 +126,39 @@ morphometric / phylogenetic work.
 **Reference:** `leafmachine2/ect_methods/` (ECT + ridgeline / PGLS analysis scripts).
 
 **Touches:** new add-on module + a descriptor table / export.
+
+---
+
+## 5. Leaf Edge Refinement  ⛔ (blocked — needs `LM3_Specimen_Segmentation` trained + exported)
+
+**Goal:** tighten each leaf-instance mask by trimming leftover background (white paper) that the
+YOLO26 leaf-segmentation masks include when they aren't cut tight enough at the edges. Use the
+**whole-specimen** plant mask from **`LM3_Specimen_Segmentation`** (a precise plant-vs-background
+binary mask of the entire sheet) to exclude edge pixels that fall outside the true plant material.
+**High value:** the leaf products (lamina masks + RGB cutouts) are LM3's headline output, so cleaner
+edges directly improve them (and the hole-aware areas).
+
+**Flow:**
+1. Train + export **`LM3_Specimen_Segmentation`** — a precise binary mask of ALL plant material on
+   the sheet (UNet++ / YOLO26-seg / BiRefNet candidates already set up in that repo).
+2. New stage **`SpecimenSegmenter`** runs **right after PlantDetector** (before LeafSegmenter):
+   infer the whole-specimen mask in the working/parent frame and **store it** (a per-specimen mask —
+   new `specimen_mask` table with a polygon/RLE, or a mask file referenced from the DB).
+3. **Refine at leaf-segmentation time:** each leaf instance mask is already in the parent/working
+   frame, so its position is known and it shares the specimen mask's coordinate frame. Intersect
+   each instance mask with the parent specimen mask and **keep only the parts of the instance mask
+   that are also inside the specimen mask**, dropping stray paper/background edge pixels. Recompute
+   the affected geometry (area, perimeter, etc.) from the refined mask.
+
+**Fallback (if the specimen model isn't precise enough):** run the **`paper_removal`** tool (the one
+used to clean the `LM3_Specimen_Segmentation` **training** data) as a second pass on the refined
+crops/masks to strip any remaining paper at the edges.
+
+**Touches:** new `modules/specimen_segmenter.py` + an inference wrapper + a `specimen_mask` store;
+the intersection/refine step (either inside `leaf_segmenter.persist` or a small post-process stage
+right after LeafSegmenter); downstream `leaf_morphology` (areas shift with tighter masks) and every
+leaf product (`Original/` + `Oriented/`) inherit the cleaner edges automatically.
+
+**Reference:** the `LM3_Specimen_Segmentation` repo (SAM3 box-prompt mask generation → binary
+bg-removal dataset; UNet++ / YOLO26-seg / BiRefNet trainers) and its `paper_removal` training-data
+cleaning tool.
