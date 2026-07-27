@@ -96,10 +96,19 @@ default) or the axis-aligned YOLO box (`yolo`).
 
 ## Install
 
+Pinned, reproducible (recommended) — see **[INSTALL.md](INSTALL.md)** for the full guide (extras,
+poetry, the torch-CUDA-build gotcha):
+
 ```bash
-pip install -e ".[gpu,yolo]"      # NVIDIA box (onnxruntime-gpu + ultralytics)
-pip install -e ".[cpu,yolo]"      # CPU / DirectML / CoreML box
+python -m venv .venv_LM3 && .venv_LM3/bin/pip install -U pip wheel setuptools
+.venv_LM3/bin/pip install -r requirements/requirements-gpu.txt     # NVIDIA GPU (default)
+.venv_LM3/bin/pip install -r requirements/requirements-cpu.txt     # CPU only
+.venv_LM3/bin/pip install -r requirements/requirements-macos.txt   # macOS (MPS + CoreML)
 ```
+
+Or the flexible extras: `pip install -e ".[gpu,yolo]"` (`cpu`/`macos` variants too). ⚠️ pip's default
+`torch` is a CUDA-13 wheel (needs driver ≥ 580); on older drivers use the cu124 wheel pinned in the
+GPU requirements — see INSTALL.md.
 
 Models are **not** committed. Place exported artifacts under `models/<stage>/` (or symlink the
 training-repo exports); paths are set in `LM3_settings.yaml`.

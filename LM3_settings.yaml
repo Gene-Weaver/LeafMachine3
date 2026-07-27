@@ -287,7 +287,7 @@ report:
     enabled: true
     classes: "all"                      # "all", or a list of real class names e.g. [Ruler, Label]
     source: "working"                   # working (matches detector crops) | original (full-res)
-  # ---- leaf products: the highest-value per-leaf outputs ---------------------
+  # ---- leaf products:  ---------------------
   # Five products per leaf, each written in a non-oriented (Original/) and an upright, tip-up
   # (Oriented/) form under reports/. Masks/cutouts are fitted tight to the mask; the bbox crop is
   # not. lamina+petiole products are skipped for leaves with no petiole mask. Oriented outputs are

@@ -21,10 +21,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# GPU-first onnxruntime for NVIDIA boxes; swap for onnxruntime (CPU) / -directml / -openvino per platform.
-gpu = ["onnxruntime-gpu>=1.18", "pynvml>=11.5"]
-cpu = ["onnxruntime>=1.18"]
-# Ultralytics AutoBackend drives the YOLO26 detector/segmenter exports (.onnx and .pt).
+# GPU-first onnxruntime for NVIDIA boxes; swap for onnxruntime (CPU) / CoreML (macOS) per platform.
+# onnxruntime-gpu is capped below 1.21: 1.28+ is a CUDA-13 build (needs driver >= 580); the pinned
+# requirements/ files use the CUDA-12 combo. The torch CUDA wheel must come from the PyTorch index —
+# see requirements/requirements-gpu.txt and INSTALL.md (ultralytics pulls torch transitively).
+gpu = ["onnxruntime-gpu>=1.19,<1.21", "pynvml>=11.5"]
+cpu = ["onnxruntime>=1.19"]
+macos = ["onnxruntime>=1.19"]   # macOS wheel exposes CoreMLExecutionProvider; torch uses MPS
+# Ultralytics AutoBackend drives the YOLO26 detector/segmenter/pose exports (.onnx and .pt).
 yolo = ["ultralytics>=8.3"]
 server = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9", "sse-starlette>=2.0"]
 dev = ["pytest>=8.0", "ruff>=0.5"]

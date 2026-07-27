@@ -1,0 +1,25 @@
+# LeafMachine3 runtime — NVIDIA GPU (DEFAULT).  ✅ tested combo.
+# Verified on: NVIDIA driver 560.35.05 / CUDA 12.6, RTX 6000 Ada, Python 3.11, Linux x86_64.
+#
+#   python -m venv .venv_LM3
+#   .venv_LM3/bin/pip install -U pip wheel setuptools
+#   .venv_LM3/bin/pip install -r requirements/requirements-gpu.txt
+#
+# NOTE: pip's DEFAULT torch is now a CUDA-13 build (needs driver >= 580). Driver 560 tops out at
+# CUDA 12.6, so we pin the cu124 torch from the PyTorch index below. onnxruntime-gpu 1.20.1 is a
+# CUDA-12 / cuDNN-9 build; the executor puts the venv's bundled nvidia/*/lib on LD_LIBRARY_PATH so
+# ORT binds CUDAExecutionProvider (compute.onnxruntime.ld_library_path: auto).
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+numpy==2.4.4
+opencv-python-headless==5.0.0.93   # ultralytics also pulls opencv-python; both provide cv2 (harmless)
+pillow==12.2.0
+PyYAML==6.0.3
+
+onnxruntime-gpu==1.20.1            # CUDA 12 / cuDNN 9 build (NOT the default cu13 1.28)
+pynvml==13.0.1                     # GPU probe + VRAM planning
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+ultralytics==8.4.107              # YOLO() AutoBackend drives the .onnx / .pt detector + seg + pose
+
+-e .                               # the leafmachine3 package itself (editable)
