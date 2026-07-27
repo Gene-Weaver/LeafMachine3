@@ -26,8 +26,9 @@ keypoint names + skeleton relationships are seeded, self-describing, into `landm
 **LandmarkMeasurements** (post-process, CPU; runs after LandmarkDetector) derives per-leaf
 biology from the keypoints into the `leaf_landmark_measurement` table: `lamina_trace_length`
 (summed distance along the 15 midvein trace points), `lamina_extent` (straight chord between the
-first and last midvein point — the same endpoints, so `lamina_curvature = trace/extent` is a true
-arc/chord ratio ≥ 1, drawn as the white overlay line), `lamina_tip_base_length` (the separate
+first and last midvein point — the same endpoints, so `lamina_curvature = extent/trace` is a
+chord/arc straightness ratio in (0,1] — 1.0 straight, <1 curved — drawn as the white overlay
+line), `lamina_tip_base_length` (the separate
 `lamina_tip`→`lamina_base` distance), `leaf_width` (width_left→width_right),
 `apex_angle`/`base_angle` with `_type` in `{acute, obtuse, reflex}`, `petiole_trace_length`, and
 `lamina_curvature` (arc/extent). It is **occlusion-robust**: keypoints below

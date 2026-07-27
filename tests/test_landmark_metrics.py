@@ -92,8 +92,8 @@ def test_full_leaf_all_metrics_sane():
 
 def test_trace_length_sums_only_trace_points_not_anchors():
     # midvein/petiole points are close together; the tip/base/petiole_tip anchors are FAR away.
-    # lamina_trace_length / petiole_trace_length must sum ONLY the trace points (anchors excluded),
-    # while lamina_extent DOES use the far tip/base.
+    # lamina_trace_length / petiole_trace_length must sum ONLY the trace points (anchors excluded);
+    # lamina_extent is the midvein chord, while lamina_tip_base_length uses the far tip/base.
     pts = {
         "lamina_tip": (0, -1000),
         "midvein_0": (0, 0), "midvein_1": (0, 10), "midvein_2": (0, 20),
@@ -109,7 +109,7 @@ def test_trace_length_sums_only_trace_points_not_anchors():
     assert m.lamina_curvature == pytest.approx(1.0)      # straight midvein: arc == chord
 
 
-def test_curved_midrib_has_curvature_above_one():
+def test_curved_midrib_has_curvature_below_one():
     pts = {"lamina_tip": (100, 0), "lamina_base": (100, 100)}
     # midrib bows out to x=140 in the middle -> arc longer than the 100px chord
     for i in range(15):
@@ -117,7 +117,7 @@ def test_curved_midrib_has_curvature_above_one():
         pts[f"midvein_{i}"] = (100 + 40 * (1 - abs(2 * t - 1)), 100 * t)
     m = compute_measurements(pts)
     assert m.lamina_extent == pytest.approx(100, abs=1)
-    assert m.lamina_curvature > 1.05
+    assert m.lamina_curvature < 0.96                      # extent/trace = chord/arc < 1 when curved
 
 
 def test_missing_points_degrade_to_none():

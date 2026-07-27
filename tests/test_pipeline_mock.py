@@ -90,7 +90,7 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         assert mm["lamina_extent"] > 0 and mm["leaf_width"] > 0            # straight-line metrics
         assert mm["lamina_tip_base_length"] > 0                           # separate tip->base distance
         assert mm["lamina_trace_length"] >= mm["lamina_extent"] - 1e-6     # arc >= chord (same endpoints)
-        assert mm["lamina_curvature"] >= 1.0 - 1e-6                        # curvature = arc / chord >= 1
+        assert 0.0 < mm["lamina_curvature"] <= 1.0 + 1e-6                  # curvature = chord / arc in (0, 1]
         assert 0.0 <= mm["apex_angle"] <= 360.0                           # degrees, incl. reflex
         assert mm["apex_angle_type"] in {"acute", "obtuse", "reflex"}
         assert mm["base_angle_type"] in {"acute", "obtuse", "reflex"}

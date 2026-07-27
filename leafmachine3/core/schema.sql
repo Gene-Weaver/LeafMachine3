@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS leaf_landmark_measurement (
     base_angle           REAL,                  -- degrees at base_center
     base_angle_type      TEXT,                  -- acute | obtuse | reflex | NULL
     petiole_trace_length REAL,                  -- summed dist along petiole trace pts (petiole_0..4)
-    lamina_curvature     REAL,                  -- lamina_trace_length / lamina_extent (~1 straight)
+    lamina_curvature     REAL,                  -- lamina_extent / lamina_trace_length (chord/arc; 1 straight, <1 curved)
     lamina_centroid_x    REAL, lamina_centroid_y REAL,   -- mean of midvein trace points (for QC/overlay)
     n_present            INTEGER,               -- how many confident keypoints fed the measurement
     created_at TEXT NOT NULL DEFAULT (datetime('now')),

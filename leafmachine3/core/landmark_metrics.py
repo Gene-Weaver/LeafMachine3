@@ -10,12 +10,14 @@ biological measurements Will asked for:
     * ``apex_angle`` / type    -- angle at apex_center (acute / obtuse / reflex)
     * ``base_angle`` / type    -- angle at base_center (acute / obtuse / reflex)
     * ``petiole_trace_length`` -- summed distance along the petiole trace points (petiole_0..4)
-    * ``lamina_curvature``     -- lamina_trace_length / lamina_extent (>= 1; both use the SAME
-                                  midvein endpoints, so it is a true arc/chord ratio)
+    * ``lamina_curvature``     -- lamina_extent / lamina_trace_length (chord/arc; 1.0 straight,
+                                  < 1 as the midvein curves)
 
 ``lamina_extent`` deliberately spans the same first/last midvein points as ``lamina_trace_length``
-(NOT lamina_tip -> lamina_base), so the curvature ratio compares an arc and its chord over one
-identical point set and is always >= 1. The distinct tip->base distance is ``lamina_tip_base_length``.
+(NOT lamina_tip -> lamina_base), so ``lamina_curvature = lamina_extent / lamina_trace_length`` is a
+chord/arc ratio over one identical point set: exactly 1.0 when the midvein is straight and
+decreasing toward 0 as it curves (bounded in (0, 1]). The distinct tip->base distance is
+``lamina_tip_base_length``.
 
 **Robust to occlusion.** The pose model always emits 31 keypoints, but occluded/uncertain ones
 come back with low confidence; the caller drops those below ``min_kpt_conf`` before building the
@@ -161,15 +163,17 @@ def compute_measurements(points: dict[str, Point]) -> LandmarkMeasurements:
     m.lamina_trace_length = _polyline_length(lamina_pts)
 
     # lamina_extent is the straight chord of the SAME midvein points the trace runs along (its first
-    # and last present point), so lamina_curvature = trace / extent is a true arc/chord ratio (>= 1).
-    # The lamina_tip -> lamina_base distance is kept separately as lamina_tip_base_length.
+    # and last present point). The lamina_tip -> lamina_base distance is kept separately as
+    # lamina_tip_base_length.
     if len(lamina_pts) >= 2:
         m.lamina_extent = _dist(lamina_pts[0], lamina_pts[-1])
     if "lamina_tip" in points and "lamina_base" in points:
         m.lamina_tip_base_length = _dist(points["lamina_tip"], points["lamina_base"])
 
-    if m.lamina_trace_length is not None and m.lamina_extent and m.lamina_extent > _EPS:
-        m.lamina_curvature = m.lamina_trace_length / m.lamina_extent
+    # lamina_curvature = extent / trace = chord / arc over the SAME midvein endpoints: exactly 1.0
+    # when the midvein is straight, and < 1 as it curves (a straightness ratio in (0, 1]).
+    if m.lamina_extent is not None and m.lamina_trace_length and m.lamina_trace_length > _EPS:
+        m.lamina_curvature = m.lamina_extent / m.lamina_trace_length
 
     if "width_left" in points and "width_right" in points:
         m.leaf_width = _dist(points["width_left"], points["width_right"])
