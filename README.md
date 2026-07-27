@@ -51,15 +51,21 @@ row (`oriented_leaf_rotation_angle_degreesCW`, `oriented_leaf_success`). See `co
 
 **Leaf products** (Reporter) are the highest-value output: five per-leaf products, each in a
 non-oriented **`Original/`** and an upright **`Oriented/`** tree — the Plant_Detector bbox crop,
-the lamina mask, the lamina+petiole mask, the lamina RGB cutout, and the lamina+petiole RGB cutout.
-Everything except the bbox crop is cropped tight to its mask ("fitted"); cutouts/rotated corners use
-the `report.leaf_products.background`. Oriented products are emitted only where LeafOrientation
+the lamina mask, the lamina+petiole mask, the **lamina-holes mask** (solid silhouette with holes
+filled), the lamina RGB cutout, the lamina+petiole RGB cutout, and the **lamina-holes RGB cutout**
+(leaf tissue kept, holes painted `report.leaf_products.hole_rgb_color` = `(10,10,10)` so they're
+recoverable by color threshold). Everything except the bbox crop is cropped tight to its mask
+("fitted"); cutouts/rotated corners use the `report.leaf_products.background`. Oriented products are
+emitted only where LeafOrientation
 succeeded; lamina+petiole products are skipped for leaves without a petiole mask. Leaf bbox crops
 live here (not in `Crops/`, which now holds only non-leaf classes).
 
 **Morphology** (runs after LeafSegmenter) computes LeafMachine2-style shape metrics per leaf
 mask — area, perimeter, centroid, convex hull, convexity/concavity, circularity, aspect ratio —
-plus the rotated (minimum) bounding box (rotation angle + `rotated_bbox_dim_max`/`dim_min` =
+plus hole-aware lamina areas (`area_px` is the outer Leaf boundary so it already **includes** holes;
+`lamina_area_incl_holes_px` = that, `lamina_area_excl_holes_px` = tissue with holes removed,
+`lamina_hole_area_px` = Σ hole areas, `n_holes` = hole count) and the rotated (minimum) bounding
+box (rotation angle + `rotated_bbox_dim_max`/`dim_min` =
 leaf length/width), stored in the `leaf_morphology` table. The rotated-bbox algorithm is
 selectable via `modules.morphology.method`: **`pca`** (area-weighted principal axis — the
 default; robust across the broadest range of leaf shapes), `feret` (max-Feret axis + hull
@@ -111,13 +117,15 @@ reports/
   Overlay/
     Overlay_Summary/             <stem>__Overlay.jpg                   (masks + boxes + landmarks)
     Overlay_Landmarks/           <stem>__LM-leaf__x_y_x_y.jpg          (per leaf: keypoints + measures)
-  Original/                      (5 leaf products, non-oriented)
+  Original/                      (7 leaf products, non-oriented)
     Leaf_BBox/                   <stem>__BBOX-leaf__x_y_x_y.jpg        (not fitted)
-    Lamina_Mask/                 <stem>__SEG-lamina__x_y_x_y.png       (fitted)
+    Lamina_Mask/                 <stem>__SEG-lamina__x_y_x_y.png       (fitted; holes removed)
     LaminaPetiole_Mask/          <stem>__SEG-laminaPetiole__x_y_x_y.png
+    Lamina_Holes_Mask/           <stem>__SEG-laminaHoles__x_y_x_y.png  (solid silhouette)
     Lamina_RGB/                  <stem>__RGB-lamina__x_y_x_y.jpg
     LaminaPetiole_RGB/           <stem>__RGB-laminaPetiole__x_y_x_y.jpg
-  Oriented/                      (same 5 products, rotated tip-up)
+    Lamina_Holes_RGB/            <stem>__RGB-laminaHoles__x_y_x_y.jpg  (holes = (10,10,10))
+  Oriented/                      (same 7 products, rotated tip-up)
   Crops/RGB__<friendly>/         <stem>__BBOX-<friendly>__x_y_x_y.jpg   (NON-leaf classes)
   Binary_Masks/
     Binary_Masks_Full_Image__Leaf/  <stem>__MaskFull-leaf.png          (per specimen)

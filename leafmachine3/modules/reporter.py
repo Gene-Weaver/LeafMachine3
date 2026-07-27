@@ -8,7 +8,8 @@ and can be toggled independently in ``report`` of ``LM3_settings.yaml``. The lay
     Overlay/Overlay_Summary/<stem>__Overlay.<ext>          (masks + boxes + landmarks on top)
     Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>  (one per leaf: keypoints + measures)
     Crops/RGB__<friendly>/<stem>__BBOX-<friendly>__x_y_x_y.<ext>   (NON-leaf detector classes)
-    {Original,Oriented}/<product>/<stem>__<PREFIX>-<friendly>__x_y_x_y.<ext>  (leaf products)
+    {Original,Oriented}/<product>/<stem>__<PREFIX>-<friendly>__x_y_x_y.<ext>  (7 leaf products;
+        friendly = leaf/lamina/laminaPetiole/laminaHoles; holes in laminaHoles RGB = (10,10,10))
     Binary_Masks/Binary_Masks_Full_Image__<Cls>/<stem>__MaskFull-<friendly>.<ext>
     Binary_Masks/Binary_Masks__<Cls>/<stem>__SEG-<friendly>__x_y_x_y.<ext>
     RGB_Masks/RGB_Masks_Full_Image__<Cls>/<stem>__MaskFull-<friendly>.<ext>
@@ -291,6 +292,7 @@ class Reporter(PipelineStage):
         do_oriented = _flag(lp_cfg, "oriented", True)
         bg = 0 if str(_get(lp_cfg, "background", default="black")).lower() == "black" else 255
         pad = int(_get(lp_cfg, "fit_pad", default=0))
+        hole_color = tuple(int(c) for c in (_get(lp_cfg, "hole_rgb_color", default=(10, 10, 10))))
         working = read(b.working_path)
         H, W = working.shape[:2]
 
@@ -321,19 +323,21 @@ class Reporter(PipelineStage):
                     out |= polygon_mask(offset_polygon(p, -cx1, -cy1), (ch, cw))
                 return out
 
+            silhouette = raster(lam_polys)                     # Leaf outline with holes FILLED in
             hole = raster(groups.get(_HOLE, []))
-            lamina = raster(lam_polys) & ~hole
+            lamina = silhouette & ~hole                        # tissue only (holes removed)
             pet_polys = groups.get(_PETIOLE, [])
-            laminapet = ((raster(lam_polys) | raster(pet_polys)) & ~hole) if pet_polys else None
+            laminapet = ((silhouette | raster(pet_polys)) & ~hole) if pet_polys else None
+            masks = {"lamina": lamina, "laminapet": laminapet, "silhouette": silhouette, "hole": hole}
             det_box = (x1, y1, x2, y2)
 
             if do_original:
-                products = render_leaf_products(crop, lamina, laminapet, angle_cw=None, bg=bg, want=want, pad=pad)
+                products = render_leaf_products(crop, masks, angle_cw=None, bg=bg, want=want, pad=pad, hole_color=hole_color)
                 written += self._write_leaf_products(products, "Original", reports, stem, det_box, img_ext, mask_ext, quality)
 
             success, angle = orient.get(did, (False, None))
             if do_oriented and success and angle is not None:
-                products = render_leaf_products(crop, lamina, laminapet, angle_cw=float(angle), bg=bg, want=want, pad=pad)
+                products = render_leaf_products(crop, masks, angle_cw=float(angle), bg=bg, want=want, pad=pad, hole_color=hole_color)
                 written += self._write_leaf_products(products, "Oriented", reports, stem, det_box, img_ext, mask_ext, quality)
         return written
 

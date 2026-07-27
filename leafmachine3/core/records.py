@@ -118,7 +118,7 @@ class MorphRow:
     instance_index: int
     cls_name: str
     crop_box: XYXY                     # plant_detection leaf box (working coords)
-    area_px: float
+    area_px: float                     # area inside the Leaf outer boundary (INCLUDES holes)
     perimeter_px: float
     centroid: tuple[float, float]
     convex_hull_area: float
@@ -133,6 +133,11 @@ class MorphRow:
     dim_min: float                     # leaf width  (rotated short side)
     rotated_bbox_json: str             # JSON [[x,y],...] 4 corners, working coords
     circle: tuple[float, float, float] # min enclosing circle (cx, cy, radius)
+    # hole-aware lamina areas (area_px already includes holes; see leaf_morphology schema)
+    lamina_area_incl_holes_px: float = 0.0   # == area_px (full silhouette, with holes)
+    lamina_area_excl_holes_px: float = 0.0   # tissue area (holes removed)
+    lamina_hole_area_px: float = 0.0         # sum of the leaf's hole areas
+    n_holes: int = 0
     morph_id: Optional[int] = None
 
 

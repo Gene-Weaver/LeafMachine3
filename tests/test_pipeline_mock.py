@@ -59,11 +59,18 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         assert _count(conn, "leaf_morphology") > 0
         m = conn.execute(
             "SELECT rotated_bbox_dim_max, rotated_bbox_dim_min, rotate_angle, rotated_bbox_json, "
-            "area_px, circularity, leaf_id, detection_id, specimen_id FROM leaf_morphology LIMIT 1"
+            "area_px, lamina_area_incl_holes_px, lamina_area_excl_holes_px, lamina_hole_area_px, "
+            "n_holes, circularity, leaf_id, detection_id, specimen_id FROM leaf_morphology LIMIT 1"
         ).fetchone()
         assert m is not None
         assert m["rotated_bbox_dim_max"] >= m["rotated_bbox_dim_min"] > 0   # length >= width > 0
         assert m["area_px"] > 0
+        # hole-aware areas: incl == outer silhouette (area_px); the mock carves one hole per leaf
+        assert m["lamina_area_incl_holes_px"] == m["area_px"]
+        assert m["n_holes"] >= 1 and m["lamina_hole_area_px"] > 0
+        assert m["lamina_area_excl_holes_px"] < m["lamina_area_incl_holes_px"]   # tissue < silhouette
+        assert m["lamina_area_excl_holes_px"] == pytest.approx(
+            m["lamina_area_incl_holes_px"] - m["lamina_hole_area_px"], abs=1.0)
         import json as _json
         assert len(_json.loads(m["rotated_bbox_json"])) == 4                # 4 rotated corners
         assert m["leaf_id"] and m["detection_id"] and m["specimen_id"]      # links to parent
@@ -129,17 +136,23 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
 
     # leaf products: Original/ + Oriented/ trees, each with bbox + fitted lamina mask + lamina cutout
     # (mock leaves have no petiole, so the laminaPetiole products are correctly skipped).
+    import cv2 as _cv2
+    import numpy as _np
     for tree in ("Original", "Oriented"):
         base = reports / tree
         bbox = list((base / "Leaf_BBox").glob("*__BBOX-leaf__*.jpg"))
         lam_mask = list((base / "Lamina_Mask").glob("*__SEG-lamina__*.png"))
         lam_rgb = list((base / "Lamina_RGB").glob("*__RGB-lamina__*.jpg"))
-        assert bbox and lam_mask and lam_rgb, f"{tree}: missing leaf products"
+        holes_mask = list((base / "Lamina_Holes_Mask").glob("*__SEG-laminaHoles__*.png"))
+        holes_rgb = list((base / "Lamina_Holes_RGB").glob("*__RGB-laminaHoles__*.jpg"))
+        assert bbox and lam_mask and lam_rgb, f"{tree}: missing lamina products"
+        assert holes_mask and holes_rgb, f"{tree}: missing laminaHoles products"
         assert not (base / "LaminaPetiole_Mask").exists()          # no petiole -> product skipped
-        # a fitted lamina mask is tight to content -> no larger than its bbox crop
-        import cv2 as _cv2
         m = _cv2.imread(str(lam_mask[0]), _cv2.IMREAD_GRAYSCALE)
         assert m is not None and (m > 0).any()                     # non-empty mask
+        # the holes RGB paints holes (10,10,10) so they can be color-thresholded back out
+        hr = _cv2.imread(str(holes_rgb[0]), _cv2.IMREAD_COLOR)      # BGR; (10,10,10) is symmetric
+        assert hr is not None and bool((_np.all(hr == (10, 10, 10), axis=2)).any())
     # leaf bbox crops were moved OUT of Crops/ (only non-leaf classes remain there)
     assert not (reports / "Crops" / "RGB__leaf").exists()
 

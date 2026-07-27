@@ -270,10 +270,13 @@ report:
     oriented: true                      # write the reports/Oriented/ tree (tip-up, base-down)
     background: "black"                 # black | white  (cutout background + rotated-crop corners)
     fit_pad: 0                          # px of padding around the fitted content (0 = tight)
+    hole_rgb_color: [10, 10, 10]        # holes in the *_holes RGB cutout get this color (color-thresholdable)
     products:                           # toggle individual products
       bbox: true                        # Leaf_BBox/            <stem>__BBOX-leaf__x_y_x_y.jpg  (not fitted)
-      lamina_mask: true                 # Lamina_Mask/          <stem>__SEG-lamina__x_y_x_y.png
+      lamina_mask: true                 # Lamina_Mask/          <stem>__SEG-lamina__x_y_x_y.png   (holes removed)
       lamina_petiole_mask: true         # LaminaPetiole_Mask/   <stem>__SEG-laminaPetiole__x_y_x_y.png
+      lamina_holes_mask: true           # Lamina_Holes_Mask/    <stem>__SEG-laminaHoles__x_y_x_y.png  (solid silhouette)
       lamina_rgb: true                  # Lamina_RGB/           <stem>__RGB-lamina__x_y_x_y.jpg
       lamina_petiole_rgb: true          # LaminaPetiole_RGB/    <stem>__RGB-laminaPetiole__x_y_x_y.jpg
+      lamina_holes_rgb: true            # Lamina_Holes_RGB/     <stem>__RGB-laminaHoles__x_y_x_y.jpg  (holes=(10,10,10))
   formats: { image_ext: "jpg", jpg_quality: 100, mask_ext: "png" }

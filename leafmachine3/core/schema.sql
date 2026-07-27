@@ -121,7 +121,13 @@ CREATE TABLE IF NOT EXISTS leaf_morphology (
     -- parent-linking crop box (the plant_detection leaf box, working coords)
     crop_x1 REAL, crop_y1 REAL, crop_x2 REAL, crop_y2 REAL,
     -- scalar morphology (working-frame pixels)
-    area_px REAL, perimeter_px REAL,
+    area_px REAL, perimeter_px REAL,            -- area_px = area inside the Leaf outer boundary (INCLUDES holes)
+    -- hole-aware lamina areas (the Leaf polygon is the outer silhouette, so area_px already includes
+    -- holes; incl == area_px kept explicit, excl removes the holes, hole_area sums the Hole instances).
+    lamina_area_incl_holes_px REAL,             -- lamina area WITH holes (== area_px; the full silhouette)
+    lamina_area_excl_holes_px REAL,             -- lamina tissue area (holes removed) = incl - hole_area
+    lamina_hole_area_px REAL,                    -- sum of the leaf's Hole instance areas
+    n_holes INTEGER,                             -- number of Hole instances in the leaf
     centroid_x REAL, centroid_y REAL,
     convex_hull_area REAL, convexity REAL, concavity REAL, circularity REAL,
     aspect_ratio REAL, n_vertices INTEGER,
