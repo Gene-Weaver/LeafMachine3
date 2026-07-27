@@ -104,6 +104,13 @@ class MockSegmenter:
                     polygon=hole,
                 )
             )
+            # a thin petiole below the blade (aligns with MockLandmarkPose's petiole trace at x=cx)
+            pw2 = 0.025 * w
+            petiole = np.array(
+                [[cx - pw2, 0.76 * h], [cx + pw2, 0.76 * h], [cx + pw2, 0.97 * h], [cx - pw2, 0.97 * h]],
+                dtype=float,
+            )
+            out.append(Instance(cls_id=_SEG_CLASS_IDS["Petiole"], cls_name="Petiole", conf=0.85, polygon=petiole))
         return out
 
 

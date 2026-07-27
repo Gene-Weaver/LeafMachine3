@@ -70,6 +70,7 @@ class OverlayStyle:
     draw_boxes_plant: bool = True
     draw_masks: bool = True
     draw_landmarks: bool = True
+    draw_petiole: bool = True
     draw_labels: bool = True
     draw_confidence: bool = True
     draw_cf_banner: bool = True
@@ -103,6 +104,7 @@ class OverlayStyle:
             draw_boxes_plant=bool(_getk(ov, "draw_boxes_plant", True)),
             draw_masks=bool(_getk(ov, "draw_masks", True)),
             draw_landmarks=bool(_getk(ov, "draw_landmarks", True)),
+            draw_petiole=bool(_getk(ov, "draw_petiole", True)),
             draw_labels=bool(_getk(ov, "draw_labels", True)),
             draw_confidence=bool(_getk(ov, "draw_confidence", True)),
             draw_cf_banner=bool(_getk(ov, "draw_cf_banner", True)),
@@ -171,6 +173,31 @@ class LandmarkStyle:
 
     def color_for_kind(self, kind: str) -> RGB:
         return self.color_for_group(_EDGE_KIND_GROUP.get(str(kind), "lamina"))
+
+
+@dataclass
+class PetioleStyle:
+    """Config-driven style for the petiole-width overlays (``report.overlay.petiole``). The reported
+    width band is drawn in ``width_color`` (purple), the per-sample width probes in ``sample_color``
+    (light purple); the Leaf/Petiole masks use the segmentation palette (filled, no outline)."""
+    width_color: RGB = (3, 32, 252)           # reported (median) width band + the 1px zoom line -- blue
+    sample_color: RGB = (6, 124, 191)         # per-sample width segments -- light blue
+    band_thickness: int = 4
+    sample_thickness: int = 2
+    mask_alpha: float = 0.45
+    label_color: RGB = (255, 255, 255)
+
+    @classmethod
+    def from_config(cls, cfg) -> "PetioleStyle":
+        p = _get(cfg, "report", "overlay", "petiole") or {}
+        return cls(
+            width_color=tuple(_getk(p, "width_color", (3, 32, 252))),
+            sample_color=tuple(_getk(p, "sample_color", (6, 124, 191))),
+            band_thickness=int(_getk(p, "band_thickness", 4)),
+            sample_thickness=int(_getk(p, "sample_thickness", 2)),
+            mask_alpha=float(_getk(p, "mask_alpha", 0.45)),
+            label_color=tuple(_getk(p, "label_color", (255, 255, 255))),
+        )
 
 
 # -- tiny access helpers tolerant of dict OR dot-access config objects -------------

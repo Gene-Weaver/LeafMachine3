@@ -45,6 +45,7 @@ CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "landmark_detector",
     "landmark_measurements",
     "leaf_orientation",
+    "petiole_width",
     "metric_grounding",
     "reporter",
 )
@@ -217,6 +218,7 @@ def builtin_defaults() -> dict[str, Any]:
             "landmark_detector": {"enabled": True},
             "landmark_measurements": {"enabled": True},
             "leaf_orientation": {"enabled": True},
+            "petiole_width": {"enabled": True},
             "metric_grounding": {"enabled": True},
             "reporter": {"enabled": True},
         },

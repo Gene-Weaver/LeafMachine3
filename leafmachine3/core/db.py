@@ -61,6 +61,7 @@ _CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "landmark_detector",
     "landmark_measurements",
     "leaf_orientation",
+    "petiole_width",
     "metric_grounding",
     "reporter",
 )
@@ -537,6 +538,30 @@ class ProjectDB:
         return self._query(
             "SELECT * FROM leaf_morphology WHERE specimen_id = ? ORDER BY leaf_id",
             (specimen_id,),
+        )
+
+    def record_leaf_petioles(self, specimen_id: int, rows: Sequence[Any]) -> None:
+        """DELETE the specimen's petiole rows then insert one per leaf with a petiole (PetioleWidth)."""
+        self._exec("DELETE FROM leaf_petiole WHERE specimen_id = ?", (specimen_id,))
+        for r in rows:
+            self._exec(
+                """
+                INSERT INTO leaf_petiole
+                    (leaf_id, specimen_id, detection_id, instance_index,
+                     width_px, length_px, n_samples, touches_leaf, measure_location,
+                     width_segment_json, sample_segments_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (int(r.leaf_id), specimen_id, int(r.detection_id), int(r.instance_index),
+                 r.width_px, r.length_px, int(r.n_samples), 1 if r.touches_leaf else 0, r.measure_location,
+                 json.dumps(r.width_segment) if r.width_segment is not None else None,
+                 json.dumps(r.sample_segments) if r.sample_segments else None),
+            )
+
+    def leaf_petioles(self, specimen_id: int) -> list[sqlite3.Row]:
+        """All leaf_petiole rows for a specimen (one per leaf with a petiole)."""
+        return self._query(
+            "SELECT * FROM leaf_petiole WHERE specimen_id = ? ORDER BY leaf_id", (specimen_id,)
         )
 
     def set_leaf_orientation(self, rows: Sequence[Any]) -> None:

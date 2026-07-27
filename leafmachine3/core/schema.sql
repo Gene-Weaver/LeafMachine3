@@ -218,6 +218,29 @@ CREATE TABLE IF NOT EXISTS leaf_landmark_measurement (
 );
 CREATE INDEX IF NOT EXISTS ix_lmmeasure_spec ON leaf_landmark_measurement (specimen_id);
 
+-- leaf_petiole : per-leaf petiole width (PetioleWidth stage). Width = MEDIAN of perpendicular
+-- thickness samples of the Petiole mask, taken near the blade junction along the landmark petiole
+-- centerline. Segments (for the overlays) are in WORKING (parent) coords. One row per leaf that has
+-- a petiole. Lengths are working-frame pixels; width_cm is filled later by MetricGrounding.
+CREATE TABLE IF NOT EXISTS leaf_petiole (
+    petiole_id     INTEGER PRIMARY KEY,
+    leaf_id        INTEGER NOT NULL REFERENCES leaf_segmentation(leaf_id)   ON DELETE CASCADE,
+    specimen_id    INTEGER NOT NULL REFERENCES specimen(specimen_id)         ON DELETE CASCADE,
+    detection_id   INTEGER NOT NULL REFERENCES plant_detection(detection_id) ON DELETE CASCADE,
+    instance_index INTEGER NOT NULL,
+    width_px            REAL,                   -- median perpendicular petiole width
+    length_px           REAL,                   -- petiole centerline length (lamina_base -> petiole_tip)
+    n_samples           INTEGER,                -- number of valid perpendicular samples (median over these)
+    touches_leaf        INTEGER,                -- 1 if the petiole mask is within ~touch_dist px of the leaf
+    measure_location    TEXT,                   -- 'near_base' | 'none'
+    width_segment_json  TEXT,                   -- reported width segment [[x1,y1],[x2,y2]] (working coords)
+    sample_segments_json TEXT,                  -- all sample segments [[[x1,y1],[x2,y2]], ...] (working coords)
+    width_cm            REAL,                   -- filled later by MetricGrounding when a CF exists
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (leaf_id)                            -- one petiole row per leaf instance
+);
+CREATE INDEX IF NOT EXISTS ix_petiole_spec ON leaf_petiole (specimen_id);
+
 -- project_status : stage-level ledger. Drives whole-module skip + config-drift + restart.
 CREATE TABLE IF NOT EXISTS project_status (
     stage_key   TEXT PRIMARY KEY,              -- canonical STAGE_KEYS, seeded at init

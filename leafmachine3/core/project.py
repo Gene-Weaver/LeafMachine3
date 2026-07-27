@@ -45,6 +45,7 @@ class Project:
             morphology=self.db.leaf_morphology(specimen_id),
             landmarks=self.db.leaf_landmarks(specimen_id),
             landmark_measurements=self.db.leaf_landmark_measurements(specimen_id),
+            petioles=self.db.leaf_petioles(specimen_id),
         )
 
 

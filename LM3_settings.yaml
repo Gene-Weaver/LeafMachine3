@@ -46,6 +46,7 @@ naming:
   seg_prefix: "SEG"                     # per-crop seg masks:    <stem>__SEG-<friendly>__x_y_x_y
   mask_full_prefix: "MaskFull"          # full-image masks:      <stem>__MaskFull-<friendly>
   landmark_prefix: "LM"                 # per-leaf landmark overlay: <stem>__LM-<friendly>__x_y_x_y
+  petiole_prefix: "PET"                 # per-leaf petiole overlay:  <stem>__PET-<friendly>__x_y_x_y
   friendly_names:                       # real class name -> friendly name used in filenames
     # archival
     Ruler: ruler
@@ -157,6 +158,13 @@ modules:
     min_kpt_conf: 0.25                  # keypoint confidence floor (matches landmark_measurements)
     min_midvein: 5                      # PCA fallback needs >= this many midvein points when tip/base absent
 
+  petiole_width:                        # median perpendicular width of the Petiole mask -> leaf_petiole
+    enabled: true
+    min_kpt_conf: 0.25                  # confidence floor for the petiole centerline landmarks
+    touch_dist_px: 20                   # petiole "touches leaf" if within this many px of the Leaf mask
+    # NOTE: runs on the RAW petiole mask; once LM3_Specimen_Segmentation lands (TODO #5) it should
+    # consume the EDGE-REFINED petiole mask (a thin petiole is very sensitive to leftover paper).
+
   metric_grounding:
     enabled: true                       # runs, but no-ops until ruler_cf provides a CF
     missing_cf_policy: "skip"
@@ -178,6 +186,7 @@ report:
     box_style: "rotated"            # leaf boxes: "rotated" (min bounding box from Morphology) | "yolo"
     draw_masks: true                # draw LeafSegmenter instance masks (Leaf/Petiole/Hole)
     draw_landmarks: true            # draw leaf keypoints + skeleton ON TOP of masks/boxes
+    draw_petiole: true              # draw each measured petiole width as a purple band
     draw_labels: true               # draw the class-name text on each box/mask
     draw_confidence: true           # append the confidence score to the label
     draw_cf_banner: true            # print the derived CF (px/cm) banner on the sheet
@@ -234,12 +243,28 @@ report:
         base:    [255, 60, 255]       # base triple
         petiole: [255, 170, 0]        # petiole trace + tip
         width:   [0, 255, 128]        # width_left / width_right
+    # petiole-width overlay colors (report.overlay.petiole). Masks use the segmentation palette.
+    petiole:
+      width_color: [3, 32, 252]       # reported (median) width band + the 1px zoom line -- blue
+      sample_color: [6, 124, 191]     # per-sample perpendicular probes -- light blue
+      band_thickness: 4
+      sample_thickness: 2
+      mask_alpha: 0.45                # Leaf/Petiole fill opacity in the per-leaf petiole overlay
+      label_color: [255, 255, 255]
   # ---- per-leaf landmark overlay --------------------------------------------
   # One image per leaf under Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>:
   # keypoints + skeleton drawn on the crop plus a panel of the derived measurements
   # (lamina trace/extent, width, apex/base angle + type, petiole trace, curvature).
   overlay_landmarks:
     enabled: true                     # optional; on by default. Styling reuses overlay.landmark.
+  # ---- per-leaf petiole overlay ---------------------------------------------
+  # One image per leaf with a petiole under Overlay/Overlay_Petiole/<stem>__PET-leaf__x_y_x_y.<ext>:
+  # LEFT half = the leaf crop with Leaf + Petiole masks filled (no border), the width sample probes
+  # (light blue) + reported width band (blue), and a panel of the lamina areas + petiole width.
+  # RIGHT half = the petiole RGB cutout blown up (pixelated) to the same height, with a 1-px blue
+  # line (width_color) at the exact reported-width location for pixel-level checking.
+  overlay_petiole:
+    enabled: true                     # optional; on by default. Colors from overlay.petiole above.
   # ---- segmentation mask exports --------------------------------------------
   # Each toggle writes a folder named <toggle>__<Class> for every class in `classes`.
   # Full_Image variants = one file per specimen (original frame); the others = one file

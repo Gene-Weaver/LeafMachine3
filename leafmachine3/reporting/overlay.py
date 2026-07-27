@@ -24,9 +24,9 @@ try:  # pragma: no cover - cv2 is always present at runtime
 except Exception:  # pragma: no cover
     cv2 = None
 
-from leafmachine3.core.imaging import decode_polygon, scale_polygon
+from leafmachine3.core.imaging import composite, decode_polygon, mask_bbox, scale_polygon
 from leafmachine3.core.landmarks import KPT_GROUP, MIDVEIN_N, SKELETON
-from leafmachine3.reporting.palette import RGB, LandmarkStyle, OverlayStyle
+from leafmachine3.reporting.palette import RGB, LandmarkStyle, OverlayStyle, PetioleStyle
 
 log = logging.getLogger("leafmachine3.overlay")
 
@@ -67,6 +67,8 @@ def build_summary_image(
     landmarks: Sequence[Any] = (),
     landmark_style: Optional[LandmarkStyle] = None,
     landmark_measurements: Sequence[Any] = (),
+    petioles: Sequence[Any] = (),
+    petiole_style: Optional[PetioleStyle] = None,
 ) -> np.ndarray:
     """Render the Summary_Image overlay onto a copy of ``image_bgr``.
 
@@ -103,7 +105,109 @@ def build_summary_image(
     if style.draw_landmarks and landmarks:
         _draw_landmarks(out, landmarks, landmark_style or LandmarkStyle(), scale,
                         _curvature_by_detection(landmark_measurements))
+    # Petiole width bands (purple) go on top too.
+    if style.draw_petiole and petioles:
+        _draw_petiole_widths(out, petioles, petiole_style or PetioleStyle(), scale)
     return out
+
+
+def _ipt(p) -> tuple[int, int]:
+    return (int(round(p[0])), int(round(p[1])))
+
+
+def _draw_petiole_widths(out: np.ndarray, petioles: Sequence[Any], pet_style: PetioleStyle, scale: float) -> None:
+    """Draw each measured petiole's reported width segment as a purple band (working coords * scale)."""
+    for r in petioles:
+        raw = _row_get(r, "width_segment_json", None)
+        if not raw:
+            continue
+        try:
+            seg = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            continue
+        if not seg or len(seg) < 2:
+            continue
+        p1 = _ipt((seg[0][0] * scale, seg[0][1] * scale))
+        p2 = _ipt((seg[1][0] * scale, seg[1][1] * scale))
+        cv2.line(out, p1, p2, _bgr(pet_style.width_color), max(2, pet_style.band_thickness), cv2.LINE_AA)
+
+
+def build_leaf_petiole_overlay(
+    crop_bgr: np.ndarray,
+    class_polys: dict[str, list],
+    sample_segments: Sequence[Any],
+    width_segment: Optional[Any],
+    measure_lines: Sequence[str],
+    seg_colors: dict[str, RGB],
+    pet_style: PetioleStyle,
+) -> np.ndarray:
+    """Per-leaf petiole overlay: the leaf crop with the Leaf + Petiole masks filled (NO outline, so
+    the mask reaches the true edge), the per-sample width probes (light purple), the reported width
+    band (purple), and a measurement panel. All geometry is in the crop frame."""
+    out = crop_bgr.copy()
+    layer = out.copy()
+    touched = np.zeros(out.shape[:2], dtype=np.uint8)
+    for cls in ("Leaf", "Petiole"):                       # filled, no outline -> fills to the edge
+        color = _bgr(seg_colors.get(cls, (0, 255, 0)))
+        for poly in class_polys.get(cls, []):
+            pts = np.round(np.asarray(poly, dtype=float)).astype(np.int32).reshape(-1, 1, 2)
+            if len(pts) >= 3:
+                cv2.fillPoly(layer, [pts], color)
+                cv2.fillPoly(touched, [pts], 1)
+    if touched.any():
+        a = max(0.0, min(1.0, pet_style.mask_alpha))
+        blended = cv2.addWeighted(layer, a, out, 1.0 - a, 0.0)
+        out[touched.astype(bool)] = blended[touched.astype(bool)]
+
+    for s in sample_segments or []:                       # light-purple sample probes
+        if s and len(s) >= 2:
+            cv2.line(out, _ipt(s[0]), _ipt(s[1]), _bgr(pet_style.sample_color),
+                     max(1, pet_style.sample_thickness), cv2.LINE_AA)
+    if width_segment and len(width_segment) >= 2:         # reported width band (blue)
+        cv2.line(out, _ipt(width_segment[0]), _ipt(width_segment[1]), _bgr(pet_style.width_color),
+                 max(2, pet_style.band_thickness), cv2.LINE_AA)
+    if measure_lines:
+        _draw_measure_panel(out, list(measure_lines), pet_style.label_color)
+
+    # second half: a pixelated blow-up of the petiole RGB cutout with a 1-px width line, to the right
+    right = _petiole_zoom_panel(crop_bgr, class_polys.get("Petiole", []), width_segment, out.shape[0], pet_style)
+    if right is not None:
+        out = np.hstack([out, right])
+    return out
+
+
+def _petiole_zoom_panel(
+    crop_bgr: np.ndarray,
+    petiole_polys: list,
+    width_segment: Optional[Any],
+    target_h: int,
+    pet_style: PetioleStyle,
+) -> Optional[np.ndarray]:
+    """Fitted RGB cutout of the petiole (tissue on black), nearest-neighbour blown up to ``target_h``,
+    with the reported width location drawn as a 1-original-pixel line in ``width_color`` -- so the
+    exact pixels the width spans are checkable at the block level."""
+    if not petiole_polys:
+        return None
+    h, w = crop_bgr.shape[:2]
+    mask = np.zeros((h, w), dtype=np.uint8)
+    for poly in petiole_polys:
+        pts = np.round(np.asarray(poly, dtype=float)).astype(np.int32).reshape(-1, 1, 2)
+        if len(pts) >= 3:
+            cv2.fillPoly(mask, [pts], 1)
+    box = mask_bbox(mask)
+    if box is None:
+        return None
+    x1, y1, x2, y2 = box
+    cut = composite(crop_bgr, mask.astype(bool), bg=0)[y1:y2, x1:x2].copy()   # petiole tissue on black
+    if width_segment and len(width_segment) >= 2:           # 1-px line at the width (crop -> cutout frame)
+        p1 = _ipt((width_segment[0][0] - x1, width_segment[0][1] - y1))
+        p2 = _ipt((width_segment[1][0] - x1, width_segment[1][1] - y1))
+        cv2.line(cut, p1, p2, _bgr(pet_style.width_color), 1, cv2.LINE_8)     # crisp 1-px, no anti-alias
+    ch, cw = cut.shape[:2]
+    if ch == 0 or cw == 0:
+        return None
+    new_w = max(1, int(round(cw * (target_h / float(ch)))))
+    return cv2.resize(cut, (new_w, int(target_h)), interpolation=cv2.INTER_NEAREST)   # pixelated blow-up
 
 
 def _curvature_by_detection(measurements: Sequence[Any]) -> dict[tuple[int, int], int]:
@@ -219,11 +323,11 @@ def build_leaf_landmark_overlay(
         conf[name] = float(_row_get(r, "conf", 1.0) or 0.0)
     _draw_landmark_skeleton(out, pt, conf, lm_style, curvature_idx=curvature_idx)
     if measure_lines:
-        _draw_measure_panel(out, list(measure_lines), lm_style)
+        _draw_measure_panel(out, list(measure_lines), lm_style.label_color)
     return out
 
 
-def _draw_measure_panel(out: np.ndarray, lines: list[str], lm_style: LandmarkStyle) -> None:
+def _draw_measure_panel(out: np.ndarray, lines: list[str], label_color: RGB = (255, 255, 255)) -> None:
     """Draw a translucent dark panel of measurement text at the crop's top-left."""
     h, w = out.shape[:2]
     fs = max(0.4, min(0.9, w / 520.0))
@@ -239,7 +343,7 @@ def _draw_measure_panel(out: np.ndarray, lines: list[str], lm_style: LandmarkSty
     out[0:box_h, 0:box_w] = panel
     y = pad + line_h - int(round(6 * fs))
     for t in lines:
-        cv2.putText(out, t, (pad, y), _FONT, fs, _bgr(lm_style.label_color), thick, cv2.LINE_AA)
+        cv2.putText(out, t, (pad, y), _FONT, fs, _bgr(label_color), thick, cv2.LINE_AA)
         y += line_h
 
 

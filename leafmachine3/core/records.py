@@ -182,6 +182,22 @@ class LandmarkMeasureRow:
 
 
 @dataclass
+class PetioleRow:
+    """One leaf's petiole width (PetioleWidth stage). Segments are WORKING coords. See core.petiole."""
+    leaf_id: int
+    detection_id: int
+    instance_index: int
+    width_px: Optional[float] = None
+    length_px: Optional[float] = None
+    n_samples: int = 0
+    touches_leaf: bool = False
+    measure_location: str = "none"
+    width_segment: Optional[list] = None          # [[x1,y1],[x2,y2]] working coords
+    sample_segments: list = field(default_factory=list)   # [[[x1,y1],[x2,y2]], ...] working coords
+    petiole_id: Optional[int] = None
+
+
+@dataclass
 class OrientationRow:
     """Per-leaf upright orientation (LeafOrientation stage), stored on the leaf_morphology row.
     ``angle_cw`` is clockwise degrees to bring the lamina tip up; ``None`` when ``success`` is False."""
@@ -231,3 +247,4 @@ class ReportBundle:
     morphology: list[Any] = field(default_factory=list)   # leaf_morphology rows (rotated bbox etc.)
     landmarks: list[Any] = field(default_factory=list)    # leaf_landmark rows (keypoints, working+crop coords)
     landmark_measurements: list[Any] = field(default_factory=list)  # leaf_landmark_measurement rows
+    petioles: list[Any] = field(default_factory=list)     # leaf_petiole rows (width + sample segments)

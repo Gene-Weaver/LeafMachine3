@@ -13,7 +13,7 @@ hardware internally; the pipeline is resumable and driven by one YAML settings f
 
 `ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerClassifier →
 [RulerConversionFactor — stub] → LeafSegmenter → Morphology → LandmarkDetector →
-LandmarkMeasurements → LeafOrientation → MetricGrounding (no-op until CF) → Reporter`
+LandmarkMeasurements → LeafOrientation → PetioleWidth → MetricGrounding (no-op until CF) → Reporter`
 
 **LandmarkDetector** (runs on leaf crops) predicts the 31-keypoint `mid15_pet5` pose skeleton
 (lamina tip/base, apex/base triples, midvein×15, petiole×5+tip, width×2) with the yolo26x-pose
@@ -48,6 +48,15 @@ tip-up / base-down from the keypoints — primary: the `lamina_tip`→`lamina_ba
 PCA of the midvein (≥ `min_midvein` points) with the tip end chosen from the petiole / base / apex
 points; else no orientation. The angle + a success flag are stored on the leaf's `leaf_morphology`
 row (`oriented_leaf_rotation_angle_degreesCW`, `oriented_leaf_success`). See `core/orientation.py`.
+
+**PetioleWidth** (post-process, CPU) measures each leaf's petiole width from its `Petiole` mask and
+the landmark petiole centerline (`lamina_base` → `petiole_0..4` → `petiole_tip`): the **median** of
+several perpendicular thickness samples near the blade junction (`core/petiole.py` → `leaf_petiole`
+table, with `width_px`, `length_px`, `touches_leaf`, and the sample/width segments). Widths are
+pixels until the ruler CF lands. It runs on the raw petiole mask now; TODO #5 will feed it the
+edge-refined mask. The Reporter draws the width as a blue band on the summary and a per-leaf
+`Overlay/Overlay_Petiole/` — left: masks + sample probes + width band + a lamina-area/petiole-width
+panel; right: the petiole RGB cutout blown up (pixelated) with a 1-px blue line at the exact width.
 
 **Leaf products** (Reporter) are the highest-value output: five per-leaf products, each in a
 non-oriented **`Original/`** and an upright **`Oriented/`** tree — the Plant_Detector bbox crop,
@@ -115,8 +124,9 @@ Each category is a folder with per-output subfolders (harmonized with `Crops/`):
 ```
 reports/
   Overlay/
-    Overlay_Summary/             <stem>__Overlay.jpg                   (masks + boxes + landmarks)
+    Overlay_Summary/             <stem>__Overlay.jpg                   (masks + boxes + landmarks + petiole bands)
     Overlay_Landmarks/           <stem>__LM-leaf__x_y_x_y.jpg          (per leaf: keypoints + measures)
+    Overlay_Petiole/             <stem>__PET-leaf__x_y_x_y.jpg         (per leaf: petiole width)
   Original/                      (7 leaf products, non-oriented)
     Leaf_BBox/                   <stem>__BBOX-leaf__x_y_x_y.jpg        (not fitted)
     Lamina_Mask/                 <stem>__SEG-lamina__x_y_x_y.png       (fitted; holes removed)

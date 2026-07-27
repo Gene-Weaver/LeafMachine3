@@ -7,6 +7,7 @@ and can be toggled independently in ``report`` of ``LM3_settings.yaml``. The lay
 
     Overlay/Overlay_Summary/<stem>__Overlay.<ext>          (masks + boxes + landmarks on top)
     Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>  (one per leaf: keypoints + measures)
+    Overlay/Overlay_Petiole/<stem>__PET-leaf__x_y_x_y.<ext>   (one per leaf: petiole width band + panel)
     Crops/RGB__<friendly>/<stem>__BBOX-<friendly>__x_y_x_y.<ext>   (NON-leaf detector classes)
     {Original,Oriented}/<product>/<stem>__<PREFIX>-<friendly>__x_y_x_y.<ext>  (7 leaf products;
         friendly = leaf/lamina/laminaPetiole/laminaHoles; holes in laminaHoles RGB = (10,10,10))
@@ -23,6 +24,7 @@ pixels the crop was cut from.
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -43,8 +45,12 @@ from leafmachine3.core.imaging import (
 from leafmachine3.core.naming import crop_label, friendly_name
 from leafmachine3.core.stage import PipelineStage, WorkItem
 from leafmachine3.reporting.leaf_products import PRODUCTS, PRODUCT_KEYS, render_leaf_products
-from leafmachine3.reporting.overlay import build_leaf_landmark_overlay, build_summary_image
-from leafmachine3.reporting.palette import LandmarkStyle, OverlayStyle
+from leafmachine3.reporting.overlay import (
+    build_leaf_landmark_overlay,
+    build_leaf_petiole_overlay,
+    build_summary_image,
+)
+from leafmachine3.reporting.palette import LandmarkStyle, OverlayStyle, PetioleStyle
 
 log = logging.getLogger("leafmachine3.reporter")
 
@@ -64,7 +70,8 @@ class Reporter(PipelineStage):
     depends_on: tuple[str, ...] = (
         "archival_detector", "plant_detector", "phenology_detector",
         "ruler_cf", "leaf_segmenter", "morphology",
-        "landmark_detector", "landmark_measurements", "leaf_orientation", "metric_grounding",
+        "landmark_detector", "landmark_measurements", "leaf_orientation",
+        "petiole_width", "metric_grounding",
     )
     owns_tables: tuple[str, ...] = ()
 
@@ -94,12 +101,14 @@ class Reporter(PipelineStage):
         # ---- Overlay_Summary (masks + boxes + landmarks on top) ----------
         overlay_cfg = _sub(r, "overlay")
         lm_style = LandmarkStyle.from_config(self.cfg)
+        pet_style = PetioleStyle.from_config(self.cfg)
         if _flag(overlay_cfg, "enabled", True):
             style = OverlayStyle.from_config(self.cfg)
             summary = build_summary_image(
                 read(b.original_path), b.detections, b.leaves, b.cf_px_per_cm, style, b.work_scale,
                 morphology=b.morphology, landmarks=b.landmarks, landmark_style=lm_style,
                 landmark_measurements=b.landmark_measurements,
+                petioles=b.petioles, petiole_style=pet_style,
             )
             path = reports / "Overlay" / "Overlay_Summary" / f"{stem}__Overlay.{img_ext}"
             save_image(summary, path, quality=quality)
@@ -109,6 +118,12 @@ class Reporter(PipelineStage):
         ovlm_cfg = _sub(r, "overlay_landmarks")
         if _flag(ovlm_cfg, "enabled", True) and b.landmarks:
             written += self._export_landmark_overlays(b, reports, stem, img_ext, quality, read, lm_style)
+
+        # ---- Overlay_Petiole (one per leaf with a petiole: masks + width band + panel)
+        ovpet_cfg = _sub(r, "overlay_petiole")
+        style_overlay = OverlayStyle.from_config(self.cfg)
+        if _flag(ovpet_cfg, "enabled", True) and b.petioles:
+            written += self._export_petiole_overlays(b, reports, stem, img_ext, quality, read, pet_style, style_overlay)
 
         # ---- mask exports ------------------------------------------------
         masks_cfg = _sub(r, "masks")
@@ -277,6 +292,42 @@ class Reporter(PipelineStage):
             written.append((str(path), "Overlay/Overlay_Landmarks"))
         return written
 
+    # ---- per-leaf petiole overlays --------------------------------------- #
+    def _export_petiole_overlays(self, b, reports, stem, img_ext, quality, read, pet_style, style):
+        """Write ``Overlay/Overlay_Petiole/<stem>__PET-leaf__x_y_x_y.<ext>`` -- the leaf crop with the
+        Leaf + Petiole masks filled (no outline), the width sample probes + reported width band, and a
+        panel of the lamina areas + petiole width. One per leaf that has a petiole."""
+        if not b.working_path:
+            return []
+        working = read(b.working_path)
+        h, w = working.shape[:2]
+        by_det = _group_seg_by_detection(_parse_leaves(b.leaves))
+        morph_by_det = {int(_row_get(m, "detection_id", -1)): m for m in (b.morphology or [])}
+        seg_colors = {"Leaf": style.color_for(_LEAF), "Petiole": style.color_for(_PETIOLE)}
+        folder = reports / "Overlay" / "Overlay_Petiole"
+        label = crop_label(self.cfg, "petiole", _LEAF)          # PET-leaf
+        written: list[tuple[str, str]] = []
+        for pr in b.petioles:
+            did = int(_row_get(pr, "detection_id", -1))
+            box = b.crop_boxes.get(did)
+            if not box:
+                continue
+            x1, y1, x2, y2 = (int(round(v)) for v in box)
+            crop = working[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
+            if crop.size == 0:
+                continue
+            groups = by_det.get(did, {})
+            class_polys = {cls: [offset_polygon(p, -x1, -y1) for p in groups.get(cls, [])]
+                           for cls in (_LEAF, _PETIOLE)}
+            wseg = _load_seg(_row_get(pr, "width_segment_json", None), x1, y1)        # working -> crop
+            sseg = _load_segs(_row_get(pr, "sample_segments_json", None), x1, y1)
+            lines = _petiole_measure_lines(morph_by_det.get(did), pr)
+            img = build_leaf_petiole_overlay(crop, class_polys, sseg, wseg, lines, seg_colors, pet_style)
+            path = folder / crop_filename(stem, label, (x1, y1, x2, y2), img_ext)
+            save_image(img, path, quality=quality)
+            written.append((str(path), "Overlay/Overlay_Petiole"))
+        return written
+
     # ---- leaf products (Original + Oriented trees) ----------------------- #
     def _export_leaf_products(self, b, lp_cfg, reports, stem, img_ext, mask_ext, quality, read):
         """Render the 5 leaf products under ``Original/`` and (when orientation succeeded)
@@ -380,6 +431,46 @@ def _group_landmark_rows(landmarks) -> dict:
         key = (int(_row_get(r, "detection_id", -1)), int(_row_get(r, "instance_index", 0)))
         groups.setdefault(key, []).append(r)
     return groups
+
+
+def _load_seg(raw, x1: int, y1: int):
+    """A JSON width segment (working coords) -> crop-frame ``[[x,y],[x,y]]``, or None."""
+    if not raw:
+        return None
+    try:
+        s = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return None
+    if not s or len(s) < 2:
+        return None
+    return [[p[0] - x1, p[1] - y1] for p in s]
+
+
+def _load_segs(raw, x1: int, y1: int) -> list:
+    """A JSON list of segments (working coords) -> crop-frame segments."""
+    if not raw:
+        return []
+    try:
+        ss = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return []
+    return [[[p[0] - x1, p[1] - y1] for p in s] for s in ss if s and len(s) >= 2]
+
+
+def _petiole_measure_lines(morph, pr) -> list[str]:
+    """Panel lines for the petiole overlay: all lamina-area versions + the petiole width/length."""
+    def gi(row, key: str) -> str:
+        v = _row_get(row, key, None)
+        return "n/a" if v is None else str(int(round(float(v))))
+
+    return [
+        f"lamina_incl: {gi(morph, 'lamina_area_incl_holes_px')} px",
+        f"lamina_excl: {gi(morph, 'lamina_area_excl_holes_px')} px",
+        f"lamina_hole: {gi(morph, 'lamina_hole_area_px')} px",
+        f"n_holes: {gi(morph, 'n_holes')}",
+        f"petiole_w: {gi(pr, 'width_px')} px",
+        f"petiole_len: {gi(pr, 'length_px')} px",
+    ]
 
 
 def _landmark_measure_lines(m) -> list[str]:

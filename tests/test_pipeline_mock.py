@@ -106,6 +106,15 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         ).fetchall()
         assert orient and all(o["oriented_leaf_success"] == 1 for o in orient)
         assert all(0.0 <= o["oriented_leaf_rotation_angle_degreesCW"] < 360.0 for o in orient)
+
+        # Petiole Width ran: the mock petiole yields a measured width, touches the leaf, has samples
+        pet = conn.execute(
+            "SELECT width_px, length_px, n_samples, touches_leaf, width_segment_json FROM leaf_petiole"
+        ).fetchall()
+        assert pet, "no leaf_petiole rows"
+        assert all(p["width_px"] is not None and p["width_px"] > 0 for p in pet)
+        assert all(p["touches_leaf"] == 1 for p in pet)
+        assert all(p["n_samples"] >= 1 and p["width_segment_json"] for p in pet)
         assert 0.0 <= mm["apex_angle"] <= 360.0                           # degrees, incl. reflex
         assert mm["apex_angle_type"] in {"acute", "obtuse", "reflex"}
         assert mm["base_angle_type"] in {"acute", "obtuse", "reflex"}
@@ -134,6 +143,12 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     lp = parse_crop_filename(lm_overlays[0].name)
     assert lp and lp["prefix"] == "LM" and lp["friendly"] == "leaf" and len(lp["xyxy"]) == 4
 
+    # per-leaf petiole overlays land under Overlay/Overlay_Petiole/ as __PET-leaf__coords
+    pet_overlays = list((reports / "Overlay" / "Overlay_Petiole").glob("*__PET-leaf__*.jpg"))
+    assert pet_overlays, "no per-leaf petiole overlays"
+    pp = parse_crop_filename(pet_overlays[0].name)
+    assert pp and pp["prefix"] == "PET" and pp["friendly"] == "leaf"
+
     # leaf products: Original/ + Oriented/ trees, each with bbox + fitted lamina mask + lamina cutout
     # (mock leaves have no petiole, so the laminaPetiole products are correctly skipped).
     import cv2 as _cv2
@@ -147,7 +162,9 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         holes_rgb = list((base / "Lamina_Holes_RGB").glob("*__RGB-laminaHoles__*.jpg"))
         assert bbox and lam_mask and lam_rgb, f"{tree}: missing lamina products"
         assert holes_mask and holes_rgb, f"{tree}: missing laminaHoles products"
-        assert not (base / "LaminaPetiole_Mask").exists()          # no petiole -> product skipped
+        # the mock now emits a petiole, so the laminaPetiole products are present
+        assert list((base / "LaminaPetiole_Mask").glob("*__SEG-laminaPetiole__*.png"))
+        assert list((base / "LaminaPetiole_RGB").glob("*__RGB-laminaPetiole__*.jpg"))
         m = _cv2.imread(str(lam_mask[0]), _cv2.IMREAD_GRAYSCALE)
         assert m is not None and (m > 0).any()                     # non-empty mask
         # the holes RGB paints holes (10,10,10) so they can be color-thresholded back out

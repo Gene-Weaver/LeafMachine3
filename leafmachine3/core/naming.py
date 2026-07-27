@@ -12,10 +12,12 @@ BBOX = "bbox"
 SEG = "seg"
 MASK_FULL = "mask_full"
 LANDMARK = "landmark"
+PETIOLE = "petiole"
 
 _PREFIX_KEYS = {BBOX: ("bbox_prefix", "BBOX"), SEG: ("seg_prefix", "SEG"),
                 MASK_FULL: ("mask_full_prefix", "MaskFull"),
-                LANDMARK: ("landmark_prefix", "LM")}
+                LANDMARK: ("landmark_prefix", "LM"),
+                PETIOLE: ("petiole_prefix", "PET")}
 
 
 def friendly_name(cfg, cls_name: str) -> str:

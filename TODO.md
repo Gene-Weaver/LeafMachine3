@@ -6,7 +6,7 @@ post-analysis add-on after the primary pipeline:
 ```
 ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerClassifier
 → [RulerConversionFactor — stub] → LeafSegmenter → Morphology → LandmarkDetector
-→ LandmarkMeasurements → LeafOrientation → MetricGrounding → Reporter
+→ LandmarkMeasurements → LeafOrientation → PetioleWidth → MetricGrounding → Reporter
 ```
 
 See `docs/LM3_Plan.html` for the architecture. Legend: **⛔ blocked** · **▶ ready** · **… planned**.
@@ -22,11 +22,20 @@ See `docs/LM3_Plan.html` for the architecture. Legend: **⛔ blocked** · **▶ 
 
 ---
 
-## 1. Petiole width  ▶ (ready — orientation now exists)
+## 1. Petiole width  ✅ (DONE — `petiole_width` stage)
 
-**Goal:** measure petiole width (px) per leaf instance and store it, mirroring LM2's petiole
-project. Runs as an add-on **after Morphology**. Leaf orientation (step 3) is now DONE, so this is
-unblocked; consume the oriented `Petiole` masks (or the raw masks + `oriented_leaf_rotation_angle_degreesCW`).
+**Status:** DONE. The `petiole_width` stage (`core/petiole.py`, `modules/petiole_width.py`) measures
+each leaf's petiole width = **median** of perpendicular thickness samples of the `Petiole` mask near
+the blade junction, along the landmark petiole centerline (`lamina_base` → `petiole_0..4` →
+`petiole_tip`) → `leaf_petiole` table (`width_px`, `length_px`, `n_samples`, `touches_leaf`,
+`measure_location`, the sample/width segments; `width_cm` reserved for MetricGrounding). The Reporter
+draws a purple width band on the summary and a per-leaf `Overlay/Overlay_Petiole/`. **Still TODO:**
+run it on the **edge-refined** petiole mask once #5 lands (it currently uses the raw mask), and
+ground `width_px` → `width_cm` once the ruler CF (#3) exists.
+
+**Original plan (kept for reference):** measure petiole width (px) per leaf instance, mirroring LM2's
+petiole project. Leaf orientation (step 3) is DONE. (We used the landmark petiole centerline instead
+of skeletonising the mask; skeletonisation remains a possible fallback if landmarks are unavailable.)
 
 **Prerequisites (status):**
 1. ✅ **`LM3_Landmark_Detector`** — DONE (alpha, `yolo26x_pose_640`): integrated as the
