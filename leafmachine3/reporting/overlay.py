@@ -66,6 +66,7 @@ def build_summary_image(
     morphology: Sequence[Any] = (),
     landmarks: Sequence[Any] = (),
     landmark_style: Optional[LandmarkStyle] = None,
+    landmark_measurements: Sequence[Any] = (),
 ) -> np.ndarray:
     """Render the Summary_Image overlay onto a copy of ``image_bgr``.
 
@@ -100,7 +101,19 @@ def build_summary_image(
         _draw_cf_banner(out, float(cf_px_per_cm), style)
     # Landmarks go ON TOP of masks + boxes so every leaf's keypoints stay visible.
     if style.draw_landmarks and landmarks:
-        _draw_landmarks(out, landmarks, landmark_style or LandmarkStyle(), scale)
+        _draw_landmarks(out, landmarks, landmark_style or LandmarkStyle(), scale,
+                        _curvature_by_detection(landmark_measurements))
+    return out
+
+
+def _curvature_by_detection(measurements: Sequence[Any]) -> dict[tuple[int, int], int]:
+    """Map ``(detection_id, instance_index) -> curvature_point`` (midvein index) for bend drawing."""
+    out: dict[tuple[int, int], int] = {}
+    for mm in measurements or []:
+        cp = _row_get(mm, "curvature_point", None)
+        if cp is not None:
+            key = (int(_row_get(mm, "detection_id", -1)), int(_row_get(mm, "instance_index", 0)))
+            out[key] = int(cp)
     return out
 
 
@@ -119,11 +132,19 @@ def _draw_landmark_skeleton(
     pt: dict[str, tuple[float, float]],
     conf: dict[str, float],
     lm_style: LandmarkStyle,
+    curvature_idx: Optional[int] = None,
 ) -> None:
-    """Draw the skeleton edges then the keypoints. ``pt`` is name -> (x, y) in target pixels."""
+    """Draw the skeleton edges then the keypoints. ``pt`` is name -> (x, y) in target pixels.
+
+    ``curvature_idx`` (the ``curvature_point`` midvein index) adds the two gray bend lines from the
+    midvein ends to that vertex -- the arms whose angle ``lamina_curvature`` measures.
+    """
 
     def ok(name: str) -> bool:
         return name in pt and conf.get(name, 1.0) >= lm_style.min_conf
+
+    def ipt(p) -> tuple[int, int]:
+        return (int(round(p[0])), int(round(p[1])))
 
     if lm_style.draw_skeleton:
         lw = max(1, lm_style.line_width)
@@ -131,16 +152,20 @@ def _draw_landmark_skeleton(
             if kind == "lamina_length":
                 continue   # the extent chord is drawn below between the first/last PRESENT midvein
             if ok(a) and ok(b):
-                pa = (int(round(pt[a][0])), int(round(pt[a][1])))
-                pb = (int(round(pt[b][0])), int(round(pt[b][1])))
-                cv2.line(out, pa, pb, _bgr(lm_style.color_for_kind(kind)), lw, cv2.LINE_AA)
+                cv2.line(out, ipt(pt[a]), ipt(pt[b]), _bgr(lm_style.color_for_kind(kind)), lw, cv2.LINE_AA)
         # lamina_extent (white line): chord between the first and last PRESENT midvein points, so it
         # matches the lamina_extent metric exactly even when an endpoint keypoint is occluded.
         present_mv = [pt[f"midvein_{i}"] for i in range(MIDVEIN_N) if ok(f"midvein_{i}")]
         if len(present_mv) >= 2:
-            pa = (int(round(present_mv[0][0])), int(round(present_mv[0][1])))
-            pb = (int(round(present_mv[-1][0])), int(round(present_mv[-1][1])))
-            cv2.line(out, pa, pb, _bgr(lm_style.color_for_kind("lamina_length")), lw, cv2.LINE_AA)
+            cv2.line(out, ipt(present_mv[0]), ipt(present_mv[-1]),
+                     _bgr(lm_style.color_for_kind("lamina_length")), lw, cv2.LINE_AA)
+            # curvature bend (gray): two lines from the midvein ends to the most-bent vertex, i.e.
+            # the arms of the lamina_curvature angle.
+            if curvature_idx is not None and ok(f"midvein_{curvature_idx}"):
+                v = ipt(pt[f"midvein_{curvature_idx}"])
+                gray = _bgr(lm_style.curvature_color)
+                cv2.line(out, ipt(present_mv[0]), v, gray, lw, cv2.LINE_AA)
+                cv2.line(out, ipt(present_mv[-1]), v, gray, lw, cv2.LINE_AA)
     if lm_style.draw_points:
         r = max(1, lm_style.point_radius)
         for name, (x, y) in pt.items():
@@ -153,10 +178,12 @@ def _draw_landmark_skeleton(
 
 
 def _draw_landmarks(
-    out: np.ndarray, landmarks: Sequence[Any], lm_style: LandmarkStyle, scale: float
+    out: np.ndarray, landmarks: Sequence[Any], lm_style: LandmarkStyle, scale: float,
+    curv_by_det: Optional[dict[tuple[int, int], int]] = None,
 ) -> None:
     """Draw every leaf's keypoints/skeleton on the summary image (working coords * scale)."""
-    for _key, rows in _group_landmarks(landmarks).items():
+    curv_by_det = curv_by_det or {}
+    for key, rows in _group_landmarks(landmarks).items():
         pt: dict[str, tuple[float, float]] = {}
         conf: dict[str, float] = {}
         for r in rows:
@@ -166,7 +193,7 @@ def _draw_landmarks(
                 continue
             pt[name] = (float(x) * scale, float(y) * scale)
             conf[name] = float(_row_get(r, "conf", 1.0) or 0.0)
-        _draw_landmark_skeleton(out, pt, conf, lm_style)
+        _draw_landmark_skeleton(out, pt, conf, lm_style, curvature_idx=curv_by_det.get(key))
 
 
 def build_leaf_landmark_overlay(
@@ -174,6 +201,7 @@ def build_leaf_landmark_overlay(
     landmark_rows: Sequence[Any],
     measure_lines: Sequence[str],
     lm_style: LandmarkStyle,
+    curvature_idx: Optional[int] = None,
 ) -> np.ndarray:
     """Per-leaf overlay: draw the keypoints/skeleton on the leaf crop (crop-frame coords) plus a
     panel of the derived measurements. Used for the ``Overlay_Landmarks`` output."""
@@ -187,7 +215,7 @@ def build_leaf_landmark_overlay(
             continue
         pt[name] = (float(xc), float(yc))
         conf[name] = float(_row_get(r, "conf", 1.0) or 0.0)
-    _draw_landmark_skeleton(out, pt, conf, lm_style)
+    _draw_landmark_skeleton(out, pt, conf, lm_style, curvature_idx=curvature_idx)
     if measure_lines:
         _draw_measure_panel(out, list(measure_lines), lm_style)
     return out

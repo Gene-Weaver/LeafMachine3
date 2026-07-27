@@ -94,6 +94,7 @@ class Reporter(PipelineStage):
             summary = build_summary_image(
                 read(b.original_path), b.detections, b.leaves, b.cf_px_per_cm, style, b.work_scale,
                 morphology=b.morphology, landmarks=b.landmarks, landmark_style=lm_style,
+                landmark_measurements=b.landmark_measurements,
             )
             path = reports / "Overlay" / "Overlay_Summary" / f"{stem}__Overlay.{img_ext}"
             save_image(summary, path, quality=quality)
@@ -249,8 +250,11 @@ class Reporter(PipelineStage):
             crop = working[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
             if crop.size == 0:
                 continue
-            lines = _landmark_measure_lines(meas.get((did, inst)))
-            img = build_leaf_landmark_overlay(crop, rows, lines, lm_style)
+            mrow = meas.get((did, inst))
+            lines = _landmark_measure_lines(mrow)
+            cp = _row_get(mrow, "curvature_point", None) if mrow is not None else None
+            img = build_leaf_landmark_overlay(
+                crop, rows, lines, lm_style, curvature_idx=int(cp) if cp is not None else None)
             # Usually one leaf per crop (inst 0). If the pose model emits >1 instance for a crop
             # they share the detection box, so fold the instance into the stem (parse-safe) to keep
             # each file distinct instead of overwriting.
@@ -290,7 +294,7 @@ def _landmark_measure_lines(m) -> list[str]:
         base = f"{int(round(float(v)))}deg"
         return f"{base} {t}" if t else base
 
-    curv = _row_get(m, "lamina_curvature", None)
+    cv = _row_get(m, "lamina_curvature", None)
     return [
         f"lamina_trace: {as_int('lamina_trace_length')} px",
         f"lamina_extent: {as_int('lamina_extent')} px",
@@ -299,7 +303,7 @@ def _landmark_measure_lines(m) -> list[str]:
         f"apex: {angle('apex_angle', 'apex_angle_type')}",
         f"base: {angle('base_angle', 'base_angle_type')}",
         f"petiole_trace: {as_int('petiole_trace_length')} px",
-        f"curvature: {'n/a' if curv is None else f'{float(curv):.2f}'}",
+        f"curvature: {'n/a' if cv is None else f'{int(round(float(cv)))}deg'}",
     ]
 def _parse_leaves(leaves) -> list[tuple[int, str, np.ndarray]]:
     out: list[tuple[int, str, np.ndarray]] = []

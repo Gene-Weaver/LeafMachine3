@@ -10,14 +10,20 @@ biological measurements Will asked for:
     * ``apex_angle`` / type    -- angle at apex_center (acute / obtuse / reflex)
     * ``base_angle`` / type    -- angle at base_center (acute / obtuse / reflex)
     * ``petiole_trace_length`` -- summed distance along the petiole trace points (petiole_0..4)
-    * ``lamina_curvature``     -- lamina_extent / lamina_trace_length (chord/arc; 1.0 straight,
-                                  < 1 as the midvein curves)
+    * ``lamina_curvature``     -- max bend of the midvein, in degrees: 0 straight, larger as it bends
+    * ``curvature_point``      -- the midvein index of the most-bent vertex (for plotting)
 
-``lamina_extent`` deliberately spans the same first/last midvein points as ``lamina_trace_length``
-(NOT lamina_tip -> lamina_base), so ``lamina_curvature = lamina_extent / lamina_trace_length`` is a
-chord/arc ratio over one identical point set: exactly 1.0 when the midvein is straight and
-decreasing toward 0 as it curves (bounded in (0, 1]). The distinct tip->base distance is
-``lamina_tip_base_length``.
+``lamina_curvature`` is a max-bend angle. Treat the two midvein ENDS (first/last present midvein
+point) as the arms of an angle and each interior midvein point as a candidate vertex; the angle
+subtended by the two ends at a vertex is 180 deg when that vertex is straight-through and shrinks
+as the midvein bends there. Over all interior vertices we take the SMALLEST such angle (the sharpest
+bend) and report its complement ``180 - min_angle`` -- so a straight midrib is 0 deg and a strongly
+curved one is a large angle (much more sensitive to mild bowing than a chord/arc ratio, which is
+only quadratically sensitive). ``curvature_point`` is that vertex's midvein index, so the Reporter
+can draw the bend (two gray lines from the midvein ends to the vertex).
+
+``lamina_extent`` is the straight chord between the first/last midvein points (the white overlay
+line); ``lamina_tip_base_length`` is the distinct lamina_tip -> lamina_base distance.
 
 **Robust to occlusion.** The pose model always emits 31 keypoints, but occluded/uncertain ones
 come back with low confidence; the caller drops those below ``min_kpt_conf`` before building the
@@ -65,6 +71,7 @@ class LandmarkMeasurements:
     base_angle_type: Optional[str] = None
     petiole_trace_length: Optional[float] = None
     lamina_curvature: Optional[float] = None
+    curvature_point: Optional[int] = None
     lamina_centroid: Optional[Point] = None
     n_present: int = 0
 
@@ -105,6 +112,32 @@ def _petiole_trace_points(pts: dict[str, Point]) -> list[Point]:
     sums consecutive distances along these points only (``petiole_0->petiole_1 + ...``); the
     ``lamina_base`` / ``petiole_tip`` anchors are NOT part of the trace."""
     return [pts[f"petiole_{i}"] for i in range(PETIOLE_N) if f"petiole_{i}" in pts]
+
+
+def _lamina_curvature(pts: dict[str, Point]) -> tuple[Optional[float], Optional[int]]:
+    """Max-bend curvature of the midvein and the vertex that produced it.
+
+    For each interior midvein point, measure the angle subtended by the two midvein ENDS at that
+    point; that angle is 180 deg when the point lies straight between the ends and shrinks as the
+    midvein bends there. Take the SMALLEST angle across interior vertices (the sharpest bend) and
+    return ``(180 - min_angle, vertex_midvein_index)`` -- 0 deg for a straight midrib, larger as it
+    curves. Returns ``(None, None)`` when fewer than three midvein points are present.
+    """
+    mv = [(i, pts[f"midvein_{i}"]) for i in range(MIDVEIN_N) if f"midvein_{i}" in pts]
+    if len(mv) < 3:
+        return None, None
+    end_a, end_b = mv[0][1], mv[-1][1]                  # first / last present midvein point
+    best_angle: Optional[float] = None
+    best_idx: Optional[int] = None
+    for idx, vertex in mv[1:-1]:                        # every interior midvein point as a vertex
+        ang = _interior_angle(vertex, end_a, end_b)     # angle at the vertex between the two ends
+        if ang is None:
+            continue
+        if best_angle is None or ang < best_angle:
+            best_angle, best_idx = ang, idx
+    if best_angle is None:
+        return None, None
+    return 180.0 - best_angle, best_idx
 
 
 # -- angles ------------------------------------------------------------------------
@@ -170,10 +203,9 @@ def compute_measurements(points: dict[str, Point]) -> LandmarkMeasurements:
     if "lamina_tip" in points and "lamina_base" in points:
         m.lamina_tip_base_length = _dist(points["lamina_tip"], points["lamina_base"])
 
-    # lamina_curvature = extent / trace = chord / arc over the SAME midvein endpoints: exactly 1.0
-    # when the midvein is straight, and < 1 as it curves (a straightness ratio in (0, 1]).
-    if m.lamina_extent is not None and m.lamina_trace_length and m.lamina_trace_length > _EPS:
-        m.lamina_curvature = m.lamina_extent / m.lamina_trace_length
+    # lamina_curvature = max midvein bend angle (0 deg straight, larger as it curves); curvature_point
+    # is the midvein index of the sharpest-bend vertex (drawn as the gray bend lines in the report).
+    m.lamina_curvature, m.curvature_point = _lamina_curvature(points)
 
     if "width_left" in points and "width_right" in points:
         m.leaf_width = _dist(points["width_left"], points["width_right"])

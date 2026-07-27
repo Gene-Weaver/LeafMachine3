@@ -80,13 +80,13 @@ def test_full_leaf_all_metrics_sane():
     assert m.lamina_tip_base_length == pytest.approx(280, abs=1)  # tip->base (coincide here)
     assert m.leaf_width == pytest.approx(110, abs=1)
     assert m.lamina_trace_length >= m.lamina_extent - 1e-6      # arc >= chord
-    assert m.lamina_curvature == pytest.approx(1.0, abs=1e-3)   # straight midrib
     assert m.apex_angle_type in {"acute", "obtuse"}             # convex apex
     assert m.base_angle_type in {"acute", "obtuse"}
     # lamina trace = the 15 midvein pts (150,20)->(150,300); petiole trace = the 5 petiole pts
     # (150,305)->(150,325); anchors (tip/base/petiole_tip) are NOT summed into the traces.
     assert m.lamina_trace_length == pytest.approx(280, abs=1)
     assert m.petiole_trace_length == pytest.approx(20, abs=1)
+    assert m.lamina_curvature == pytest.approx(0.0, abs=1e-6)   # collinear midvein: no bend
     assert m.lamina_centroid is not None
 
 
@@ -106,18 +106,20 @@ def test_trace_length_sums_only_trace_points_not_anchors():
     assert m.petiole_trace_length == pytest.approx(15)   # 5 + 10, anchors excluded
     assert m.lamina_extent == pytest.approx(20)          # chord of first->last midvein (0..20)
     assert m.lamina_tip_base_length == pytest.approx(2000)  # the far tip/base distance, reported separately
-    assert m.lamina_curvature == pytest.approx(1.0)      # straight midvein: arc == chord
+    assert m.lamina_curvature == pytest.approx(0.0)      # collinear midvein: no bend
 
 
-def test_curved_midrib_has_curvature_below_one():
+def test_curved_midrib_reports_bend_angle_and_vertex():
     pts = {"lamina_tip": (100, 0), "lamina_base": (100, 100)}
-    # midrib bows out to x=140 in the middle -> arc longer than the 100px chord
+    # midrib bows out to x=140 at the middle (midvein_7) -> a clear bend there
     for i in range(15):
         t = i / 14.0
         pts[f"midvein_{i}"] = (100 + 40 * (1 - abs(2 * t - 1)), 100 * t)
     m = compute_measurements(pts)
     assert m.lamina_extent == pytest.approx(100, abs=1)
-    assert m.lamina_curvature < 0.96                      # extent/trace = chord/arc < 1 when curved
+    # the sharpest bend is the middle vertex; 180 - angle(ends at midvein_7) ~= 77 deg
+    assert m.lamina_curvature == pytest.approx(77.3, abs=1.0)
+    assert m.curvature_point == 7                          # the most-bent midvein index
 
 
 def test_missing_points_degrade_to_none():

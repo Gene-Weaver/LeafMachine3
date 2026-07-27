@@ -84,13 +84,14 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         mm = conn.execute(
             "SELECT lamina_trace_length, lamina_extent, lamina_tip_base_length, leaf_width, "
             "apex_angle, apex_angle_type, base_angle, base_angle_type, petiole_trace_length, "
-            "lamina_curvature, n_present, detection_id FROM leaf_landmark_measurement LIMIT 1"
+            "lamina_curvature, curvature_point, n_present, detection_id FROM leaf_landmark_measurement LIMIT 1"
         ).fetchone()
         assert mm is not None and mm["detection_id"]
         assert mm["lamina_extent"] > 0 and mm["leaf_width"] > 0            # straight-line metrics
         assert mm["lamina_tip_base_length"] > 0                           # separate tip->base distance
         assert mm["lamina_trace_length"] >= mm["lamina_extent"] - 1e-6     # arc >= chord (same endpoints)
-        assert 0.0 < mm["lamina_curvature"] <= 1.0 + 1e-6                  # curvature = chord / arc in (0, 1]
+        assert mm["lamina_curvature"] >= 0.0                              # max midvein bend (deg); 0 = straight
+        assert mm["curvature_point"] is not None                          # most-bent midvein index
         assert 0.0 <= mm["apex_angle"] <= 360.0                           # degrees, incl. reflex
         assert mm["apex_angle_type"] in {"acute", "obtuse", "reflex"}
         assert mm["base_angle_type"] in {"acute", "obtuse", "reflex"}

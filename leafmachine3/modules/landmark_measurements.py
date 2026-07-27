@@ -73,6 +73,7 @@ class LandmarkMeasurements(PipelineStage):
                 base_angle_type=m.base_angle_type,
                 petiole_trace_length=m.petiole_trace_length,
                 lamina_curvature=m.lamina_curvature,
+                curvature_point=m.curvature_point,
                 lamina_centroid_x=cx,
                 lamina_centroid_y=cy,
                 n_present=m.n_present,

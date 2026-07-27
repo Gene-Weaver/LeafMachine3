@@ -221,6 +221,7 @@ report:
       line_width: 2
       min_conf: 0.25
       label_color: [255, 255, 255]
+      curvature_color: [128, 128, 128]  # the two bend lines (midvein ends -> curvature_point)
       colors:                         # [R, G, B] per keypoint group
         lamina:  [255, 255, 255]      # lamina_tip / lamina_base anchors
         midvein: [0, 200, 255]        # midrib trace

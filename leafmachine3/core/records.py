@@ -169,6 +169,7 @@ class LandmarkMeasureRow:
     base_angle_type: Optional[str] = None
     petiole_trace_length: Optional[float] = None
     lamina_curvature: Optional[float] = None
+    curvature_point: Optional[int] = None
     lamina_centroid_x: Optional[float] = None
     lamina_centroid_y: Optional[float] = None
     n_present: int = 0
