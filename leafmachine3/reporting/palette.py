@@ -187,7 +187,7 @@ class PetioleStyle:
     mask_alpha: float = 0.45
     label_color: RGB = (255, 255, 255)
     # right-half zoom panel: the petiole stays full color; the background is tinted toward this color.
-    zoom_bg_tint: float = 0.30
+    zoom_bg_tint: float = 0.0                 # 0 = no tint (default); raise to tint the background
     zoom_bg_color: RGB = (255, 0, 0)          # red
 
     @classmethod
@@ -200,7 +200,7 @@ class PetioleStyle:
             sample_thickness=int(_getk(p, "sample_thickness", 2)),
             mask_alpha=float(_getk(p, "mask_alpha", 0.45)),
             label_color=tuple(_getk(p, "label_color", (255, 255, 255))),
-            zoom_bg_tint=float(_getk(p, "zoom_bg_tint", 0.30)),
+            zoom_bg_tint=float(_getk(p, "zoom_bg_tint", 0.0)),
             zoom_bg_color=tuple(_getk(p, "zoom_bg_color", (255, 0, 0))),
         )
 
