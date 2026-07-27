@@ -137,6 +137,16 @@ modules:
                                         #   "lm2" (fit_min_bbox) | "minarearect" (cv2, can mis-orient).
     find_minimum_bounding_box: true     # (lm2 only) run the rotate-to-min-circle procedure
 
+  landmark_detector:                    # leaf-landmark pose (31-kpt mid15_pet5); runs on leaf crops
+    enabled: true
+    model: { path: "models/landmark_detector/model.onnx", format: "onnx" }
+    source_classes: ["Leaf_WHOLE"]
+    include_partial: false              # true also landmarks Leaf_PARTIAL crops
+    imgsz: 640
+    conf: 0.25
+    iou: 0.45
+    white_pad: 0.10                     # training white border re-applied at inference then removed
+
   metric_grounding:
     enabled: true                       # runs, but no-ops until ruler_cf provides a CF
     missing_cf_policy: "skip"

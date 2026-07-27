@@ -6,7 +6,7 @@ from pathlib import Path
 
 log = logging.getLogger("leafmachine3")
 
-_MODEL_STAGES = ("archival_detector", "plant_detector", "leaf_segmenter")
+_MODEL_STAGES = ("archival_detector", "plant_detector", "leaf_segmenter", "landmark_detector")
 
 
 def validate_ml_artifacts(cfg) -> None:

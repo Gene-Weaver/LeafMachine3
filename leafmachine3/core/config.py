@@ -43,12 +43,14 @@ CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "ruler_cf",
     "leaf_segmenter",
     "morphology",
+    "landmark_detector",
     "metric_grounding",
     "reporter",
 )
 
 # Stages that require an exported single-file model artifact when enabled.
-_MODEL_PATH_STAGES: tuple[str, ...] = ("archival_detector", "plant_detector", "leaf_segmenter")
+_MODEL_PATH_STAGES: tuple[str, ...] = ("archival_detector", "plant_detector", "leaf_segmenter",
+                                       "landmark_detector")
 
 _MISSING = object()
 
@@ -211,6 +213,7 @@ def builtin_defaults() -> dict[str, Any]:
             "ruler_cf": {"enabled": False},
             "leaf_segmenter": {"enabled": True},
             "morphology": {"enabled": True},
+            "landmark_detector": {"enabled": True},
             "metric_grounding": {"enabled": True},
             "reporter": {"enabled": True},
         },

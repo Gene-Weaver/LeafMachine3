@@ -107,6 +107,33 @@ class MockSegmenter:
         return out
 
 
+class MockLandmarkPose:
+    """Emit one leaf with all 31 keypoints on a deterministic vertical-midline skeleton."""
+
+    def predict(self, image) -> list[dict]:
+        from leafmachine3.core.landmarks import MIDVEIN_N, PETIOLE_N
+
+        h, w = _image_hw(image)
+        cx = w / 2.0
+        leaf: dict[str, tuple[float, float, float]] = {}
+        leaf["apex_center"] = (cx, 0.06 * h, 0.7)
+        leaf["apex_left"] = (cx - 0.10 * w, 0.09 * h, 0.6)
+        leaf["apex_right"] = (cx + 0.10 * w, 0.09 * h, 0.6)
+        leaf["lamina_tip"] = (cx, 0.04 * h, 0.9)
+        for i in range(MIDVEIN_N):                          # tip -> base down the midline
+            leaf[f"midvein_{i}"] = (cx, (0.06 + 0.70 * i / (MIDVEIN_N - 1)) * h, 0.8)
+        leaf["base_center"] = (cx, 0.76 * h, 0.7)
+        leaf["base_left"] = (cx - 0.15 * w, 0.74 * h, 0.6)
+        leaf["base_right"] = (cx + 0.15 * w, 0.74 * h, 0.6)
+        leaf["lamina_base"] = (cx, 0.78 * h, 0.85)
+        for i in range(PETIOLE_N):
+            leaf[f"petiole_{i}"] = (cx, (0.80 + 0.15 * i / (PETIOLE_N - 1)) * h, 0.7)
+        leaf["petiole_tip"] = (cx, 0.97 * h, 0.7)
+        leaf["width_left"] = (0.20 * w, 0.40 * h, 0.75)
+        leaf["width_right"] = (0.80 * w, 0.40 * h, 0.75)
+        return [leaf]
+
+
 class MockEnsemble:
     """Return a fixed ruler unit-type verdict for every crop."""
 

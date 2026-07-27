@@ -58,6 +58,7 @@ _CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "ruler_cf",
     "leaf_segmenter",
     "morphology",
+    "landmark_detector",
     "metric_grounding",
     "reporter",
 )
@@ -127,13 +128,20 @@ class ProjectDB:
         return self._conn
 
     def init_schema(self) -> None:
-        """Apply ``schema.sql`` (idempotent) then seed ``project_status`` from the keys."""
+        """Apply ``schema.sql`` (idempotent), seed ``project_status`` + the landmark reference tables."""
         self.conn.executescript(_SCHEMA_PATH.read_text(encoding="utf-8"))
         for order, key in enumerate(_stage_keys(), start=1):
             self._exec(
                 "INSERT OR IGNORE INTO project_status(stage_key, stage_order) VALUES (?, ?)",
                 (key, order),
             )
+        from leafmachine3.core import landmarks as _lm     # seed the self-describing keypoint schema
+        for i, name in enumerate(_lm.KPT_NAMES):
+            self._exec("INSERT OR IGNORE INTO landmark_schema(kpt_index, name, grp) VALUES (?, ?, ?)",
+                       (i, name, _lm.KPT_GROUP[name]))
+        for edge_id, (a, b, kind) in enumerate(_lm.SKELETON):
+            self._exec("INSERT OR IGNORE INTO landmark_skeleton(edge_id, a_index, b_index, kind) "
+                       "VALUES (?, ?, ?, ?)", (edge_id, _lm.KPT_INDEX[a], _lm.KPT_INDEX[b], kind))
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -518,6 +526,29 @@ class ProjectDB:
         """All leaf_morphology rows for a specimen (rotated bbox, shape metrics, links)."""
         return self._query(
             "SELECT * FROM leaf_morphology WHERE specimen_id = ? ORDER BY leaf_id",
+            (specimen_id,),
+        )
+
+    def record_leaf_landmarks(self, specimen_id: int, rows: Sequence[Any]) -> None:
+        """DELETE the specimen's landmark rows then insert one per (crop x instance x keypoint)."""
+        self._exec("DELETE FROM leaf_landmark WHERE specimen_id = ?", (specimen_id,))
+        for r in rows:
+            self._exec(
+                """
+                INSERT INTO leaf_landmark
+                    (specimen_id, detection_id, instance_index, kpt_index, kpt_name,
+                     x, y, x_crop, y_crop, conf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (specimen_id, int(r.detection_id), int(r.instance_index), int(r.kpt_index),
+                 r.kpt_name, r.x, r.y, r.x_crop, r.y_crop, r.conf),
+            )
+
+    def leaf_landmarks(self, specimen_id: int) -> list[sqlite3.Row]:
+        """All leaf_landmark rows for a specimen (keypoints in working coords, links to crop)."""
+        return self._query(
+            "SELECT * FROM leaf_landmark WHERE specimen_id = ? "
+            "ORDER BY detection_id, instance_index, kpt_index",
             (specimen_id,),
         )
 

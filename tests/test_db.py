@@ -44,9 +44,22 @@ def test_schema_seeds_project_status(db: ProjectDB) -> None:
     keys = [r["stage_key"] for r in rows]
     assert keys == [
         "archival_detector", "plant_detector", "phenology_detector", "ruler_classifier",
-        "ruler_cf", "leaf_segmenter", "morphology", "metric_grounding", "reporter",
+        "ruler_cf", "leaf_segmenter", "morphology", "landmark_detector", "metric_grounding",
+        "reporter",
     ]
     assert all(r["state"] == "pending" for r in rows)
+
+
+def test_schema_seeds_landmark_reference_tables(db: ProjectDB) -> None:
+    # the 31-keypoint schema + skeleton are self-describing, seeded from core.landmarks
+    schema = db._query("SELECT kpt_index, name, grp FROM landmark_schema ORDER BY kpt_index")
+    assert len(schema) == 31
+    assert schema[0]["name"] == "lamina_tip" and schema[0]["grp"] == "lamina"
+    names = {r["name"] for r in schema}
+    assert {"midvein_0", "midvein_14", "petiole_tip", "width_left", "apex_center"} <= names
+    edges = db._query("SELECT a_index, b_index, kind FROM landmark_skeleton")
+    assert len(edges) >= 20
+    assert {"midvein", "petiole", "apex", "base", "width", "lamina_length"} <= {e["kind"] for e in edges}
 
 
 def test_upsert_specimen_is_idempotent(db: ProjectDB) -> None:

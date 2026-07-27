@@ -14,24 +14,30 @@ See `docs/LM3_Plan.html` for the architecture. Legend: **⛔ blocked** · **▶ 
 > The Morphology rotated bounding box (currently **PCA**) is used **only for measurement** — it
 > yields the leaf's width and height (`rotated_bbox_dim_min` / `dim_max`). It is *not* the leaf's
 > orientation and is not used to rotate anything. **Actual leaf orientation** (which way is up,
-> petiole → apex) will come from the **`LM3_Landmark_Detector`** (#1), and *that* is what will be
-> used to physically orient leaves for downstream steps (petiole width, canonical crops, etc.).
-> Keep these decoupled: the bbox measures, the landmarks orient.
+> petiole → apex) comes from the **`LM3_Landmark_Detector`** (now integrated — keypoints in the
+> `leaf_landmark` table), and *that* is what will be used to physically orient leaves for
+> downstream steps (petiole width, canonical crops, etc.). Keep these decoupled: the bbox
+> measures, the landmarks orient.
 
 ---
 
-## 1. Petiole width  ⛔ (blocked — needs leaf orientation)
+## 1. Petiole width  ⛔ (blocked — needs landmark_measurements + leaf orientation)
 
 **Goal:** measure petiole width (px) per leaf instance and store it, mirroring LM2's petiole
 project. Runs as an add-on **after Morphology**.
 
 **Blocked by — must land first, in order:**
-1. **`LM3_Landmark_Detector`** — train + export a landmark model (midvein / petiole / apex /
-   base keypoints), analogous to LM2's landmark detector.
-2. **Leaf orientation code** — use those landmarks (petiole → apex) to define each leaf's
-   canonical orientation. This is the hard prerequisite: the petiole-width algorithm needs to
-   know which end of the petiole meets the blade (LM2 sidestepped this by requiring pre-rotated
-   "Oriented_Masks").
+1. ✅ **`LM3_Landmark_Detector`** — DONE (alpha, `yolo26x_pose_640`): integrated as the
+   `landmark_detector` stage → 31 keypoints per leaf in `leaf_landmark` (working coords),
+   self-describing schema in `landmark_schema` / `landmark_skeleton`. (Alpha weights — will be
+   retrained, but good enough to build the rest on.)
+2. **`landmark_measurements`** (new post-process step; ▶ ready) — derive from the `leaf_landmark`
+   keypoints: ordered midvein/petiole **traces**, lamina + midvein **lengths**, **apex/base
+   angles**, lobe count, and the **tip→base orientation axis**. Port LM2 `detect_landmarks()` /
+   `landmark_processing.py` — a ready port already lives at
+   `LM3_Landmark_Detector/landmark_postprocess.py` (`reassemble()`). This also feeds #1a.
+3. **Leaf orientation code** — use the tip→base axis from #2 to know which end of the petiole
+   meets the blade (LM2 sidestepped this by requiring pre-rotated "Oriented_Masks").
 
 **What / how:** consume the `Leaf` + `Petiole` instance masks per leaf crop. Skeletonize the
 petiole, BFS the centerline to find its two ends + skeletal length, then measure the
@@ -57,12 +63,13 @@ Morphology already stores the rotated box's two **side lengths** as `rotated_bbo
 Two nullable columns are **already reserved in `leaf_morphology`**: `rotated_bbox_length` and
 `rotated_bbox_width` (NULL until orientation exists).
 
-**How we'll fill them:** the `LM3_Landmark_Detector` predicts the **lamina tip** on the *same*
-image the (pre-oriented) rotated bbox was computed from; after orientation the tip is at the
-top. Apply the **same translate/rotate that orients the leaf** to the rotated bbox → the box side
-that runs along the **tip→base** axis becomes `rotated_bbox_length`, the perpendicular side
-becomes `rotated_bbox_width` (independent of which one is max vs min). No new geometry — just an
-axis-aware assignment of the two existing side lengths, done in the orientation step.
+**How we'll fill them:** the `LM3_Landmark_Detector` already predicts the **`lamina_tip`** (and
+`lamina_base`) — available now in `leaf_landmark` (working coords) for the same crop the rotated
+bbox came from. Once `landmark_measurements` (#1 step 2) gives the tip→base axis, apply the same
+transform used to orient the leaf to the rotated bbox → the box side along the **tip→base** axis
+becomes `rotated_bbox_length`, the perpendicular side becomes `rotated_bbox_width` (independent of
+which one is max vs min). No new geometry — just an axis-aware assignment of the two existing side
+lengths, done in the orientation step.
 
 ---
 

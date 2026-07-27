@@ -68,6 +68,17 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         assert len(_json.loads(m["rotated_bbox_json"])) == 4                # 4 rotated corners
         assert m["leaf_id"] and m["detection_id"] and m["specimen_id"]      # links to parent
 
+        # Landmark Detector ran after Morphology: 31 keypoints per leaf crop, in working coords
+        assert _count(conn, "leaf_landmark") > 0
+        n_kpts = conn.execute("SELECT count(DISTINCT kpt_index) FROM leaf_landmark").fetchone()[0]
+        assert n_kpts == 31
+        lm = conn.execute(
+            "SELECT kpt_name, x, y, x_crop, y_crop, detection_id FROM leaf_landmark "
+            "WHERE kpt_name = 'lamina_tip' LIMIT 1"
+        ).fetchone()
+        assert lm is not None and lm["detection_id"]                       # links to the leaf crop
+        assert lm["x"] >= lm["x_crop"] and lm["y"] >= lm["y_crop"]         # re-based crop -> working frame
+
         # phenology mirrored leaf presence onto the specimen (mock emits a Leaf_WHOLE box)
         leaf_flags = [r["has_leaves"] for r in conn.execute("SELECT has_leaves FROM specimen")]
         assert all(flag == 1 for flag in leaf_flags)

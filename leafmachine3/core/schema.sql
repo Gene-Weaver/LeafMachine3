@@ -147,6 +147,41 @@ CREATE TABLE IF NOT EXISTS leaf_morphology (
 );
 CREATE INDEX IF NOT EXISTS ix_morph_spec ON leaf_morphology (specimen_id);
 
+-- landmark_schema : the pose model's 31 keypoint definitions (SEEDED once at init from
+-- leafmachine3.core.landmarks). Makes stored landmarks self-describing (name + group by index).
+CREATE TABLE IF NOT EXISTS landmark_schema (
+    kpt_index INTEGER PRIMARY KEY,              -- 0..30
+    name      TEXT NOT NULL,                    -- lamina_tip, midvein_0, apex_center, ...
+    grp       TEXT NOT NULL                     -- lamina | apex | midvein | base | petiole | width
+);
+
+-- landmark_skeleton : relationships between keypoints (SEEDED once). a/b -> landmark_schema.
+-- kinds: midvein / petiole (traces), apex / base (angles), width, lamina_length.
+CREATE TABLE IF NOT EXISTS landmark_skeleton (
+    edge_id INTEGER PRIMARY KEY,
+    a_index INTEGER NOT NULL REFERENCES landmark_schema(kpt_index),
+    b_index INTEGER NOT NULL REFERENCES landmark_schema(kpt_index),
+    kind    TEXT NOT NULL
+);
+
+-- leaf_landmark : predicted keypoints, one row per (leaf crop x instance x keypoint).
+-- x/y are in WORKING (parent) coords with the training white-pad removed (as if never added);
+-- x_crop/y_crop are the crop-frame coords. Links back to the leaf crop via detection_id.
+CREATE TABLE IF NOT EXISTS leaf_landmark (
+    landmark_id    INTEGER PRIMARY KEY,
+    specimen_id    INTEGER NOT NULL REFERENCES specimen(specimen_id)         ON DELETE CASCADE,
+    detection_id   INTEGER NOT NULL REFERENCES plant_detection(detection_id) ON DELETE CASCADE,
+    instance_index INTEGER NOT NULL,            -- 0 (one leaf per crop; >0 if the model emits more)
+    kpt_index      INTEGER NOT NULL REFERENCES landmark_schema(kpt_index),
+    kpt_name       TEXT NOT NULL,
+    x REAL, y REAL,                             -- working (parent) coords, pad removed
+    x_crop REAL, y_crop REAL,                   -- crop-frame coords, pad removed
+    conf REAL,
+    UNIQUE (detection_id, instance_index, kpt_index)
+);
+CREATE INDEX IF NOT EXISTS ix_landmark_spec ON leaf_landmark (specimen_id);
+CREATE INDEX IF NOT EXISTS ix_landmark_det  ON leaf_landmark (detection_id);
+
 -- project_status : stage-level ledger. Drives whole-module skip + config-drift + restart.
 CREATE TABLE IF NOT EXISTS project_status (
     stage_key   TEXT PRIMARY KEY,              -- canonical STAGE_KEYS, seeded at init

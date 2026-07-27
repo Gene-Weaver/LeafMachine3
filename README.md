@@ -12,8 +12,17 @@ hardware internally; the pipeline is resumable and driven by one YAML settings f
 ## Pipeline
 
 `ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerClassifier →
-[RulerConversionFactor — stub] → LeafSegmenter → Morphology → MetricGrounding (no-op until CF)
-→ Reporter`
+[RulerConversionFactor — stub] → LeafSegmenter → Morphology → LandmarkDetector →
+MetricGrounding (no-op until CF) → Reporter`
+
+**LandmarkDetector** (runs on leaf crops) predicts the 31-keypoint `mid15_pet5` pose skeleton
+(lamina tip/base, apex/base triples, midvein×15, petiole×5+tip, width×2) with the yolo26x-pose
+model. The model is trained on crops with a 10% white border, so the inference wrapper re-adds
+that border and maps keypoints back (coordinates as if never padded). Keypoints are stored in
+`leaf_landmark` in **working (parent) coords** (plus crop coords), linked to the leaf crop; the
+keypoint names + skeleton relationships are seeded, self-describing, into `landmark_schema` /
+`landmark_skeleton` (from `core/landmarks.py`). These feed the planned leaf-orientation code and
+the `landmark_measurements` step (traces, lengths, apex/base angles) — see `TODO.md`.
 
 **Morphology** (runs after LeafSegmenter) computes LeafMachine2-style shape metrics per leaf
 mask — area, perimeter, centroid, convex hull, convexity/concavity, circularity, aspect ratio —

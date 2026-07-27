@@ -117,6 +117,7 @@ def build_mock_config(
             "ruler_cf": {"enabled": False},
             "leaf_segmenter": {"enabled": True, "include_partial": False},
             "morphology": {"enabled": True, "classes": ["Leaf"], "find_minimum_bounding_box": True},
+            "landmark_detector": {"enabled": True, "source_classes": ["Leaf_WHOLE"], "include_partial": False},
             "metric_grounding": {"enabled": True, "round_ndigits": 4},
             "reporter": {"enabled": True},
         },

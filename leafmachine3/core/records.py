@@ -137,6 +137,22 @@ class MorphRow:
 
 
 @dataclass
+class LandmarkRow:
+    """One predicted leaf keypoint. ``x``/``y`` are WORKING (parent) coords with the training
+    white-pad removed; ``x_crop``/``y_crop`` are the crop-frame coords. See core.landmarks."""
+    detection_id: int
+    instance_index: int
+    kpt_index: int
+    kpt_name: str
+    x: float
+    y: float
+    x_crop: float
+    y_crop: float
+    conf: float
+    landmark_id: Optional[int] = None
+
+
+@dataclass
 class Grounded:
     leaf_id: int
     area_cm2: Optional[float] = None

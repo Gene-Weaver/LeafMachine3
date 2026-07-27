@@ -10,6 +10,7 @@ Return contracts
 * ``load_detector``      -> object with ``.predict(image)->list[Detection]``.
 * ``load_segmenter``     -> object with ``.predict(image)->list[Instance]`` (crop coords).
 * ``load_ruler_ensemble``-> object with ``.predict(image)->{"ensemble": str, ...}``.
+* ``load_landmark_pose`` -> object with ``.predict(crop)->list[{kpt_name:(x,y,conf)}]`` (crop coords).
 """
 from __future__ import annotations
 
@@ -102,4 +103,24 @@ def load_ruler_ensemble(cfg: Any, device: Any):
         models_dir,
         providers=device.ort_providers(),
         members=_get(stage_cfg, "ensemble_members", None),
+    )
+
+
+def load_landmark_pose(cfg: Any, device: Any):
+    """Return the leaf-landmark pose backend (31-kpt mid15_pet5)."""
+    stage_cfg = cfg.stage("landmark_detector")
+    if _is_mock(cfg):
+        from leafmachine3.inference.mock import MockLandmarkPose
+
+        return MockLandmarkPose()
+
+    from leafmachine3.inference.landmark_pose import LeafLandmarkPose
+
+    return LeafLandmarkPose(
+        _model_path(cfg, stage_cfg),
+        conf=float(_get(stage_cfg, "conf", 0.25)),
+        iou=float(_get(stage_cfg, "iou", 0.45)),
+        imgsz=_get(stage_cfg, "imgsz", 640),
+        device=device.torch_str,
+        white_pad=float(_get(stage_cfg, "white_pad", 0.10)),
     )

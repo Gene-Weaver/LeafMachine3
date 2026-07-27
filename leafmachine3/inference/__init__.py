@@ -6,8 +6,9 @@ Ultralytics / onnxruntime backends otherwise.
 """
 from leafmachine3.inference.factory import (
     load_detector,
+    load_landmark_pose,
     load_ruler_ensemble,
     load_segmenter,
 )
 
-__all__ = ["load_detector", "load_segmenter", "load_ruler_ensemble"]
+__all__ = ["load_detector", "load_segmenter", "load_ruler_ensemble", "load_landmark_pose"]
