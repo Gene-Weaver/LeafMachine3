@@ -251,6 +251,8 @@ report:
       sample_thickness: 2
       mask_alpha: 0.45                # Leaf/Petiole fill opacity in the per-leaf petiole overlay
       label_color: [255, 255, 255]
+      zoom_bg_tint: 0.30              # right-half zoom: background tint fraction (petiole stays full color)
+      zoom_bg_color: [255, 0, 0]      # right-half zoom background tint color (red)
   # ---- per-leaf landmark overlay --------------------------------------------
   # One image per leaf under Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>:
   # keypoints + skeleton drawn on the crop plus a panel of the derived measurements
@@ -261,8 +263,8 @@ report:
   # One image per leaf with a petiole under Overlay/Overlay_Petiole/<stem>__PET-leaf__x_y_x_y.<ext>:
   # LEFT half = the leaf crop with Leaf + Petiole masks filled (no border), the width sample probes
   # (light blue) + reported width band (blue), and a panel of the lamina areas + petiole width.
-  # RIGHT half = the petiole RGB cutout blown up (pixelated) to the same height, with a 1-px blue
-  # line (width_color) at the exact reported-width location for pixel-level checking.
+  # RIGHT half = the petiole in full color (background tinted red) blown up (pixelated) to the same
+  # height, with a 1-px blue line (width_color) at the exact reported-width location for checking.
   overlay_petiole:
     enabled: true                     # optional; on by default. Colors from overlay.petiole above.
   # ---- segmentation mask exports --------------------------------------------

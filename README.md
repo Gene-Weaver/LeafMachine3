@@ -56,7 +56,8 @@ table, with `width_px`, `length_px`, `touches_leaf`, and the sample/width segmen
 pixels until the ruler CF lands. It runs on the raw petiole mask now; TODO #5 will feed it the
 edge-refined mask. The Reporter draws the width as a blue band on the summary and a per-leaf
 `Overlay/Overlay_Petiole/` — left: masks + sample probes + width band + a lamina-area/petiole-width
-panel; right: the petiole RGB cutout blown up (pixelated) with a 1-px blue line at the exact width.
+panel; right: the petiole in full color (background tinted red) blown up (pixelated) with a 1-px
+blue line at the exact width.
 
 **Leaf products** (Reporter) are the highest-value output: five per-leaf products, each in a
 non-oriented **`Original/`** and an upright **`Oriented/`** tree — the Plant_Detector bbox crop,

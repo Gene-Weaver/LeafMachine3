@@ -24,7 +24,7 @@ try:  # pragma: no cover - cv2 is always present at runtime
 except Exception:  # pragma: no cover
     cv2 = None
 
-from leafmachine3.core.imaging import composite, decode_polygon, mask_bbox, scale_polygon
+from leafmachine3.core.imaging import decode_polygon, mask_bbox, scale_polygon
 from leafmachine3.core.landmarks import KPT_GROUP, MIDVEIN_N, SKELETON
 from leafmachine3.reporting.palette import RGB, LandmarkStyle, OverlayStyle, PetioleStyle
 
@@ -183,9 +183,10 @@ def _petiole_zoom_panel(
     target_h: int,
     pet_style: PetioleStyle,
 ) -> Optional[np.ndarray]:
-    """Fitted RGB cutout of the petiole (tissue on black), nearest-neighbour blown up to ``target_h``,
-    with the reported width location drawn as a 1-original-pixel line in ``width_color`` -- so the
-    exact pixels the width spans are checkable at the block level."""
+    """Fitted, full-color crop around the petiole -- the petiole keeps its original pixels while the
+    background is tinted toward ``zoom_bg_color`` (so context stays visible but the petiole stands
+    out) -- nearest-neighbour blown up to ``target_h``, with the reported width location drawn as a
+    1-original-pixel line in ``width_color`` so the exact pixels the width spans are checkable."""
     if not petiole_polys:
         return None
     h, w = crop_bgr.shape[:2]
@@ -198,7 +199,11 @@ def _petiole_zoom_panel(
     if box is None:
         return None
     x1, y1, x2, y2 = box
-    cut = composite(crop_bgr, mask.astype(bool), bg=0)[y1:y2, x1:x2].copy()   # petiole tissue on black
+    cut = crop_bgr[y1:y2, x1:x2].astype(np.float32).copy()   # full color; petiole keeps its pixels
+    bg = ~mask[y1:y2, x1:x2].astype(bool)                     # background tinted toward zoom_bg_color
+    tint = max(0.0, min(1.0, pet_style.zoom_bg_tint))
+    cut[bg] = cut[bg] * (1.0 - tint) + np.array(_bgr(pet_style.zoom_bg_color), np.float32) * tint
+    cut = cut.astype(np.uint8)
     if width_segment and len(width_segment) >= 2:           # 1-px line at the width (crop -> cutout frame)
         p1 = _ipt((width_segment[0][0] - x1, width_segment[0][1] - y1))
         p2 = _ipt((width_segment[1][0] - x1, width_segment[1][1] - y1))
