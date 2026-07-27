@@ -53,7 +53,9 @@ petiole, BFS the centerline to find its two ends + skeletal length, then measure
 for short ones). Record an attachment flag (petiole within ~20 px of the leaf).
 
 **Improve on LM2:** orient from the landmark axis instead of pre-oriented masks; take the
-**median of several perpendicular widths** (LM2 samples one → noisy).
+**median of several perpendicular widths** (LM2 samples one → noisy). Measure on the
+**edge-refined `Petiole` mask** (#5): a thin petiole is very sensitive to leftover white-paper
+edge pixels, so intersect the petiole mask with the whole-specimen mask before measuring width.
 
 **Touches:** new stage `modules/petiole_width.py` + a `leaf_petiole` table
 (`width_px, petiole_length_px, measure_location, touches_leaf`, FK → `leaf_id`); px → cm later
@@ -144,11 +146,13 @@ edges directly improve them (and the hole-aware areas).
 2. New stage **`SpecimenSegmenter`** runs **right after PlantDetector** (before LeafSegmenter):
    infer the whole-specimen mask in the working/parent frame and **store it** (a per-specimen mask —
    new `specimen_mask` table with a polygon/RLE, or a mask file referenced from the DB).
-3. **Refine at leaf-segmentation time:** each leaf instance mask is already in the parent/working
-   frame, so its position is known and it shares the specimen mask's coordinate frame. Intersect
-   each instance mask with the parent specimen mask and **keep only the parts of the instance mask
-   that are also inside the specimen mask**, dropping stray paper/background edge pixels. Recompute
-   the affected geometry (area, perimeter, etc.) from the refined mask.
+3. **Refine at leaf-segmentation time:** each instance mask is already in the parent/working frame,
+   so its position is known and it shares the specimen mask's coordinate frame. Intersect each
+   instance mask with the parent specimen mask and **keep only the parts of the instance mask that
+   are also inside the specimen mask**, dropping stray paper/background edge pixels. Apply this to
+   **both the `Leaf` AND the `Petiole` instance masks** (petioles are thin, so leftover paper at
+   their edges is especially damaging — see #1 petiole width). Recompute the affected geometry
+   (area, perimeter, petiole width, etc.) from the refined masks.
 
 **Fallback (if the specimen model isn't precise enough):** run the **`paper_removal`** tool (the one
 used to clean the `LM3_Specimen_Segmentation` **training** data) as a second pass on the refined
