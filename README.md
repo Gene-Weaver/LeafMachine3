@@ -29,7 +29,8 @@ biology from the keypoints into the `leaf_landmark_measurement` table: `lamina_t
 first and last midvein point, drawn as the white overlay line), `lamina_curvature` (the **max
 midvein bend** in degrees — for each interior midvein point, the angle its two arms make to the
 midvein ends; `180 − smallest` such angle, so 0° = straight and larger = more curved, with
-`curvature_point` marking that vertex, drawn as the gray bend lines), `lamina_tip_base_length`
+`curvature_point` marking that vertex, drawn as the black bend lines beneath the cyan/white),
+`lamina_tip_base_length`
 (the separate
 `lamina_tip`→`lamina_base` distance), `leaf_width` (width_left→width_right),
 `apex_angle`/`base_angle` with `_type` in `{acute, obtuse, reflex}`, `petiole_trace_length`, and

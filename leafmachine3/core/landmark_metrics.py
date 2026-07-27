@@ -20,7 +20,7 @@ as the midvein bends there. Over all interior vertices we take the SMALLEST such
 bend) and report its complement ``180 - min_angle`` -- so a straight midrib is 0 deg and a strongly
 curved one is a large angle (much more sensitive to mild bowing than a chord/arc ratio, which is
 only quadratically sensitive). ``curvature_point`` is that vertex's midvein index, so the Reporter
-can draw the bend (two gray lines from the midvein ends to the vertex).
+can draw the bend (two black lines from the midvein ends to the vertex, under the cyan/white).
 
 ``lamina_extent`` is the straight chord between the first/last midvein points (the white overlay
 line); ``lamina_tip_base_length`` is the distinct lamina_tip -> lamina_base distance.

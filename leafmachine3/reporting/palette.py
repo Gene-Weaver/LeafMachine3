@@ -146,7 +146,7 @@ class LandmarkStyle:
     line_width: int = 2
     min_conf: float = 0.25
     label_color: RGB = (255, 255, 255)
-    curvature_color: RGB = (128, 128, 128)   # the bend lines (midvein ends -> curvature_point)
+    curvature_color: RGB = (0, 0, 0)         # the bend lines (midvein ends -> curvature_point); black, drawn UNDER the cyan/white
     _groups: dict[str, RGB] | None = None
 
     @classmethod
@@ -162,7 +162,7 @@ class LandmarkStyle:
             line_width=int(_getk(lm, "line_width", 2)),
             min_conf=float(_getk(lm, "min_conf", 0.25)),
             label_color=tuple(_getk(lm, "label_color", (255, 255, 255))),
-            curvature_color=tuple(_getk(lm, "curvature_color", (128, 128, 128))),
+            curvature_color=tuple(_getk(lm, "curvature_color", (0, 0, 0))),
             _groups=groups,
         )
 

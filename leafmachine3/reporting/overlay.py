@@ -148,24 +148,26 @@ def _draw_landmark_skeleton(
 
     if lm_style.draw_skeleton:
         lw = max(1, lm_style.line_width)
+        present_mv = [pt[f"midvein_{i}"] for i in range(MIDVEIN_N) if ok(f"midvein_{i}")]
+        # 1) curvature bend arms FIRST, UNDERNEATH everything (black by default): two lines from the
+        #    midvein ends to the most-bent vertex -- the arms of the lamina_curvature angle. The
+        #    cyan midvein + white extent are drawn after, so they sit on top of these.
+        if len(present_mv) >= 2 and curvature_idx is not None and ok(f"midvein_{curvature_idx}"):
+            v = ipt(pt[f"midvein_{curvature_idx}"])
+            bend = _bgr(lm_style.curvature_color)
+            cv2.line(out, ipt(present_mv[0]), v, bend, lw, cv2.LINE_AA)
+            cv2.line(out, ipt(present_mv[-1]), v, bend, lw, cv2.LINE_AA)
+        # 2) skeleton edges (cyan midvein, petiole, apex, base, width) ON TOP of the bend arms.
         for a, b, kind in SKELETON:
             if kind == "lamina_length":
                 continue   # the extent chord is drawn below between the first/last PRESENT midvein
             if ok(a) and ok(b):
                 cv2.line(out, ipt(pt[a]), ipt(pt[b]), _bgr(lm_style.color_for_kind(kind)), lw, cv2.LINE_AA)
-        # lamina_extent (white line): chord between the first and last PRESENT midvein points, so it
-        # matches the lamina_extent metric exactly even when an endpoint keypoint is occluded.
-        present_mv = [pt[f"midvein_{i}"] for i in range(MIDVEIN_N) if ok(f"midvein_{i}")]
+        # 3) lamina_extent (white line): chord between the first/last PRESENT midvein points, on top,
+        #    so it matches the metric exactly even when an endpoint keypoint is occluded.
         if len(present_mv) >= 2:
             cv2.line(out, ipt(present_mv[0]), ipt(present_mv[-1]),
                      _bgr(lm_style.color_for_kind("lamina_length")), lw, cv2.LINE_AA)
-            # curvature bend (gray): two lines from the midvein ends to the most-bent vertex, i.e.
-            # the arms of the lamina_curvature angle.
-            if curvature_idx is not None and ok(f"midvein_{curvature_idx}"):
-                v = ipt(pt[f"midvein_{curvature_idx}"])
-                gray = _bgr(lm_style.curvature_color)
-                cv2.line(out, ipt(present_mv[0]), v, gray, lw, cv2.LINE_AA)
-                cv2.line(out, ipt(present_mv[-1]), v, gray, lw, cv2.LINE_AA)
     if lm_style.draw_points:
         r = max(1, lm_style.point_radius)
         for name, (x, y) in pt.items():
