@@ -118,17 +118,21 @@ def build_mock_config(
             "leaf_segmenter": {"enabled": True, "include_partial": False},
             "morphology": {"enabled": True, "classes": ["Leaf"], "find_minimum_bounding_box": True},
             "landmark_detector": {"enabled": True, "source_classes": ["Leaf_WHOLE"], "include_partial": False},
+            "landmark_measurements": {"enabled": True, "min_kpt_conf": 0.25},
             "metric_grounding": {"enabled": True, "round_ndigits": 4},
             "reporter": {"enabled": True},
         },
         "naming": {
             "bbox_prefix": "BBOX",
             "seg_prefix": "SEG",
+            "landmark_prefix": "LM",
             "friendly_names": {"Leaf_WHOLE": "leaf", "Leaf_PARTIAL": "leafReject",
                                "Ruler": "ruler", "Label": "label", "Leaf": "leaf"},
         },
         "report": {
-            "overlay": {"enabled": True, "draw_masks": True, "draw_labels": True, "box_style": "rotated"},
+            "overlay": {"enabled": True, "draw_masks": True, "draw_landmarks": True,
+                        "draw_labels": True, "box_style": "rotated"},
+            "overlay_landmarks": {"enabled": True},
             "masks": {
                 "classes": ["Leaf"],
                 "background": "black",

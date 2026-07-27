@@ -153,6 +153,28 @@ class LandmarkRow:
 
 
 @dataclass
+class LandmarkMeasureRow:
+    """One leaf's derived landmark measurements (see core.landmark_metrics). Every metric is
+    Optional -- ``None`` when the keypoints it needs were occluded/missing. Lengths are
+    WORKING-frame pixels; angles are degrees. Keyed by ``(detection_id, instance_index)``."""
+    detection_id: int
+    instance_index: int
+    lamina_trace_length: Optional[float] = None
+    lamina_extent: Optional[float] = None
+    leaf_width: Optional[float] = None
+    apex_angle: Optional[float] = None
+    apex_angle_type: Optional[str] = None
+    base_angle: Optional[float] = None
+    base_angle_type: Optional[str] = None
+    petiole_trace_length: Optional[float] = None
+    lamina_curvature: Optional[float] = None
+    lamina_centroid_x: Optional[float] = None
+    lamina_centroid_y: Optional[float] = None
+    n_present: int = 0
+    measure_id: Optional[int] = None
+
+
+@dataclass
 class Grounded:
     leaf_id: int
     area_cm2: Optional[float] = None
@@ -191,3 +213,5 @@ class ReportBundle:
     working_path: str = ""             # for per-crop mask exports (crop-frame pixels)
     crop_boxes: dict = field(default_factory=dict)   # plant detection_id -> (x1,y1,x2,y2) working coords
     morphology: list[Any] = field(default_factory=list)   # leaf_morphology rows (rotated bbox etc.)
+    landmarks: list[Any] = field(default_factory=list)    # leaf_landmark rows (keypoints, working+crop coords)
+    landmark_measurements: list[Any] = field(default_factory=list)  # leaf_landmark_measurement rows

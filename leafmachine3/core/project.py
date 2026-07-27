@@ -43,6 +43,8 @@ class Project:
             working_path=str(_g(s, "working_path")),
             crop_boxes=self.db.detection_boxes(specimen_id, "plant_detection"),
             morphology=self.db.leaf_morphology(specimen_id),
+            landmarks=self.db.leaf_landmarks(specimen_id),
+            landmark_measurements=self.db.leaf_landmark_measurements(specimen_id),
         )
 
 

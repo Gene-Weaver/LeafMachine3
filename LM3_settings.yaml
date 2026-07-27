@@ -45,6 +45,7 @@ naming:
   bbox_prefix: "BBOX"                   # detection bbox crops:  <stem>__BBOX-<friendly>__x_y_x_y
   seg_prefix: "SEG"                     # per-crop seg masks:    <stem>__SEG-<friendly>__x_y_x_y
   mask_full_prefix: "MaskFull"          # full-image masks:      <stem>__MaskFull-<friendly>
+  landmark_prefix: "LM"                 # per-leaf landmark overlay: <stem>__LM-<friendly>__x_y_x_y
   friendly_names:                       # real class name -> friendly name used in filenames
     # archival
     Ruler: ruler
@@ -147,6 +148,10 @@ modules:
     iou: 0.45
     white_pad: 0.10                     # training white border re-applied at inference then removed
 
+  landmark_measurements:                # derives measurements from the keypoints (post-process, CPU)
+    enabled: true
+    min_kpt_conf: 0.25                  # keypoints below this are "occluded/absent"; metrics null out
+
   metric_grounding:
     enabled: true                       # runs, but no-ops until ruler_cf provides a CF
     missing_cf_policy: "skip"
@@ -167,6 +172,7 @@ report:
     draw_boxes_plant: true          # draw PlantDetector boxes (Leaf_WHOLE, Flower, ...)
     box_style: "rotated"            # leaf boxes: "rotated" (min bounding box from Morphology) | "yolo"
     draw_masks: true                # draw LeafSegmenter instance masks (Leaf/Petiole/Hole)
+    draw_landmarks: true            # draw leaf keypoints + skeleton ON TOP of masks/boxes
     draw_labels: true               # draw the class-name text on each box/mask
     draw_confidence: true           # append the confidence score to the label
     draw_cf_banner: true            # print the derived CF (px/cm) banner on the sheet
@@ -206,6 +212,28 @@ report:
         Leaf:    { color: [46, 255, 0],   show: true }
         Petiole: { color: [255, 0, 150],  show: true }
         Hole:    { color: [200, 0, 255],  show: true }
+    # landmark drawing (points + skeleton), shared by Overlay_Summary + Overlay_Landmarks.
+    # Colors are per keypoint GROUP; points below min_conf are hidden (occluded/uncertain).
+    landmark:
+      draw_points: true
+      draw_skeleton: true
+      point_radius: 4
+      line_width: 2
+      min_conf: 0.25
+      label_color: [255, 255, 255]
+      colors:                         # [R, G, B] per keypoint group
+        lamina:  [255, 255, 255]      # lamina_tip / lamina_base anchors
+        midvein: [0, 200, 255]        # midrib trace
+        apex:    [255, 60, 60]        # apex triple
+        base:    [255, 60, 255]       # base triple
+        petiole: [255, 170, 0]        # petiole trace + tip
+        width:   [0, 255, 128]        # width_left / width_right
+  # ---- per-leaf landmark overlay --------------------------------------------
+  # One image per leaf under Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>:
+  # keypoints + skeleton drawn on the crop plus a panel of the derived measurements
+  # (lamina trace/extent, width, apex/base angle + type, petiole trace, curvature).
+  overlay_landmarks:
+    enabled: true                     # optional; on by default. Styling reuses overlay.landmark.
   # ---- segmentation mask exports --------------------------------------------
   # Each toggle writes a folder named <toggle>__<Class> for every class in `classes`.
   # Full_Image variants = one file per specimen (original frame); the others = one file

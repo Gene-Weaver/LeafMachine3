@@ -5,7 +5,8 @@ post-analysis add-on after the primary pipeline:
 
 ```
 ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerClassifier
-→ [RulerConversionFactor — stub] → LeafSegmenter → Morphology → MetricGrounding → Reporter
+→ [RulerConversionFactor — stub] → LeafSegmenter → Morphology → LandmarkDetector
+→ LandmarkMeasurements → MetricGrounding → Reporter
 ```
 
 See `docs/LM3_Plan.html` for the architecture. Legend: **⛔ blocked** · **▶ ready** · **… planned**.
@@ -31,11 +32,14 @@ project. Runs as an add-on **after Morphology**.
    `landmark_detector` stage → 31 keypoints per leaf in `leaf_landmark` (working coords),
    self-describing schema in `landmark_schema` / `landmark_skeleton`. (Alpha weights — will be
    retrained, but good enough to build the rest on.)
-2. **`landmark_measurements`** (new post-process step; ▶ ready) — derive from the `leaf_landmark`
-   keypoints: ordered midvein/petiole **traces**, lamina + midvein **lengths**, **apex/base
-   angles**, lobe count, and the **tip→base orientation axis**. Port LM2 `detect_landmarks()` /
-   `landmark_processing.py` — a ready port already lives at
-   `LM3_Landmark_Detector/landmark_postprocess.py` (`reassemble()`). This also feeds #1a.
+2. ◑ **`landmark_measurements`** (post-process stage) — **core metrics DONE**: `lamina_trace_length`,
+   `lamina_extent`, `leaf_width`, `apex_angle`/`base_angle` (+ acute/obtuse/reflex type),
+   `petiole_trace_length`, `lamina_curvature` → `leaf_landmark_measurement` table
+   (`core/landmark_metrics.py`, occlusion-robust; angle convention confirmed via
+   `modules/experiments/angle_checks.html`). **Still TODO for orientation:** derive the explicit
+   **tip→base orientation axis** (from `lamina_tip`/`lamina_base` + midvein fit) and **lobe count**;
+   these two feed #1a and the orientation step below. (LM2 reference:
+   `LM3_Landmark_Detector/landmark_postprocess.py` `reassemble()`.)
 3. **Leaf orientation code** — use the tip→base axis from #2 to know which end of the petiole
    meets the blade (LM2 sidestepped this by requiring pre-rotated "Oriented_Masks").
 

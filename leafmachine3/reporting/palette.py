@@ -29,6 +29,21 @@ SEGMENTATION: dict[str, RGB] = {
     "Leaf": (46, 255, 0), "Petiole": (255, 0, 150), "Hole": (200, 0, 255),
 }
 
+# per-keypoint-GROUP overlay colors (landmark pose). Groups come from core.landmarks.KPT_GROUP.
+LANDMARK_GROUPS: dict[str, RGB] = {
+    "lamina": (255, 255, 255),   # lamina_tip / lamina_base anchors
+    "midvein": (0, 200, 255),    # midrib trace
+    "apex": (255, 60, 60),       # apex triple
+    "base": (255, 60, 255),      # base triple
+    "petiole": (255, 170, 0),    # petiole trace + tip
+    "width": (0, 255, 128),      # width_left / width_right
+}
+# skeleton edge KIND -> group color (see core.landmarks.SKELETON kinds)
+_EDGE_KIND_GROUP: dict[str, str] = {
+    "midvein": "midvein", "petiole": "petiole", "apex": "apex",
+    "base": "base", "width": "width", "lamina_length": "lamina",
+}
+
 _DEFAULTS: dict[str, RGB] = {
     **{k.lower(): v for k, v in ARCHIVAL.items()},
     **{k.lower(): v for k, v in PLANT.items()},
@@ -54,6 +69,7 @@ class OverlayStyle:
     draw_boxes_archival: bool = True
     draw_boxes_plant: bool = True
     draw_masks: bool = True
+    draw_landmarks: bool = True
     draw_labels: bool = True
     draw_confidence: bool = True
     draw_cf_banner: bool = True
@@ -86,6 +102,7 @@ class OverlayStyle:
             draw_boxes_archival=bool(_getk(ov, "draw_boxes_archival", True)),
             draw_boxes_plant=bool(_getk(ov, "draw_boxes_plant", True)),
             draw_masks=bool(_getk(ov, "draw_masks", True)),
+            draw_landmarks=bool(_getk(ov, "draw_landmarks", True)),
             draw_labels=bool(_getk(ov, "draw_labels", True)),
             draw_confidence=bool(_getk(ov, "draw_confidence", True)),
             draw_cf_banner=bool(_getk(ov, "draw_cf_banner", True)),
@@ -112,6 +129,46 @@ class OverlayStyle:
         r, g, b = self.color_for(cls_name)
         a = self.alpha if alpha is None else alpha
         return (r, g, b, int(round(max(0.0, min(1.0, a)) * 255)))
+
+
+@dataclass
+class LandmarkStyle:
+    """Config-driven style for drawing leaf landmarks (points + skeleton) on the overlays.
+
+    Colors are per keypoint GROUP (``lamina``/``midvein``/``apex``/``base``/``petiole``/``width``)
+    and live under ``report.overlay.landmark`` in LM3_settings.yaml; anything absent falls back to
+    the :data:`LANDMARK_GROUPS` defaults. ``min_conf`` hides occluded/uncertain keypoints so the
+    overlay never draws junk points.
+    """
+    draw_points: bool = True
+    draw_skeleton: bool = True
+    point_radius: int = 4
+    line_width: int = 2
+    min_conf: float = 0.25
+    label_color: RGB = (255, 255, 255)
+    _groups: dict[str, RGB] | None = None
+
+    @classmethod
+    def from_config(cls, cfg) -> "LandmarkStyle":
+        lm = _get(cfg, "report", "overlay", "landmark") or {}
+        groups: dict[str, RGB] = dict(LANDMARK_GROUPS)
+        for name, color in (_as_dict(_getk(lm, "colors", None)) or {}).items():
+            groups[str(name).lower()] = tuple(color)  # type: ignore[assignment]
+        return cls(
+            draw_points=bool(_getk(lm, "draw_points", True)),
+            draw_skeleton=bool(_getk(lm, "draw_skeleton", True)),
+            point_radius=int(_getk(lm, "point_radius", 4)),
+            line_width=int(_getk(lm, "line_width", 2)),
+            min_conf=float(_getk(lm, "min_conf", 0.25)),
+            label_color=tuple(_getk(lm, "label_color", (255, 255, 255))),
+            _groups=groups,
+        )
+
+    def color_for_group(self, group: str) -> RGB:
+        return (self._groups or LANDMARK_GROUPS).get(str(group).lower(), (255, 255, 255))
+
+    def color_for_kind(self, kind: str) -> RGB:
+        return self.color_for_group(_EDGE_KIND_GROUP.get(str(kind), "lamina"))
 
 
 # -- tiny access helpers tolerant of dict OR dot-access config objects -------------

@@ -13,7 +13,7 @@ hardware internally; the pipeline is resumable and driven by one YAML settings f
 
 `ingest → ArchivalDetector → PlantDetector → PhenologyDetector → RulerClassifier →
 [RulerConversionFactor — stub] → LeafSegmenter → Morphology → LandmarkDetector →
-MetricGrounding (no-op until CF) → Reporter`
+LandmarkMeasurements → MetricGrounding (no-op until CF) → Reporter`
 
 **LandmarkDetector** (runs on leaf crops) predicts the 31-keypoint `mid15_pet5` pose skeleton
 (lamina tip/base, apex/base triples, midvein×15, petiole×5+tip, width×2) with the yolo26x-pose
@@ -21,8 +21,20 @@ model. The model is trained on crops with a 10% white border, so the inference w
 that border and maps keypoints back (coordinates as if never padded). Keypoints are stored in
 `leaf_landmark` in **working (parent) coords** (plus crop coords), linked to the leaf crop; the
 keypoint names + skeleton relationships are seeded, self-describing, into `landmark_schema` /
-`landmark_skeleton` (from `core/landmarks.py`). These feed the planned leaf-orientation code and
-the `landmark_measurements` step (traces, lengths, apex/base angles) — see `TODO.md`.
+`landmark_skeleton` (from `core/landmarks.py`).
+
+**LandmarkMeasurements** (post-process, CPU; runs after LandmarkDetector) derives per-leaf
+biology from the keypoints into the `leaf_landmark_measurement` table: `lamina_trace_length`
+(midrib arc), `lamina_extent` (straight tip→base), `leaf_width` (width_left→width_right),
+`apex_angle`/`base_angle` with `_type` in `{acute, obtuse, reflex}`, `petiole_trace_length`, and
+`lamina_curvature` (arc/extent). It is **occlusion-robust**: keypoints below
+`landmark_measurements.min_kpt_conf` are treated as absent and every metric that needs a missing
+point returns `NULL` — nothing is fabricated. The angle/type convention (reflex when both arms
+point toward the lamina centroid, matching LeafMachine2 `determine_reflex`) is documented and
+rendered as a live schematic in
+[`modules/experiments/angle_checks.html`](leafmachine3/modules/experiments/angle_checks.html).
+See `core/landmark_metrics.py`. (Orientation-aware length/width assignment is still future —
+TODO #1a.)
 
 **Morphology** (runs after LeafSegmenter) computes LeafMachine2-style shape metrics per leaf
 mask — area, perimeter, centroid, convex hull, convexity/concavity, circularity, aspect ratio —
@@ -75,7 +87,9 @@ Each category is a folder with per-output subfolders (harmonized with `Crops/`):
 
 ```
 reports/
-  Overlay/                       <stem>__Overlay.jpg
+  Overlay/
+    Overlay_Summary/             <stem>__Overlay.jpg                   (masks + boxes + landmarks)
+    Overlay_Landmarks/           <stem>__LM-leaf__x_y_x_y.jpg          (per leaf: keypoints + measures)
   Crops/RGB__<friendly>/         <stem>__BBOX-<friendly>__x_y_x_y.jpg   (both detectors)
   Binary_Masks/
     Binary_Masks_Full_Image__Leaf/  <stem>__MaskFull-leaf.png          (per specimen)
@@ -87,7 +101,8 @@ reports/
 
 Files are named so they can be reinserted into the parent by filename:
 `<stem>__<PREFIX>-<friendly>__x_y_x_y.<ext>`, where `PREFIX` is `BBOX` (detection box),
-`SEG` (per-crop mask), or `MaskFull` (full-image mask, no coords). Class → friendly-name
+`SEG` (per-crop mask), `MaskFull` (full-image mask, no coords), or `LM` (per-leaf landmark
+overlay). Class → friendly-name
 mapping (e.g. `Leaf_WHOLE → leaf`, `Leaf_PARTIAL → leafReject`) and the prefixes live in
 `naming` — edit freely. Every output folder toggles independently in `report`.
 
@@ -97,8 +112,9 @@ mapping (e.g. `Leaf_WHOLE → leaf`, `Leaf_PARTIAL → leafReject`) and the pref
 leafmachine3/
   machine3.py            pipeline manager
   pipeline.py            STAGE_ORDER + run loop
-  core/                  config, db, schema.sql, stage, executor, ingest, project, dirs, ...
-  modules/               the 8 pipeline stages
+  core/                  config, db, schema.sql, stage, executor, ingest, project, dirs,
+                         landmarks, landmark_metrics, morphometrics, ...
+  modules/               the pipeline stages (+ experiments/ scratch schematics)
   inference/             portable exported-model wrappers + mock backends + EP selection
   reporting/             palette.py (config-driven, LM2 colors) + overlay.py (Summary_Image)
   setup/                 LM3_Setup hardware profiler

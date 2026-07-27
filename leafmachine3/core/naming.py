@@ -11,9 +11,11 @@ from __future__ import annotations
 BBOX = "bbox"
 SEG = "seg"
 MASK_FULL = "mask_full"
+LANDMARK = "landmark"
 
 _PREFIX_KEYS = {BBOX: ("bbox_prefix", "BBOX"), SEG: ("seg_prefix", "SEG"),
-                MASK_FULL: ("mask_full_prefix", "MaskFull")}
+                MASK_FULL: ("mask_full_prefix", "MaskFull"),
+                LANDMARK: ("landmark_prefix", "LM")}
 
 
 def friendly_name(cfg, cls_name: str) -> str:
@@ -27,8 +29,9 @@ def friendly_name(cfg, cls_name: str) -> str:
 
 
 def crop_label(cfg, kind: str, cls_name: str) -> str:
-    """Return the filename class-label: ``BBOX-ruler`` (bbox), ``SEG-leaf`` (seg), or
-    ``MaskFull-leaf`` (mask_full — full-image mask outputs)."""
+    """Return the filename class-label: ``BBOX-ruler`` (bbox), ``SEG-leaf`` (seg),
+    ``MaskFull-leaf`` (mask_full — full-image masks), or ``LM-leaf`` (landmark — per-leaf
+    landmark overlays)."""
     key, default = _PREFIX_KEYS.get(kind, _PREFIX_KEYS[BBOX])
     prefix = str(_get(cfg, "naming", key) or default)
     return f"{prefix}-{friendly_name(cfg, cls_name)}"

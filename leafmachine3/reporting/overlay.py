@@ -25,7 +25,8 @@ except Exception:  # pragma: no cover
     cv2 = None
 
 from leafmachine3.core.imaging import decode_polygon, scale_polygon
-from leafmachine3.reporting.palette import RGB, OverlayStyle
+from leafmachine3.core.landmarks import KPT_GROUP, SKELETON
+from leafmachine3.reporting.palette import RGB, LandmarkStyle, OverlayStyle
 
 log = logging.getLogger("leafmachine3.overlay")
 
@@ -63,6 +64,8 @@ def build_summary_image(
     style: OverlayStyle,
     work_scale: float = 1.0,
     morphology: Sequence[Any] = (),
+    landmarks: Sequence[Any] = (),
+    landmark_style: Optional[LandmarkStyle] = None,
 ) -> np.ndarray:
     """Render the Summary_Image overlay onto a copy of ``image_bgr``.
 
@@ -95,7 +98,110 @@ def build_summary_image(
         _draw_rotated_boxes(out, morphology, style, scale)
     if style.draw_cf_banner and cf_px_per_cm:
         _draw_cf_banner(out, float(cf_px_per_cm), style)
+    # Landmarks go ON TOP of masks + boxes so every leaf's keypoints stay visible.
+    if style.draw_landmarks and landmarks:
+        _draw_landmarks(out, landmarks, landmark_style or LandmarkStyle(), scale)
     return out
+
+
+# -- landmarks (keypoints + skeleton) ----------------------------------------------
+def _group_landmarks(landmarks: Sequence[Any]) -> dict[tuple[int, int], list[Any]]:
+    """Group keypoint rows by ``(detection_id, instance_index)`` -- one leaf per group."""
+    groups: dict[tuple[int, int], list[Any]] = {}
+    for r in landmarks or []:
+        key = (int(_row_get(r, "detection_id", -1)), int(_row_get(r, "instance_index", 0)))
+        groups.setdefault(key, []).append(r)
+    return groups
+
+
+def _draw_landmark_skeleton(
+    out: np.ndarray,
+    pt: dict[str, tuple[float, float]],
+    conf: dict[str, float],
+    lm_style: LandmarkStyle,
+) -> None:
+    """Draw the skeleton edges then the keypoints. ``pt`` is name -> (x, y) in target pixels."""
+
+    def ok(name: str) -> bool:
+        return name in pt and conf.get(name, 1.0) >= lm_style.min_conf
+
+    if lm_style.draw_skeleton:
+        lw = max(1, lm_style.line_width)
+        for a, b, kind in SKELETON:
+            if ok(a) and ok(b):
+                pa = (int(round(pt[a][0])), int(round(pt[a][1])))
+                pb = (int(round(pt[b][0])), int(round(pt[b][1])))
+                cv2.line(out, pa, pb, _bgr(lm_style.color_for_kind(kind)), lw, cv2.LINE_AA)
+    if lm_style.draw_points:
+        r = max(1, lm_style.point_radius)
+        for name, (x, y) in pt.items():
+            if not ok(name):
+                continue
+            c = _bgr(lm_style.color_for_group(KPT_GROUP.get(name, "lamina")))
+            center = (int(round(x)), int(round(y)))
+            cv2.circle(out, center, r, c, -1, cv2.LINE_AA)
+            cv2.circle(out, center, r, (0, 0, 0), 1, cv2.LINE_AA)   # thin dark ring for contrast
+
+
+def _draw_landmarks(
+    out: np.ndarray, landmarks: Sequence[Any], lm_style: LandmarkStyle, scale: float
+) -> None:
+    """Draw every leaf's keypoints/skeleton on the summary image (working coords * scale)."""
+    for _key, rows in _group_landmarks(landmarks).items():
+        pt: dict[str, tuple[float, float]] = {}
+        conf: dict[str, float] = {}
+        for r in rows:
+            name = str(_row_get(r, "kpt_name", ""))
+            x, y = _row_get(r, "x", None), _row_get(r, "y", None)
+            if x is None or y is None:
+                continue
+            pt[name] = (float(x) * scale, float(y) * scale)
+            conf[name] = float(_row_get(r, "conf", 1.0) or 0.0)
+        _draw_landmark_skeleton(out, pt, conf, lm_style)
+
+
+def build_leaf_landmark_overlay(
+    crop_bgr: np.ndarray,
+    landmark_rows: Sequence[Any],
+    measure_lines: Sequence[str],
+    lm_style: LandmarkStyle,
+) -> np.ndarray:
+    """Per-leaf overlay: draw the keypoints/skeleton on the leaf crop (crop-frame coords) plus a
+    panel of the derived measurements. Used for the ``Overlay_Landmarks`` output."""
+    out = crop_bgr.copy()
+    pt: dict[str, tuple[float, float]] = {}
+    conf: dict[str, float] = {}
+    for r in landmark_rows:
+        name = str(_row_get(r, "kpt_name", ""))
+        xc, yc = _row_get(r, "x_crop", None), _row_get(r, "y_crop", None)
+        if xc is None or yc is None:
+            continue
+        pt[name] = (float(xc), float(yc))
+        conf[name] = float(_row_get(r, "conf", 1.0) or 0.0)
+    _draw_landmark_skeleton(out, pt, conf, lm_style)
+    if measure_lines:
+        _draw_measure_panel(out, list(measure_lines), lm_style)
+    return out
+
+
+def _draw_measure_panel(out: np.ndarray, lines: list[str], lm_style: LandmarkStyle) -> None:
+    """Draw a translucent dark panel of measurement text at the crop's top-left."""
+    h, w = out.shape[:2]
+    fs = max(0.4, min(0.9, w / 520.0))
+    thick = max(1, int(round(fs * 1.6)))
+    pad = int(round(6 * fs))
+    sizes = [cv2.getTextSize(t, _FONT, fs, thick)[0] for t in lines]
+    line_h = max((s[1] for s in sizes), default=12) + int(round(6 * fs))
+    box_w = min(w, (max((s[0] for s in sizes), default=10)) + 2 * pad)
+    box_h = min(h, line_h * len(lines) + 2 * pad)
+    panel = out[0:box_h, 0:box_w].copy()
+    dark = np.zeros_like(panel)
+    cv2.addWeighted(dark, 0.55, panel, 0.45, 0.0, panel)
+    out[0:box_h, 0:box_w] = panel
+    y = pad + line_h - int(round(6 * fs))
+    for t in lines:
+        cv2.putText(out, t, (pad, y), _FONT, fs, _bgr(lm_style.label_color), thick, cv2.LINE_AA)
+        y += line_h
 
 
 # -- masks -------------------------------------------------------------------------

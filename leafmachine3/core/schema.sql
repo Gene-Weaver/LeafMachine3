@@ -182,6 +182,31 @@ CREATE TABLE IF NOT EXISTS leaf_landmark (
 CREATE INDEX IF NOT EXISTS ix_landmark_spec ON leaf_landmark (specimen_id);
 CREATE INDEX IF NOT EXISTS ix_landmark_det  ON leaf_landmark (detection_id);
 
+-- leaf_landmark_measurement : derived per-leaf measurements from the keypoints (landmark_measurements
+-- stage). One row per leaf instance (same key space as leaf_landmark). Lengths are WORKING-frame
+-- pixels; angles are degrees. Every metric is NULLABLE -- occluded/missing keypoints => NULL, never
+-- a fabricated value. See leafmachine3.core.landmark_metrics for the exact definitions.
+CREATE TABLE IF NOT EXISTS leaf_landmark_measurement (
+    measure_id     INTEGER PRIMARY KEY,
+    specimen_id    INTEGER NOT NULL REFERENCES specimen(specimen_id)         ON DELETE CASCADE,
+    detection_id   INTEGER NOT NULL REFERENCES plant_detection(detection_id) ON DELETE CASCADE,
+    instance_index INTEGER NOT NULL,            -- matches leaf_landmark instance
+    lamina_trace_length  REAL,                  -- midrib arc length (tip end -> base)
+    lamina_extent        REAL,                  -- straight lamina_tip -> lamina_base
+    leaf_width           REAL,                  -- width_left -> width_right
+    apex_angle           REAL,                  -- degrees at apex_center
+    apex_angle_type      TEXT,                  -- acute | obtuse | reflex | NULL
+    base_angle           REAL,                  -- degrees at base_center
+    base_angle_type      TEXT,                  -- acute | obtuse | reflex | NULL
+    petiole_trace_length REAL,                  -- petiole arc length (base end -> tip)
+    lamina_curvature     REAL,                  -- lamina_trace_length / lamina_extent (>= 1)
+    lamina_centroid_x    REAL, lamina_centroid_y REAL,   -- mean of lamina-trace points (for QC/overlay)
+    n_present            INTEGER,               -- how many confident keypoints fed the measurement
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (detection_id, instance_index)       -- one measurement row per leaf instance
+);
+CREATE INDEX IF NOT EXISTS ix_lmmeasure_spec ON leaf_landmark_measurement (specimen_id);
+
 -- project_status : stage-level ledger. Drives whole-module skip + config-drift + restart.
 CREATE TABLE IF NOT EXISTS project_status (
     stage_key   TEXT PRIMARY KEY,              -- canonical STAGE_KEYS, seeded at init

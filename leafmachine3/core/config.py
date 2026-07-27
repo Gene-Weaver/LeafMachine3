@@ -31,10 +31,9 @@ import yaml
 
 log = logging.getLogger("leafmachine3.config")
 
-# The eight canonical pipeline stages, in execution order. These are the only
-# keys that may appear in ``project.run_mode.restart`` and the keys the ProjectDB
-# seeds ``project_status`` from. The extensible slot between ``leaf_segmenter`` and
-# ``metric_grounding`` is intentionally NOT one of these eight.
+# The canonical pipeline stages, in execution order. These are the only keys that may
+# appear in ``project.run_mode.restart`` and the keys the ProjectDB seeds
+# ``project_status`` from. Kept in lockstep with ``leafmachine3.pipeline.STAGE_ORDER``.
 CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "archival_detector",
     "plant_detector",
@@ -44,6 +43,7 @@ CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "leaf_segmenter",
     "morphology",
     "landmark_detector",
+    "landmark_measurements",
     "metric_grounding",
     "reporter",
 )
@@ -214,6 +214,7 @@ def builtin_defaults() -> dict[str, Any]:
             "leaf_segmenter": {"enabled": True},
             "morphology": {"enabled": True},
             "landmark_detector": {"enabled": True},
+            "landmark_measurements": {"enabled": True},
             "metric_grounding": {"enabled": True},
             "reporter": {"enabled": True},
         },

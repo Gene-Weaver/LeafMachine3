@@ -44,8 +44,8 @@ def test_schema_seeds_project_status(db: ProjectDB) -> None:
     keys = [r["stage_key"] for r in rows]
     assert keys == [
         "archival_detector", "plant_detector", "phenology_detector", "ruler_classifier",
-        "ruler_cf", "leaf_segmenter", "morphology", "landmark_detector", "metric_grounding",
-        "reporter",
+        "ruler_cf", "leaf_segmenter", "morphology", "landmark_detector",
+        "landmark_measurements", "metric_grounding", "reporter",
     ]
     assert all(r["state"] == "pending" for r in rows)
 

@@ -79,6 +79,22 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         assert lm is not None and lm["detection_id"]                       # links to the leaf crop
         assert lm["x"] >= lm["x_crop"] and lm["y"] >= lm["y_crop"]         # re-based crop -> working frame
 
+        # Landmark Measurements ran after: one row per leaf instance, metrics computed & sane
+        assert _count(conn, "leaf_landmark_measurement") > 0
+        mm = conn.execute(
+            "SELECT lamina_trace_length, lamina_extent, leaf_width, apex_angle, apex_angle_type, "
+            "base_angle, base_angle_type, petiole_trace_length, lamina_curvature, n_present, "
+            "detection_id FROM leaf_landmark_measurement LIMIT 1"
+        ).fetchone()
+        assert mm is not None and mm["detection_id"]
+        assert mm["lamina_extent"] > 0 and mm["leaf_width"] > 0            # straight-line metrics
+        assert mm["lamina_trace_length"] >= mm["lamina_extent"] - 1e-6     # arc >= chord
+        assert mm["lamina_curvature"] >= 1.0 - 1e-6                        # curvature = arc / chord
+        assert 0.0 <= mm["apex_angle"] <= 360.0                           # degrees, incl. reflex
+        assert mm["apex_angle_type"] in {"acute", "obtuse", "reflex"}
+        assert mm["base_angle_type"] in {"acute", "obtuse", "reflex"}
+        assert mm["n_present"] == 31                                       # mock emits all keypoints
+
         # phenology mirrored leaf presence onto the specimen (mock emits a Leaf_WHOLE box)
         leaf_flags = [r["has_leaves"] for r in conn.execute("SELECT has_leaves FROM specimen")]
         assert all(flag == 1 for flag in leaf_flags)
@@ -89,11 +105,18 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     finally:
         conn.close()
 
-    # Reporter wrote one overlay per specimen, files carry the __Overlay suffix
+    # Reporter wrote one summary overlay per specimen under Overlay/Overlay_Summary/
     reports = project.dirs.reports
-    overlays = sorted((reports / "Overlay").glob("*__Overlay.jpg"))
+    overlays = sorted((reports / "Overlay" / "Overlay_Summary").glob("*__Overlay.jpg"))
     assert len(overlays) == 2
     assert all(p.stat().st_size > 0 for p in overlays)
+
+    # per-leaf landmark overlays land under Overlay/Overlay_Landmarks/ as __LM-leaf__coords
+    lm_overlays = list((reports / "Overlay" / "Overlay_Landmarks").glob("*__LM-leaf__*.jpg"))
+    assert lm_overlays, "no per-leaf landmark overlays written"
+    from leafmachine3.core.imaging import parse_crop_filename
+    lp = parse_crop_filename(lm_overlays[0].name)
+    assert lp and lp["prefix"] == "LM" and lp["friendly"] == "leaf" and len(lp["xyxy"]) == 4
 
     # mask outputs are grouped under Binary_Masks/ and RGB_Masks/ (harmonized with Crops/)
     full_bin = list((reports / "Binary_Masks" / "Binary_Masks_Full_Image__Leaf").glob("*.png"))

@@ -59,6 +59,7 @@ _CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "leaf_segmenter",
     "morphology",
     "landmark_detector",
+    "landmark_measurements",
     "metric_grounding",
     "reporter",
 )
@@ -549,6 +550,42 @@ class ProjectDB:
         return self._query(
             "SELECT * FROM leaf_landmark WHERE specimen_id = ? "
             "ORDER BY detection_id, instance_index, kpt_index",
+            (specimen_id,),
+        )
+
+    def specimens_with_landmarks(self) -> list[int]:
+        """Specimen ids that have any predicted keypoints (input to landmark_measurements)."""
+        return [
+            int(r["specimen_id"])
+            for r in self._query("SELECT DISTINCT specimen_id FROM leaf_landmark ORDER BY specimen_id")
+        ]
+
+    def record_leaf_landmark_measurements(self, specimen_id: int, rows: Sequence[Any]) -> None:
+        """DELETE the specimen's measurement rows then insert one per leaf instance."""
+        self._exec("DELETE FROM leaf_landmark_measurement WHERE specimen_id = ?", (specimen_id,))
+        for r in rows:
+            self._exec(
+                """
+                INSERT INTO leaf_landmark_measurement
+                    (specimen_id, detection_id, instance_index,
+                     lamina_trace_length, lamina_extent, leaf_width,
+                     apex_angle, apex_angle_type, base_angle, base_angle_type,
+                     petiole_trace_length, lamina_curvature,
+                     lamina_centroid_x, lamina_centroid_y, n_present)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (specimen_id, int(r.detection_id), int(r.instance_index),
+                 r.lamina_trace_length, r.lamina_extent, r.leaf_width,
+                 r.apex_angle, r.apex_angle_type, r.base_angle, r.base_angle_type,
+                 r.petiole_trace_length, r.lamina_curvature,
+                 r.lamina_centroid_x, r.lamina_centroid_y, int(r.n_present)),
+            )
+
+    def leaf_landmark_measurements(self, specimen_id: int) -> list[sqlite3.Row]:
+        """All derived landmark-measurement rows for a specimen (one per leaf instance)."""
+        return self._query(
+            "SELECT * FROM leaf_landmark_measurement WHERE specimen_id = ? "
+            "ORDER BY detection_id, instance_index",
             (specimen_id,),
         )
 

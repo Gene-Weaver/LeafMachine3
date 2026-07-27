@@ -5,7 +5,8 @@ the per-project database and the images. Each output is a folder (named exactly 
 and can be toggled independently in ``report`` of ``LM3_settings.yaml``. The layout mirrors
 ``Crops`` — a category folder with per-output subfolders::
 
-    Overlay/<stem>__Overlay.<ext>
+    Overlay/Overlay_Summary/<stem>__Overlay.<ext>          (masks + boxes + landmarks on top)
+    Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>  (one per leaf: keypoints + measures)
     Crops/RGB__<friendly>/<stem>__BBOX-<friendly>__x_y_x_y.<ext>
     Binary_Masks/Binary_Masks_Full_Image__<Cls>/<stem>__MaskFull-<friendly>.<ext>
     Binary_Masks/Binary_Masks__<Cls>/<stem>__SEG-<friendly>__x_y_x_y.<ext>
@@ -39,8 +40,8 @@ from leafmachine3.core.imaging import (
 )
 from leafmachine3.core.naming import crop_label, friendly_name
 from leafmachine3.core.stage import PipelineStage, WorkItem
-from leafmachine3.reporting.overlay import build_summary_image
-from leafmachine3.reporting.palette import OverlayStyle
+from leafmachine3.reporting.overlay import build_leaf_landmark_overlay, build_summary_image
+from leafmachine3.reporting.palette import LandmarkStyle, OverlayStyle
 
 log = logging.getLogger("leafmachine3.reporter")
 
@@ -57,7 +58,8 @@ class Reporter(PipelineStage):
     device_kind: str = "cpu"
     depends_on: tuple[str, ...] = (
         "archival_detector", "plant_detector", "phenology_detector",
-        "ruler_cf", "leaf_segmenter", "morphology", "metric_grounding",
+        "ruler_cf", "leaf_segmenter", "morphology",
+        "landmark_detector", "landmark_measurements", "metric_grounding",
     )
     owns_tables: tuple[str, ...] = ()
 
@@ -84,17 +86,23 @@ class Reporter(PipelineStage):
                 cache[key] = read_image(key)
             return cache[key]
 
-        # ---- Overlay -----------------------------------------------------
+        # ---- Overlay_Summary (masks + boxes + landmarks on top) ----------
         overlay_cfg = _sub(r, "overlay")
+        lm_style = LandmarkStyle.from_config(self.cfg)
         if _flag(overlay_cfg, "enabled", True):
             style = OverlayStyle.from_config(self.cfg)
             summary = build_summary_image(
                 read(b.original_path), b.detections, b.leaves, b.cf_px_per_cm, style, b.work_scale,
-                morphology=b.morphology,
+                morphology=b.morphology, landmarks=b.landmarks, landmark_style=lm_style,
             )
-            path = reports / "Overlay" / f"{stem}__Overlay.{img_ext}"
+            path = reports / "Overlay" / "Overlay_Summary" / f"{stem}__Overlay.{img_ext}"
             save_image(summary, path, quality=quality)
-            written.append((str(path), "Overlay"))
+            written.append((str(path), "Overlay/Overlay_Summary"))
+
+        # ---- Overlay_Landmarks (one per leaf: keypoints + measurement panel)
+        ovlm_cfg = _sub(r, "overlay_landmarks")
+        if _flag(ovlm_cfg, "enabled", True) and b.landmarks:
+            written += self._export_landmark_overlays(b, reports, stem, img_ext, quality, read, lm_style)
 
         # ---- mask exports ------------------------------------------------
         masks_cfg = _sub(r, "masks")
@@ -213,8 +221,85 @@ class Reporter(PipelineStage):
             written.append((path, f"Crops/RGB__{friendly}"))
         return written
 
+    # ---- per-leaf landmark overlays -------------------------------------- #
+    def _export_landmark_overlays(self, b, reports, stem, img_ext, quality, read, lm_style):
+        """Write ``Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>`` -- one per leaf crop,
+        with the keypoints/skeleton drawn on the crop plus a panel of the derived measurements.
+
+        The crop is re-cut from the WORKING image with the same clamping the detector used, so the
+        stored crop-frame keypoints (``x_crop``/``y_crop``) line up exactly.
+        """
+        if not b.working_path:
+            return []
+        working = read(b.working_path)
+        h, w = working.shape[:2]
+        by_det = _group_landmark_rows(b.landmarks)
+        meas = {
+            (int(_row_get(m, "detection_id", -1)), int(_row_get(m, "instance_index", 0))): m
+            for m in (b.landmark_measurements or [])
+        }
+        folder = reports / "Overlay" / "Overlay_Landmarks"
+        label = crop_label(self.cfg, "landmark", _LEAF)      # LM-leaf
+        written: list[tuple[str, str]] = []
+        for (did, inst), rows in by_det.items():
+            box = b.crop_boxes.get(did)
+            if not box:
+                continue
+            x1, y1, x2, y2 = (int(round(v)) for v in box)
+            crop = working[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
+            if crop.size == 0:
+                continue
+            lines = _landmark_measure_lines(meas.get((did, inst)))
+            img = build_leaf_landmark_overlay(crop, rows, lines, lm_style)
+            # Usually one leaf per crop (inst 0). If the pose model emits >1 instance for a crop
+            # they share the detection box, so fold the instance into the stem (parse-safe) to keep
+            # each file distinct instead of overwriting.
+            file_stem = stem if inst == 0 else f"{stem}__i{inst}"
+            name = crop_filename(file_stem, label, (x1, y1, x2, y2), img_ext)
+            path = folder / name
+            save_image(img, path, quality=quality)
+            written.append((str(path), "Overlay/Overlay_Landmarks"))
+        return written
+
 
 # -- geometry helpers --------------------------------------------------------------
+def _group_landmark_rows(landmarks) -> dict:
+    """Group leaf_landmark rows by ``(detection_id, instance_index)`` (one leaf per group)."""
+    groups: dict = {}
+    for r in landmarks or []:
+        key = (int(_row_get(r, "detection_id", -1)), int(_row_get(r, "instance_index", 0)))
+        groups.setdefault(key, []).append(r)
+    return groups
+
+
+def _landmark_measure_lines(m) -> list[str]:
+    """Format a leaf_landmark_measurement row into overlay text lines (values rounded to int;
+    curvature to 2dp). Missing metrics render as ``n/a`` (no degree glyph -- Hershey font safe)."""
+    if m is None:
+        return []
+
+    def as_int(key: str) -> str:
+        v = _row_get(m, key, None)
+        return "n/a" if v is None else str(int(round(float(v))))
+
+    def angle(key: str, type_key: str) -> str:
+        v = _row_get(m, key, None)
+        if v is None:
+            return "n/a"
+        t = _row_get(m, type_key, None)
+        base = f"{int(round(float(v)))}deg"
+        return f"{base} {t}" if t else base
+
+    curv = _row_get(m, "lamina_curvature", None)
+    return [
+        f"lamina_trace: {as_int('lamina_trace_length')} px",
+        f"lamina_extent: {as_int('lamina_extent')} px",
+        f"leaf_width: {as_int('leaf_width')} px",
+        f"apex: {angle('apex_angle', 'apex_angle_type')}",
+        f"base: {angle('base_angle', 'base_angle_type')}",
+        f"petiole_trace: {as_int('petiole_trace_length')} px",
+        f"curvature: {'n/a' if curv is None else f'{float(curv):.2f}'}",
+    ]
 def _parse_leaves(leaves) -> list[tuple[int, str, np.ndarray]]:
     out: list[tuple[int, str, np.ndarray]] = []
     for row in leaves or []:
