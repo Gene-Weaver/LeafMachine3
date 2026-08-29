@@ -1,5 +1,8 @@
 # ---- LeafMachine3 ----
 # Trained model artifacts are NOT committed (shipped separately / linked in).
+# Ignore the whole tree: the per-extension rules below kept missing formats (.bin, .mlmodel),
+# which left models/ (1.3 GB) staged as untracked and one `git add -A` away from the history.
+models/
 models/**/*.onnx
 models/**/*.pt
 models/**/*.torchscript
@@ -7,7 +10,11 @@ models/**/*_openvino_model/
 models/**/*.mlpackage
 models/ruler_classifier
 
+
 # machine-derived + run outputs
+# Collage project: 342 GB, of which output_LM3_for_collage/ is 337 GB of generated LM3 run
+# output. Excluded entirely at Will's direction (2026-08-28).
+global_leaf_margin_collage/
 hardware_settings.yaml
 /runs/
 /output/
@@ -15,6 +22,10 @@ hardware_settings.yaml
 *.sqlite-wal
 *.sqlite-shm
 _tmp/
+
+# ---- Node / Electron ----
+# Reproducible from the tracked app/package-lock.json via `npm ci`; 271 MB otherwise.
+node_modules/
 
 # ---- Python ----
 __pycache__/
@@ -40,10 +51,6 @@ htmlcov/
 *.swp
 
 # example / test data + generated demo artifacts (not committed)
-examples/images/
-examples/images_subset/
-examples/*.yaml
-examples/_overlay_smoke.jpg
 
 # test/run outputs (one subdir per test/run name)
 examples_out/

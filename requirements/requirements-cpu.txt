@@ -19,3 +19,8 @@ torchvision==0.21.0+cpu
 ultralytics==8.4.107
 
 -e .
+
+# ECT stage (Euler Characteristic Transform per oriented leaf)
+ect
+h5py
+matplotlib

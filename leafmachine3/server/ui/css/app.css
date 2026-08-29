@@ -1,0 +1,1535 @@
+/* ==========================================================================
+   LM3 — LeafMachine3 desktop app stylesheet
+   --------------------------------------------------------------------------
+   The single stylesheet for the whole app (browser + Electron shell). No build
+   step, no CDN: everything here is hand-written CSS that ships as-is.
+
+   The visual language is lifted verbatim from the LM3 report aesthetic already
+   used by leafmachine3/setup/timing.py and LM3_Ruler_Segmentation/guide/
+   how_CF_works.html -- same variables, same 9px panels, same 1px var(--line)
+   borders, same uppercase micro-labels, same mono/tabular numerics. Anything
+   below that ISN'T in those two files is app chrome (tab bar, pinned perf
+   panel, console, live bars) built in the same idiom.
+
+   WHY the base font is 14px and not the report's 16px: the reports are prose
+   documents read once; this is a dense control surface with a fixed top bar and
+   a pinned bottom panel, and 16px leaves no room for the tab body. The TYPE
+   SCALE, weights, letter-spacing and colors are unchanged -- only the root size
+   steps down one notch so the same components read correctly at app density.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- tokens -- */
+:root{
+  /* the LM3 palette -- do not fork these values, they are shared with the
+     Python-generated reports so a run report sitting next to the app matches */
+  --bg:#101012; --panel:#191a1d; --panel2:#1f2024; --ink:#e8e8ea; --mute:#9ca3af;
+  --dim:#6f757f; --line:#2a2b30; --acc:#fb923c; --acc2:#38bdf8; --acc3:#4ade80;
+  --warn:#fbbf24; --bad:#f87171; --vio:#c084fc;
+
+  /* derived surfaces -- named so components never hard-code a hex */
+  --panel3:#141519;          /* sub-rows / zebra stripes (matches tr.sub) */
+  --hover:#1c1d21;           /* row + tile hover (matches tbody tr:hover) */
+  --void:#0b0b0d;            /* image mats, console bed, bar text on accent */
+  --ok:var(--acc3);
+
+  --mono:ui-monospace,SFMono-Regular,Menlo,"DejaVu Sans Mono",Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+
+  --r:9px;                   /* the LM3 panel radius */
+  --r-sm:6px;
+  --r-xs:4px;
+
+  /* chrome metrics -- JS reads none of these; they exist so the grid, the
+     sticky table headers and the perf panel agree on one set of numbers */
+  --topbar-h:auto;
+  --perf-h:186px;
+  --perf-h-collapsed:38px;
+  --gutter:14px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:14px/1.55 var(--sans);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  overflow:hidden;                       /* only .tabbody scrolls, never the page */
+}
+[hidden]{display:none !important}
+
+::selection{background:rgba(56,189,248,.28)}
+
+/* dark scrollbars everywhere -- the default light ones tear the surface apart */
+*{scrollbar-width:thin; scrollbar-color:#3a3c43 transparent}
+*::-webkit-scrollbar{width:11px;height:11px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#33353c;border-radius:8px;border:3px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:#474a53;background-clip:content-box}
+*::-webkit-scrollbar-corner{background:transparent}
+
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--acc2);outline-offset:2px;border-radius:var(--r-xs)}
+
+
+/* ==========================================================================
+   APP SHELL
+   Five rows. Top bar (global stage progress), primary-settings strip and tab
+   bar are pinned above; the perf monitor is pinned below; ONLY .tabbody
+   scrolls. minmax(0,1fr) is load-bearing -- without the 0 min the grid child
+   refuses to shrink and the page itself starts scrolling.
+   ========================================================================== */
+.app{
+  display:grid;
+  grid-template-rows:auto auto auto minmax(0,1fr) auto;
+  grid-template-areas:"topbar" "primary" "tabbar" "body" "perf";
+  height:100vh; height:100dvh;
+  overflow:hidden;
+}
+.app > .topbar{grid-area:topbar}
+.app > .primary{grid-area:primary}
+.app > .tabbar{grid-area:tabbar}
+.app > .tabbody{grid-area:body}
+.app > .perfpanel{grid-area:perf}
+
+
+/* -------------------------------------------------- top bar / global stage */
+.topbar{
+  background:linear-gradient(180deg,#17181c,#141518);
+  border-bottom:1px solid var(--line);
+  padding:10px var(--gutter) 0;
+  position:relative; z-index:30;
+}
+.topbar-main{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:9px}
+
+.brand{
+  display:flex;align-items:baseline;gap:8px;
+  font-size:15px;font-weight:700;letter-spacing:-.015em;white-space:nowrap;
+}
+.brand .mark{
+  display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:2px;
+  background:linear-gradient(135deg,var(--acc3),var(--acc2));
+  box-shadow:0 0 0 1px rgba(74,222,128,.35), 0 0 10px rgba(74,222,128,.35);
+}
+.brand .ver{font:600 10.5px/1 var(--mono);color:var(--dim);letter-spacing:.06em}
+
+/* what LM3 is doing right now, in one line */
+.stagenow{display:flex;align-items:center;gap:9px;min-width:0}
+.stagenow .what{
+  font:650 11.5px/1 var(--sans);letter-spacing:.05em;text-transform:uppercase;color:var(--dim);
+}
+.stagenow .who{
+  font:650 13px/1 var(--mono);color:var(--acc2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.topstats{display:flex;align-items:center;gap:18px;margin-left:auto;flex-wrap:wrap}
+.topstat{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+.topstat .v{font:650 13px/1 var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.topstat .l{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.topstat.good .v{color:var(--acc3)}
+.topstat.warnv .v{color:var(--warn)}
+.topstat.badv  .v{color:var(--bad)}
+
+/* the proportional module strip: one segment per LM3 module, in run order */
+.stagetrack{
+  display:flex;gap:2px;width:100%;height:26px;margin-bottom:8px;
+  border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;background:var(--panel);
+}
+.stageseg{
+  position:relative;flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;
+  padding:0 6px;overflow:hidden;white-space:nowrap;
+  font:650 10.5px/1 var(--sans);letter-spacing:.03em;
+  background:var(--panel2);color:var(--dim);
+  border-right:1px solid var(--bg);
+  transition:background .18s ease,color .18s ease,flex-grow .3s ease;
+  cursor:default;
+}
+.stageseg:last-child{border-right:none}
+.stageseg > .nm{overflow:hidden;text-overflow:ellipsis}
+.stageseg.done   {background:rgba(74,222,128,.16);color:var(--acc3)}
+/* the running segment's own background stays dim so the .subfill below reads as
+   a distinct filled portion -- at equal alpha the two were indistinguishable */
+.stageseg.running{background:rgba(56,189,248,.09);color:#d7f1ff;flex-grow:2.4}
+.stageseg.error  {background:rgba(248,113,113,.22);color:var(--bad)}
+.stageseg.skipped{background:var(--panel2);color:#4d525b;text-decoration:line-through}
+.stageseg.pending{background:var(--panel2);color:var(--dim)}
+.stageseg.done::before{content:"✓ ";opacity:.85}
+/* a sub-fill inside the running segment showing ITS own completion */
+.stageseg > .subfill{
+  position:absolute;left:0;top:0;bottom:0;width:0;
+  background:rgba(56,189,248,.36);pointer-events:none;transition:width .35s ease;
+}
+.stageseg > .nm{position:relative;z-index:1}
+/* Shortcut from the pipeline map to the module's settings. Overlaid on the right
+   edge rather than laid out inline: segments are flex-sized by expected runtime,
+   so the narrow ones have no room to give and the name must not reflow on hover.
+   Keyboard users get Shift+Enter on the segment instead -- the cog is
+   tabindex="-1" so it never doubles the tab stops across seventeen segments. */
+.stageseg > .segcog{
+  position:absolute;right:2px;top:50%;transform:translateY(-50%);z-index:2;
+  appearance:none;border:0;border-radius:var(--r-xs);cursor:pointer;
+  padding:2px 4px;line-height:1;font-size:10.5px;
+  color:var(--ink);background:var(--panel);box-shadow:0 0 0 3px var(--panel);
+  opacity:0;transition:opacity .12s ease;pointer-events:none;
+}
+.stageseg:hover > .segcog,
+.stageseg > .segcog:focus-visible{opacity:1;pointer-events:auto}
+.stageseg > .segcog:hover{color:var(--acc2)}
+
+/* the global stage progress bar -- the one the user asked to be pinned at the
+   very top, outside every tab */
+.globalbar{margin:0 0 10px}
+/* bar hidden: the meta line is the only child, so drop the gap that separated it from the bar */
+.globalbar.nobar .meta{margin-top:0}
+.globalbar .bar{height:9px}
+.globalbar .meta{
+  display:flex;justify-content:space-between;gap:12px;margin-top:5px;
+  font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);
+}
+.globalbar .meta .r{font-family:var(--mono);letter-spacing:.02em;text-transform:none;color:var(--mute);
+  font-variant-numeric:tabular-nums}
+
+
+/* ------------------------------------------- primary settings strip (above tabs) */
+/* The primary strip is deliberately ONE line tall: label, input+Browse and the validation badge all
+   sit on the same row, so the strip costs ~40px instead of ~110px and the tabs start higher up. */
+/* Six fields laid out as an even 3 x 2 grid rather than flex-wrap (which packed five onto row one
+   and stranded the sixth). Every cell gets exactly one third of the width, and each cell is itself
+   a three-track grid so the labels, inputs and status badges line up COLUMN-WISE across both rows. */
+.primary{
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, 1fr));
+  gap:6px 22px;
+  align-items:center;
+  padding:8px var(--gutter);
+  background:var(--panel);border-bottom:1px solid var(--line);
+}
+.primary .pfield{
+  display:grid;
+  grid-template-columns:7.5em minmax(0, 1fr) auto;   /* label | control | badge */
+  align-items:center;gap:8px;min-width:0;
+  flex:none !important;                              /* beat the inline flex sizing from topbar.js */
+}
+.primary .pfield > label{
+  font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute);font-weight:650;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.primary .pfield .withbtn{min-width:0}
+.primary .pfield .withbtn input{min-width:0}
+.primary .pfield > select{min-width:0;width:100%}
+@media (max-width: 1180px){                          /* narrow window: 2 columns x 3 rows */
+  .primary{grid-template-columns:repeat(2, minmax(0, 1fr))}
+}
+/* the status badge trails the input on the same line instead of wrapping under it */
+.primary .pfield > div:last-child{flex:0 0 auto;min-height:0 !important}
+.primary .pfield input{padding-top:4px;padding-bottom:4px}
+.primary .actions > div{flex-direction:row !important;align-items:center !important;gap:8px !important}
+.primary .pfield .withbtn{display:flex;gap:0}
+.primary .pfield .withbtn input{border-top-right-radius:0;border-bottom-right-radius:0;border-right:none}
+.primary .pfield .withbtn .btn{border-top-left-radius:0;border-bottom-left-radius:0}
+.primary .actions{display:flex;gap:8px;align-items:center;margin-left:auto;flex:0 0 auto}
+.primary .pfields{display:contents}
+
+/* Collapsed: the strip folds to nothing (the run controls live in the tab bar, so nothing that
+   matters mid-run is hidden). Height/opacity animate so it reads as a fold rather than a flicker. */
+.primary{overflow:hidden;transition:padding .18s ease}
+.primary .pfields{transition:opacity .15s ease}
+.primary.collapsed{padding-top:0;padding-bottom:0;border-bottom-color:transparent}
+.primary.collapsed .pfields{display:none}
+
+/* The console is its own tab and fills the body down to the performance panel.
+   The pane styling has to be restated here: the base rule is `.split > .split-pane`, and the
+   console no longer lives inside a .split, so without this it loses the flex column that
+   `.console{flex:1 1 auto;overflow:auto}` needs in order to scroll. */
+.st-consoletab{display:flex;flex-direction:column;height:100%;min-height:0}
+.st-consoletab > .st-conspane{
+  flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+}
+
+/* Close sits in the top-right corner of the header, just after the live indicator. */
+.topstats .btn.danger{margin-left:12px;flex:0 0 auto}
+
+/* run controls docked at the right end of the tab bar */
+.tabbar .runctl{display:flex;align-items:center;gap:8px;margin-left:auto;padding:0 12px 0 0}
+.tabbar .runctl .sep{width:1px;height:18px;background:var(--line);flex:0 0 auto}
+.tabbar .runctl .btn{white-space:nowrap}
+/* the "Main settings" disclosure -- caret rotates to point down when the strip is open */
+.btn.disc{display:inline-flex;align-items:center;gap:6px}
+.btn.disc .caret{display:inline-block;transition:transform .18s ease;transform:rotate(-90deg);font-size:11px;line-height:1}
+.btn.disc.on .caret{transform:rotate(0deg)}
+.btn.disc.on{color:var(--acc2);border-color:color-mix(in srgb, var(--acc2) 45%, var(--line))}
+@media (prefers-reduced-motion: reduce){
+  .primary,.primary .pfields,.btn.disc .caret{transition:none}
+}
+
+
+/* ------------------------------------------------------------------ tabbar */
+.tabbar{
+  display:flex;align-items:stretch;gap:2px;
+  padding:0 var(--gutter);
+  background:#141518;border-bottom:1px solid var(--line);
+  overflow-x:auto;overflow-y:hidden;
+}
+.tab{
+  position:relative;appearance:none;background:none;border:none;
+  padding:11px 15px 10px;cursor:pointer;white-space:nowrap;
+  font:650 12px/1 var(--sans);letter-spacing:.05em;text-transform:uppercase;
+  color:var(--dim);
+  border-bottom:2px solid transparent;
+  transition:color .15s ease,border-color .15s ease,background .15s ease;
+}
+.tab:hover{color:var(--mute);background:rgba(255,255,255,.02)}
+.tab.active{color:var(--ink);border-bottom-color:var(--acc2)}
+.tab[disabled],.tab.disabled{color:#43464d;cursor:not-allowed;pointer-events:none}
+.tab .count{
+  margin-left:7px;padding:1px 6px;border-radius:9px;
+  font:650 10px/1.5 var(--mono);background:var(--panel2);color:var(--mute);
+}
+.tab.active .count{background:rgba(56,189,248,.16);color:var(--acc2)}
+/* the live dot on the Status tab while a run is going */
+.tab .dot{
+  display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:7px;vertical-align:1px;
+  background:var(--dim);
+}
+.tab .dot.live{background:var(--acc3);animation:lm3-pulse 1.6s ease-in-out infinite}
+.tab .dot.err{background:var(--bad)}
+.tab .dot.idle{background:var(--dim)}
+/* a tab that only exists once there's something in it (results) fades in */
+.tab.revealed{animation:lm3-fadein .35s ease}
+
+
+/* -------------------------------------------------------------- tab bodies */
+.tabbody{
+  overflow:auto;min-height:0;position:relative;
+  padding:var(--gutter);
+  scroll-behavior:smooth;
+}
+/* the status tab manages its own 50/50 split and must NOT scroll as a page */
+.tabbody.nopad{padding:0}
+.tabbody.noscroll{overflow:hidden}
+.tabpane{display:none;min-height:0}
+.tabpane.active{display:block;animation:lm3-fadein .18s ease}
+.tabpane.active.fill{display:flex;flex-direction:column;height:100%}
+
+
+/* ==========================================================================
+   PRIMITIVES  (report idiom)
+   ========================================================================== */
+.mono{font-family:var(--mono)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.dim{color:var(--dim)}
+.mute{color:var(--mute)}
+.nul{color:var(--bad);font-weight:650}
+.nowrap{white-space:nowrap}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.spacer{flex:1 1 auto}
+.right{margin-left:auto}
+.hidden{display:none !important}
+
+.kicker{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--acc);font-weight:700}
+.sechd{
+  display:flex;align-items:center;gap:10px;margin:0 0 8px;
+  font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute);font-weight:650;
+}
+.sechd::after{content:"";flex:1 1 auto;height:1px;background:var(--line)}
+.hint{color:var(--dim);font-size:12.5px;margin:0 0 12px;line-height:1.55;max-width:96ch}
+h1{font-size:1.7rem;line-height:1.12;margin:.2em 0 .3em;letter-spacing:-.022em}
+h2{font-size:1.06rem;margin:22px 0 4px;letter-spacing:-.01em}
+h2:first-child{margin-top:0}
+h3{font-size:.95rem;margin:16px 0 4px;letter-spacing:-.006em}
+a{color:var(--acc2);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd{font-family:var(--mono);font-size:.92em;background:var(--panel2);padding:1px 5px;border-radius:var(--r-xs)}
+
+/* ------------------------------------------------------------------- grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 14px}
+.grid.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.grid.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.grid.g5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.grid.auto220{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.grid.auto300{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+@media (max-width:900px){
+  .grid.g3,.grid.g4,.grid.g5{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:600px){
+  .grid.g2,.grid.g3,.grid.g4,.grid.g5{grid-template-columns:minmax(0,1fr)}
+}
+
+/* ------------------------------------------------------------------ stat */
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:11px 14px}
+.stat .v{
+  font-size:1.32rem;font-weight:650;letter-spacing:-.02em;line-height:1.12;color:var(--acc2);
+  font-variant-numeric:tabular-nums;font-family:var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.stat .l{font-size:12px;color:var(--mute);margin-top:6px;line-height:1.42}
+.stat.good .v{color:var(--acc3)}
+.stat.warn .v{color:var(--warn)}
+.stat.bad  .v{color:var(--bad)}
+.stat.plain .v{color:var(--ink)}
+.stat.vio  .v{color:var(--vio)}
+
+/* ------------------------------------------------------------------ panel */
+.panel{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  margin:0 0 14px;overflow:hidden;
+}
+.panel-hd{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 13px;background:var(--panel2);border-bottom:1px solid var(--line);
+  font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute);font-weight:650;
+}
+.panel-hd .t{color:var(--ink)}
+.panel-hd .tools{margin-left:auto;display:flex;gap:6px;align-items:center;
+  text-transform:none;letter-spacing:0}
+.panel-bd{padding:13px}
+.panel-bd.flush{padding:0}
+.panel-ft{padding:9px 13px;border-top:1px solid var(--line);background:var(--panel2);
+  font-size:12px;color:var(--dim);display:flex;gap:10px;align-items:center}
+.panel.flat{background:transparent;border-color:transparent}
+.panel.fill{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;margin:0}
+.panel.fill > .panel-bd{flex:1 1 auto;min-height:0;overflow:auto}
+
+/* ------------------------------------------------------------------- card */
+.card{
+  background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--acc);
+  border-radius:8px;padding:12px 16px;margin:0 0 14px;max-width:96ch;
+  font-size:13.2px;color:var(--mute);line-height:1.6;
+}
+.card.good{border-left-color:var(--acc3)}
+.card.info{border-left-color:var(--acc2)}
+.card.warn{border-left-color:var(--warn)}
+.card.bad {border-left-color:var(--bad)}
+.card.why {border-left-color:var(--vio)}
+.card h4{margin:0 0 .35em;font-size:.93rem;letter-spacing:.01em;color:var(--ink);font-weight:650}
+.card p{margin:.35em 0 0}
+.card p:first-of-type{margin-top:0}
+.card b{color:var(--ink);font-weight:640}
+.card ul{margin:.5em 0 .2em;padding-left:20px}
+.card li{margin:.28em 0}
+/* the timing.py ".note" -- kept under its own name so report markup pastes in */
+.note{
+  background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--warn);
+  border-radius:8px;padding:12px 16px;margin:14px 0 4px;font-size:13.2px;color:var(--mute);
+  line-height:1.6;max-width:96ch;
+}
+.note b{color:var(--ink);font-weight:640}
+
+/* ----------------------------------------------------------------- buttons */
+.btn{
+  appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  padding:7px 13px;border-radius:var(--r-sm);cursor:pointer;white-space:nowrap;
+  font:650 12.5px/1.15 var(--sans);letter-spacing:.01em;
+  background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+  transition:background .14s ease,border-color .14s ease,color .14s ease,transform .06s ease;
+}
+.btn:hover{background:#2a2c32;border-color:#3a3d45}
+.btn:active{transform:translateY(1px)}
+.btn.primary{
+  background:linear-gradient(180deg,#4bd483,#37bf6d);color:#06240f;border-color:#3fbf74;font-weight:700;
+}
+.btn.primary:hover{background:linear-gradient(180deg,#5ade8f,#41cb78);border-color:#54d489}
+.btn.accent{background:rgba(56,189,248,.14);color:var(--acc2);border-color:rgba(56,189,248,.45)}
+.btn.accent:hover{background:rgba(56,189,248,.22)}
+.btn.ghost{background:transparent;color:var(--mute);border-color:var(--line)}
+.btn.ghost:hover{background:var(--panel2);color:var(--ink)}
+.btn.danger{background:rgba(248,113,113,.12);color:var(--bad);border-color:rgba(248,113,113,.45)}
+.btn.danger:hover{background:rgba(248,113,113,.2);color:#ffb4b4}
+.btn.warn{background:rgba(251,191,36,.12);color:var(--warn);border-color:rgba(251,191,36,.42)}
+.btn.warn:hover{background:rgba(251,191,36,.2)}
+.btn.sm{padding:4px 9px;font-size:11.5px;border-radius:var(--r-xs)}
+.btn.lg{padding:10px 20px;font-size:13.5px}
+.btn.icon{padding:5px 8px;font-family:var(--mono)}
+.btn.block{display:flex;width:100%}
+.btn[disabled],.btn.disabled{opacity:.42;cursor:not-allowed;pointer-events:none}
+.btn.on{box-shadow:inset 0 0 0 1px var(--acc2);color:var(--acc2)}
+.btngroup{display:inline-flex}
+.btngroup .btn{border-radius:0;margin-left:-1px}
+.btngroup .btn:first-child{border-radius:var(--r-sm) 0 0 var(--r-sm);margin-left:0}
+.btngroup .btn:last-child{border-radius:0 var(--r-sm) var(--r-sm) 0}
+
+/* ------------------------------------------------------------------- forms */
+input[type=text],input[type=number],input[type=search],input[type=password],select,textarea,.input{
+  appearance:none;width:100%;
+  padding:6px 9px;border-radius:var(--r-sm);
+  background:#0f1013;color:var(--ink);border:1px solid var(--line);
+  font:13px/1.35 var(--sans);
+  transition:border-color .14s ease,background .14s ease,box-shadow .14s ease;
+}
+input[type=text],input[type=number],input[type=search],.input.mono,textarea.mono{font-family:var(--mono);font-size:12.5px}
+input:hover,select:hover,textarea:hover{border-color:#3a3d45}
+input:focus,select:focus,textarea:focus{
+  border-color:var(--acc2);box-shadow:0 0 0 3px rgba(56,189,248,.16);outline:none;
+}
+input[disabled],select[disabled],textarea[disabled]{opacity:.5;cursor:not-allowed}
+input::placeholder,textarea::placeholder{color:#565b64}
+textarea{resize:vertical;min-height:64px;line-height:1.5}
+select{
+  padding-right:26px;cursor:pointer;
+  /* inline chevron, base64-free: a tiny data-URI SVG keeps this offline-safe */
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%239ca3af'/></svg>");
+  background-repeat:no-repeat;background-position:right 9px center;
+}
+input[type=number]{font-variant-numeric:tabular-nums}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;padding:0;border:none;
+}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:3px;background:var(--panel2)}
+input[type=range]::-moz-range-track{height:4px;border-radius:3px;background:var(--panel2)}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--acc2);
+  margin-top:-4.5px;border:none;cursor:pointer;
+}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;background:var(--acc2);cursor:pointer}
+input[type=color]{padding:2px;height:28px;width:44px;cursor:pointer;background:#0f1013}
+
+/* checkbox / switch */
+.check{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.check input[type=checkbox]{
+  appearance:none;flex:0 0 auto;width:15px;height:15px;margin:0;border-radius:var(--r-xs);
+  background:#0f1013;border:1px solid #3a3d45;cursor:pointer;position:relative;
+  transition:background .14s ease,border-color .14s ease;
+}
+.check input[type=checkbox]:hover{border-color:#50545e}
+.check input[type=checkbox]:checked{background:var(--acc3);border-color:var(--acc3)}
+.check input[type=checkbox]:checked::after{
+  content:"";position:absolute;left:4.5px;top:1px;width:4px;height:8px;
+  border:solid var(--void);border-width:0 2px 2px 0;transform:rotate(42deg);
+}
+.check .lbl{font-size:12.5px;color:var(--mute)}
+.switch{position:relative;flex:0 0 auto;width:34px;height:19px}
+.switch input{appearance:none;margin:0;width:100%;height:100%;border-radius:11px;
+  background:#2b2e35;border:1px solid var(--line);cursor:pointer;transition:background .18s ease}
+.switch input:checked{background:rgba(74,222,128,.42);border-color:var(--acc3)}
+.switch input::after{
+  content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;
+  background:var(--mute);transition:transform .18s ease,background .18s ease;pointer-events:none;
+}
+.switch input:checked::after{transform:translateX(15px);background:var(--acc3)}
+/* compact variant: seventeen of these on the module overview at once */
+.switch.sm{width:28px;height:16px}
+.switch.sm input::after{width:11px;height:11px;left:2px;top:2px}
+.switch.sm input:checked::after{transform:translateX(11px)}
+
+/* a label + control row */
+.field{
+  display:grid;grid-template-columns:minmax(160px,32%) minmax(0,1fr);align-items:center;
+  gap:8px 14px;padding:7px 0;
+}
+.field > label,.field > .lbl{
+  font-size:12.5px;color:var(--mute);font-weight:600;line-height:1.35;
+}
+.field > label .req{color:var(--acc);margin-left:3px}
+.field .sub{grid-column:2;font-size:11.5px;color:var(--dim);margin-top:-2px;line-height:1.45}
+.field.stack{grid-template-columns:minmax(0,1fr)}
+.field.stack .sub{grid-column:1}
+.field.inline{display:flex;align-items:center;gap:10px}
+.field.tight{padding:3px 0}
+.fieldset{border:1px solid var(--line);border-radius:var(--r);padding:10px 13px;margin:0 0 12px}
+.fieldset > legend{
+  padding:0 6px;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--mute);font-weight:650;
+}
+
+/* a horizontal control bar above a table/list */
+.toolbar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:8px 0 12px;
+}
+.toolbar.boxed{padding:8px 11px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--r);margin-bottom:12px}
+.searchbox{position:relative;flex:0 1 260px;min-width:150px}
+.searchbox input{padding-left:27px}
+.searchbox::before{
+  content:"⌕";position:absolute;left:9px;top:50%;transform:translateY(-50%);
+  color:var(--dim);font-size:14px;pointer-events:none;
+}
+
+/* --------------------------------------------------------------------- kv */
+.kv{margin:0;padding:0;list-style:none}
+.kv li,.kv .row{
+  display:flex;gap:14px;justify-content:space-between;align-items:baseline;
+  padding:6px 0;border-bottom:1px solid var(--line);font-size:12.8px;
+}
+.kv li:last-child,.kv .row:last-child{border-bottom:none}
+.kv .k{color:var(--mute);flex:0 1 auto;min-width:0}
+.kv .v{
+  font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);
+  text-align:right;flex:0 1 auto;min-width:0;overflow-wrap:anywhere;
+}
+.kv.cols{columns:2;column-gap:26px}
+.kv.cols li{break-inside:avoid}
+
+/* ------------------------------------------------------------ badge / pill */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:1.5px 7px;border-radius:var(--r-xs);
+  font:650 10px/1.6 var(--sans);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;
+  color:var(--mute);border:1px solid var(--line);background:transparent;
+}
+.badge.ok  {color:var(--acc3);border-color:rgba(74,222,128,.5)}
+.badge.info{color:var(--acc2);border-color:rgba(56,189,248,.5)}
+.badge.warn{color:var(--warn);border-color:rgba(251,191,36,.5)}
+.badge.bad {color:var(--bad); border-color:rgba(248,113,113,.5)}
+.badge.vio {color:var(--vio); border-color:rgba(192,132,252,.5)}
+.badge.acc {color:var(--acc); border-color:rgba(251,146,60,.5)}
+.badge.solid{border-color:transparent;color:var(--void);background:var(--mute)}
+.badge.solid.ok{background:var(--acc3)}
+.badge.solid.info{background:var(--acc2)}
+.badge.solid.warn{background:var(--warn)}
+.badge.solid.bad{background:var(--bad)}
+.badge.dotd::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+
+.pill{
+  display:inline-block;padding:1px 8px;border-radius:11px;
+  font:650 11px/1.65 var(--sans);letter-spacing:.02em;white-space:nowrap;
+}
+.pill.m{background:rgba(74,222,128,.16);color:var(--acc3)}   /* measured / done   */
+.pill.s{background:rgba(56,189,248,.16);color:var(--acc2)}   /* stage  / running  */
+.pill.d{background:rgba(192,132,252,.16);color:var(--vio)}   /* derived           */
+.pill.x{background:rgba(156,163,175,.16);color:var(--mute)}  /* neutral / skipped */
+.pill.w{background:rgba(251,191,36,.16);color:var(--warn)}
+.pill.e{background:rgba(248,113,113,.16);color:var(--bad)}
+.pill.a{background:rgba(251,146,60,.16);color:var(--acc)}
+
+/* the "why it ran serially" flag from timing.py */
+.serialflag{
+  display:inline-block;margin-left:6px;padding:1px 6px;border-radius:var(--r-xs);font-size:10px;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--warn);border:1px solid var(--warn);cursor:help;
+}
+
+/* chips (filters, selected classes, breadcrumbs) */
+.chip{
+  display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:13px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--mute);
+  font-size:11.5px;cursor:pointer;transition:background .14s ease,color .14s ease,border-color .14s ease;
+}
+.chip:hover{background:#2a2c32;color:var(--ink)}
+.chip.on{background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.45);color:var(--acc2)}
+.chip .x{color:var(--dim);font-family:var(--mono);line-height:1}
+.chip .x:hover{color:var(--bad)}
+.crumbs{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:12.5px;font-family:var(--mono)}
+.crumbs .sep{color:var(--dim)}
+.crumbs a{cursor:pointer}
+.crumbs .cur{color:var(--mute)}
+
+
+/* ==========================================================================
+   PROGRESS BARS
+   .bar is the whole track; the child .fill is the filled part. Add .running
+   for the animated stripe (a run in flight), .indeterminate when we know work
+   is happening but not how much.
+   ========================================================================== */
+.bar{
+  position:relative;height:8px;border-radius:5px;background:var(--panel2);
+  overflow:hidden;width:100%;
+}
+.bar > .fill{
+  position:relative;display:block;height:100%;width:0;border-radius:5px;
+  background:linear-gradient(90deg,var(--acc3),var(--acc2));
+  transition:width .35s cubic-bezier(.4,0,.2,1);
+  overflow:hidden;
+}
+.bar.sm{height:5px}
+.bar.lg{height:12px;border-radius:6px}
+.bar.xl{height:18px;border-radius:7px}
+.bar.acc  > .fill{background:linear-gradient(90deg,var(--acc),#fdba74)}
+.bar.acc2 > .fill{background:linear-gradient(90deg,#0ea5e9,var(--acc2))}
+.bar.ok   > .fill{background:linear-gradient(90deg,#22c55e,var(--acc3))}
+.bar.warn > .fill{background:linear-gradient(90deg,#d97706,var(--warn))}
+.bar.bad  > .fill{background:linear-gradient(90deg,#dc2626,var(--bad))}
+.bar.vio  > .fill{background:linear-gradient(90deg,#a855f7,var(--vio))}
+.bar.done > .fill{background:var(--acc3)}
+.bar.idle > .fill{background:var(--dim)}
+
+/* the moving stripe: only while something is actually running */
+.bar.running > .fill::after{
+  content:"";position:absolute;inset:0;
+  background-image:linear-gradient(115deg,
+    rgba(255,255,255,.17) 25%,transparent 25%,transparent 50%,
+    rgba(255,255,255,.17) 50%,rgba(255,255,255,.17) 75%,transparent 75%);
+  background-size:22px 22px;
+  animation:lm3-stripe .85s linear infinite;
+}
+/* work in flight, total unknown: a shuttle sweeps the track */
+.bar.indeterminate > .fill{width:34% !important;border-radius:5px;animation:lm3-shuttle 1.5s ease-in-out infinite}
+
+/* a value label riding on top of a tall bar */
+.bar.xl > .lbl,.bar.lg > .lbl{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font:650 10.5px/1 var(--mono);letter-spacing:.04em;color:var(--ink);
+  text-shadow:0 1px 2px rgba(0,0,0,.65);pointer-events:none;
+}
+/* the timing.py in-cell micro bar */
+.mini{height:5px;border-radius:3px;background:var(--panel2);margin-top:5px;overflow:hidden}
+.mini span{display:block;height:100%;border-radius:3px;background:var(--acc2)}
+
+/* labelled bar row: name | bar | figure */
+.barrow{display:grid;grid-template-columns:minmax(90px,auto) minmax(0,1fr) minmax(64px,auto);
+  align-items:center;gap:10px;padding:4px 0}
+.barrow .n{font-size:12px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.barrow .f{font:12px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+
+
+/* ==========================================================================
+   STATUS TAB — split, workers, console
+   ========================================================================== */
+/* 50/50 vertical split: live view on top, console below. --split-top lets a
+   drag handle rewrite the ratio without touching the rest of the rule. */
+.split{
+  display:grid;
+  grid-template-rows:minmax(120px,var(--split-top,1fr)) 7px minmax(120px,var(--split-bot,1fr));
+  height:100%;min-height:0;
+}
+.split > .split-pane{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.split > .split-pane > .pane-scroll{flex:1 1 auto;min-height:0;overflow:auto;padding:var(--gutter)}
+.split-gutter{
+  background:var(--line);cursor:row-resize;position:relative;
+  transition:background .14s ease;
+}
+.split-gutter:hover,.split-gutter.dragging{background:var(--acc2)}
+.split-gutter::after{
+  content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:38px;height:3px;border-radius:2px;background:#3f434b;
+}
+.split-gutter:hover::after,.split-gutter.dragging::after{background:var(--void)}
+.split.horizontal{
+  grid-template-rows:none;
+  grid-template-columns:minmax(160px,var(--split-top,1fr)) 7px minmax(160px,var(--split-bot,1fr));
+}
+.split.horizontal > .split-gutter{cursor:col-resize}
+.split.horizontal > .split-gutter::after{width:3px;height:38px}
+
+/* ------------------------------------------------------- per-worker tiles */
+.workers{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:10px}
+.worker{
+  background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--dim);
+  border-radius:var(--r);padding:10px 12px;
+  transition:border-color .2s ease,box-shadow .2s ease,opacity .2s ease;
+  opacity:.72;
+}
+.worker.busy{opacity:1;border-left-color:var(--acc2);box-shadow:0 0 0 1px rgba(56,189,248,.18) inset}
+.worker.gpu.busy{border-left-color:var(--acc2)}
+.worker.cpu.busy{border-left-color:var(--acc3)}
+.worker.error{opacity:1;border-left-color:var(--bad);box-shadow:0 0 0 1px rgba(248,113,113,.25) inset}
+.worker.done{opacity:.85;border-left-color:var(--acc3)}
+.worker-hd{display:flex;align-items:center;gap:8px;margin-bottom:7px;min-width:0}
+.worker-hd .wid{
+  font:650 11.5px/1 var(--mono);letter-spacing:.03em;color:var(--ink);
+  padding:2px 6px;border-radius:var(--r-xs);background:var(--panel2);
+}
+.worker-hd .wmod{
+  font:650 12px/1.3 var(--sans);color:var(--acc2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
+}
+.worker-hd .wdev{margin-left:auto}
+.worker .wtarget{
+  font:11.5px/1.35 var(--mono);color:var(--dim);margin:0 0 7px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;
+}
+.worker-ft{
+  display:flex;justify-content:space-between;gap:10px;margin-top:6px;
+  font:11px/1.3 var(--mono);color:var(--dim);font-variant-numeric:tabular-nums;
+}
+.worker-ft .pct{color:var(--ink);font-weight:650}
+.worker.idle .wmod{color:var(--dim)}
+
+/* the currently-running module, big, above the workers */
+.nowcard{
+  background:linear-gradient(135deg,#1b1d22,#17181c);
+  border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin:0 0 14px;
+  position:relative;overflow:hidden;
+}
+.nowcard::before{
+  content:"";position:absolute;left:0;right:0;top:0;height:2px;
+  background:linear-gradient(90deg,var(--acc3),var(--acc2),var(--vio));
+  opacity:.85;
+}
+.nowcard .modname{font-size:1.28rem;font-weight:650;letter-spacing:-.02em;margin:0 0 2px}
+.nowcard .modsub{font-size:12.5px;color:var(--dim);margin:0 0 12px}
+.nowcard .modrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+
+/* ----------------------------------------------------------------- console */
+.console{
+  flex:1 1 auto;min-height:0;overflow:auto;overflow-wrap:anywhere;
+  background:var(--void);border-top:1px solid var(--line);
+  font:12px/1.5 var(--mono);
+  padding:8px 0 14px;
+  scroll-behavior:auto;                 /* log tailing must snap, not glide */
+}
+.console.boxed{border:1px solid var(--line);border-radius:var(--r)}
+.console .line{
+  /* 150px fits the longest real logger name ("leafmachine3.landmark") without
+     ellipsis; anything longer truncates rather than squeezing the message */
+  display:grid;grid-template-columns:66px 150px minmax(0,1fr);gap:10px;
+  padding:1px 12px;white-space:pre-wrap;
+  border-left:2px solid transparent;
+}
+.console .line:hover{background:#141518}
+.console .line > .t{color:#4e535c;font-variant-numeric:tabular-nums}
+.console .line > .src{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.console .line > .msg{color:var(--ink);min-width:0}
+.console .line.DEBUG    > .msg{color:var(--dim)}
+.console .line.INFO     > .msg{color:var(--ink)}
+.console .line.WARNING  > .msg{color:var(--warn)}
+.console .line.WARNING  {border-left-color:rgba(251,191,36,.55)}
+.console .line.ERROR    > .msg{color:var(--bad)}
+.console .line.ERROR    {border-left-color:var(--bad);background:rgba(248,113,113,.05)}
+.console .line.CRITICAL > .msg{color:#fff}
+.console .line.CRITICAL {border-left-color:var(--bad);background:rgba(248,113,113,.14)}
+.console .line.SUCCESS  > .msg{color:var(--acc3)}
+.console .line.trace    > .msg{color:#8b6b6b}
+.console .line.mark     {border-left-color:var(--acc2);background:rgba(56,189,248,.06)}
+.console .line mark{background:rgba(251,191,36,.28);color:var(--ink);border-radius:2px;padding:0 1px}
+/* narrow window: drop the source column rather than squeezing the message */
+@media (max-width:780px){
+  .console .line{grid-template-columns:60px minmax(0,1fr)}
+  .console .line > .src{display:none}
+}
+.console-hd{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:7px 12px;background:var(--panel2);border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute);font-weight:650;
+}
+.console-hd .tools{margin-left:auto;display:flex;gap:6px;align-items:center;
+  text-transform:none;letter-spacing:0}
+.console-empty{padding:22px 14px;color:var(--dim);font-size:12.5px;text-align:center}
+
+
+/* ==========================================================================
+   SETTINGS TAB — nested disclosure tree + the important-row highlight
+   ========================================================================== */
+/* settings are themselves organized as tabs (a second, quieter tab row) */
+.subtabs{
+  display:flex;gap:4px;flex-wrap:wrap;
+  padding:0 0 12px;border-bottom:1px solid var(--line);margin-bottom:14px;
+}
+.subtab{
+  appearance:none;background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:5px 13px;cursor:pointer;color:var(--mute);
+  font:650 11.5px/1.25 var(--sans);letter-spacing:.03em;
+  transition:background .14s ease,color .14s ease,border-color .14s ease;
+}
+.subtab:hover{background:var(--panel2);color:var(--ink)}
+.subtab.active{background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.5);color:var(--acc2)}
+
+/* YAML nesting -> <details class="collapse"> */
+.collapse{
+  border:1px solid var(--line);border-radius:var(--r);background:var(--panel);
+  margin:0 0 9px;overflow:hidden;
+}
+.collapse > summary{
+  display:flex;align-items:center;gap:9px;
+  padding:9px 12px;cursor:pointer;list-style:none;user-select:none;
+  background:var(--panel2);
+  font:650 12px/1.25 var(--sans);letter-spacing:.04em;color:var(--ink);
+  transition:background .14s ease;
+}
+.collapse > summary::-webkit-details-marker{display:none}
+.collapse > summary:hover{background:#26282e}
+.collapse > summary::before{
+  content:"";flex:0 0 auto;width:0;height:0;
+  border-left:5px solid var(--dim);border-top:4px solid transparent;border-bottom:4px solid transparent;
+  transition:transform .18s ease;
+}
+.collapse[open] > summary::before{transform:rotate(90deg) translateX(1px)}
+.collapse[open] > summary{border-bottom:1px solid var(--line)}
+.collapse > summary .key{font-family:var(--mono);font-size:12.5px}
+.collapse > summary .n{
+  margin-left:auto;font:11px/1 var(--mono);color:var(--dim);
+  padding:2px 7px;border-radius:9px;background:rgba(255,255,255,.04);
+}
+.collapse > summary .impn{
+  font:650 10px/1 var(--sans);letter-spacing:.05em;text-transform:uppercase;
+  color:var(--acc3);padding:2px 6px;border-radius:var(--r-xs);
+  background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.32);
+}
+.collapse > .body{padding:0}
+/* nested groups sit inside the parent body, indented by a hairline rail */
+.collapse .collapse{
+  margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;
+}
+.collapse .collapse:last-child{border-bottom:none}
+.collapse .collapse > summary{background:transparent;font-size:11.5px;color:var(--mute)}
+.collapse .collapse[open] > summary{color:var(--ink)}
+.collapse.dirty > summary{box-shadow:inset 3px 0 0 var(--acc)}
+
+/* one leaf setting */
+.treerow{
+  /* the label column is capped at 380px: on a wide display an uncapped 34%
+     strands the control half a screen away from the key it belongs to */
+  display:grid;grid-template-columns:minmax(190px,min(34%,380px)) minmax(0,1fr);
+  align-items:center;gap:6px 16px;
+  padding:7px 12px 7px calc(12px + (var(--depth,0) * 14px));
+  border-bottom:1px solid var(--line);
+  transition:background .14s ease;
+}
+.treerow:last-child{border-bottom:none}
+.treerow:hover{background:var(--hover)}
+.treerow > .lbl{display:flex;align-items:center;gap:7px;min-width:0}
+.treerow > .lbl .key{
+  font:12.5px/1.35 var(--mono);color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;
+}
+.treerow > .ctl{display:flex;align-items:center;gap:8px;min-width:0}
+.treerow > .ctl > input,.treerow > .ctl > select,.treerow > .ctl > textarea{flex:1 1 auto;min-width:0}
+/* intrinsically-sized controls must opt OUT of the grow above, or a color
+   swatch / checkbox stretches across the whole control column */
+.treerow > .ctl > input[type=checkbox],
+.treerow > .ctl > input[type=color],
+.treerow > .ctl > input[type=radio],
+.treerow > .ctl > .switch,
+.treerow > .ctl > .check{flex:0 0 auto}
+.treerow > .ctl > input[type=number]{max-width:150px;flex:0 1 150px}
+.treerow > .ctl > input[type=range]{flex:1 1 auto;max-width:280px}
+.treerow > .desc{
+  grid-column:2;font-size:11.5px;color:var(--dim);line-height:1.45;margin-top:-1px;
+}
+.treerow .unit{font:11.5px/1 var(--mono);color:var(--dim);flex:0 0 auto}
+.treerow .reset{
+  flex:0 0 auto;opacity:0;transition:opacity .14s ease;
+  font:11px/1 var(--mono);color:var(--dim);background:none;border:none;cursor:pointer;padding:3px 5px;
+}
+.treerow:hover .reset,.treerow.changed .reset{opacity:1}
+.treerow .reset:hover{color:var(--acc)}
+.treerow.changed{box-shadow:inset 2px 0 0 var(--acc)}
+.treerow.changed > .lbl .key{color:var(--acc)}
+.treerow.invalid > .ctl input,.treerow.invalid > .ctl select{border-color:var(--bad)}
+.treerow .err{grid-column:2;color:var(--bad);font-size:11.5px}
+
+/* THE important-setting highlight: the settings a user actually adjusts.
+   WHY box-shadow and not border-left -- a real border would shift the row's
+   text 3px out of alignment with its non-important siblings and break the
+   --depth indent math. Tint is a left-weighted wash so long rows stay legible. */
+.treerow.row-important{
+  background:linear-gradient(90deg,
+    rgba(74,222,128,.115) 0%, rgba(74,222,128,.05) 46%, rgba(74,222,128,.014) 100%);
+  box-shadow:inset 3px 0 0 var(--acc3);
+}
+.treerow.row-important:hover{
+  background:linear-gradient(90deg,
+    rgba(74,222,128,.17) 0%, rgba(74,222,128,.08) 46%, rgba(74,222,128,.03) 100%);
+}
+.treerow.row-important > .lbl .key{color:#d8f7e3;font-weight:600}
+.treerow.row-important > .desc{color:var(--mute)}
+.treerow.row-important.changed{box-shadow:inset 3px 0 0 var(--acc3), inset 6px 0 0 -3px var(--acc)}
+/* the small marker that explains the green */
+.impdot{
+  flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:var(--acc3);
+  box-shadow:0 0 6px rgba(74,222,128,.55);
+}
+.implegend{
+  display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--mute);
+  padding:4px 10px;border-radius:13px;background:rgba(74,222,128,.08);
+  border:1px solid rgba(74,222,128,.28);
+}
+
+/* ==========================================================================
+   MASTER-DETAIL RAIL  (Settings + Postprocessing forms)
+   --------------------------------------------------------------------------
+   The accordion made one setting cost a full-width row plus a description
+   line -- ~63px each, so ~8 of 290 fit on screen and the whole file was ~43
+   screens. Here the RAIL carries the navigation (section -> group) and the
+   pane shows one group at a time in columns, which is what lets a row shrink
+   to 28px: a control only ever needs the width its own type needs.
+
+   Everything is scoped under .railwrap / .rail-pane so the treerow used
+   elsewhere is untouched, and every control builder stays as it was.
+   ========================================================================== */
+.railwrap{
+  /* 240px, not 206: the rail now carries a run-order badge plus a full module
+     name, and "Landmark Measurements" must not ellipsize into the count. */
+  display:grid;grid-template-columns:var(--rail-w,240px) minmax(0,1fr);
+  flex:1 1 auto;min-height:0;align-items:stretch;
+}
+.rail{
+  background:var(--panel3);border-right:1px solid var(--line);
+  overflow:auto;padding:8px 0 10px;display:flex;flex-direction:column;gap:1px;min-height:0;
+}
+.rail .subtabs{display:flex;flex-direction:column;gap:1px;border:0;padding:0;margin:0;overflow:visible}
+.rail .subtab{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  padding:6px 12px;font:12.5px/1.3 var(--sans);color:var(--mute);
+  background:transparent;border:0;border-left:2px solid transparent;border-radius:0;cursor:pointer;
+}
+.rail .subtab:hover{background:var(--hover);color:var(--ink)}
+.rail .subtab.active{background:var(--panel2);color:var(--ink);font-weight:650}
+.rail .subtab .n{margin-left:auto;font:10.5px var(--mono);color:var(--dim)}
+.rail-grp{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  padding:5px 12px 5px 24px;font:12px/1.3 var(--sans);color:var(--mute);
+  background:transparent;border:0;border-left:2px solid transparent;border-radius:0;cursor:pointer;
+}
+.rail-grp:hover{background:var(--hover);color:var(--ink)}
+.rail-grp.on{background:rgba(56,189,248,.1);color:var(--acc2);border-left-color:var(--acc2);font-weight:650}
+.rail-grp .n{margin-left:auto;font:10.5px var(--mono);color:var(--dim)}
+.rail-grp.on .n{color:var(--acc2)}
+.rail-grp .impn,.rail .subtab .impn{
+  font:9.5px/1 var(--mono);color:var(--acc3);border:1px solid rgba(74,222,128,.32);
+  border-radius:9px;padding:2px 5px;flex:0 0 auto;
+}
+
+/* --- the rail as a mirror of the pipeline ------------------------------ */
+/* Phase headings (Setup / Sheet / Scale / Leaf / Output). Not clickable: they
+   name a run stage, they are not a destination. */
+.rail-phase{
+  padding:12px 12px 4px;font:700 9.5px/1 var(--sans);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:7px;
+}
+.rail-phase::after{content:"";flex:1 1 auto;height:1px;background:var(--line)}
+.rail .subtabs > .rail-phase:first-child{padding-top:4px}
+/* The run-order badge. ECT reads under Leaf but is stage 17, and this is what
+   keeps that fact on screen. Tabular figures so 1 and 17 align in a column. */
+.rail .subtab .stg,.modcard .stg,.rail-hd .stg{
+  flex:0 0 auto;min-width:16px;text-align:center;
+  font:10.5px/1 var(--mono);font-variant-numeric:tabular-nums;
+  color:var(--dim);background:rgba(255,255,255,.05);
+  border-radius:var(--r-xs);padding:3px 4px;
+}
+.rail .subtab.active .stg{color:var(--acc2);background:rgba(56,189,248,.14)}
+.rail .subtab .stg.dot,.modcard .stg.dot{background:transparent;color:var(--line)}
+.rail .subtab .lb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* A module switched off is dimmed, never hidden: it still has settings, and a
+   rail that reshuffles when you flip a switch is worse than a dim row. */
+.rail .subtab.off .lb{color:var(--dim);text-decoration:line-through;text-decoration-color:var(--line)}
+.rail .subtab.off .stg{opacity:.5}
+.rail .subtab.rail-all{
+  margin-bottom:2px;border-bottom:1px solid var(--line);padding-bottom:8px;border-left-color:transparent;
+}
+.rail .subtab .stg.all{color:var(--acc2);background:transparent}
+.rail-ft .dim{color:var(--dim)}
+
+/* --- the module overview grid ------------------------------------------ */
+.modgrid-host{padding:0 0 8px}
+.modgrid-hd{display:flex;align-items:baseline;gap:9px;margin:14px 0 8px}
+.modgrid-hd:first-child{margin-top:0}
+.modgrid-hd .t{
+  font:700 10px/1 var(--sans);letter-spacing:.11em;text-transform:uppercase;color:var(--mute);
+}
+.modgrid-hd .p{font-size:11.5px;color:var(--dim)}
+.modgrid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;
+}
+.modcard{
+  border:1px solid var(--line);border-radius:var(--r);background:var(--panel);
+  padding:9px 11px 8px;cursor:pointer;display:flex;flex-direction:column;gap:5px;
+  transition:border-color .14s ease,background .14s ease;
+}
+.modcard:hover{border-color:var(--acc2);background:var(--panel2)}
+.modcard:focus-visible{outline:2px solid var(--acc2);outline-offset:-2px}
+.modcard.off{opacity:.55}
+.modcard.off .mc-t{text-decoration:line-through;text-decoration-color:var(--line)}
+.mc-hd{display:flex;align-items:center;gap:8px;min-width:0}
+.mc-t{font:650 12.5px/1.3 var(--sans);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-sw{margin-left:auto;flex:0 0 auto;display:flex;align-items:center}
+.mc-b{font-size:11.5px;line-height:1.45;color:var(--dim);min-height:32px}
+.mc-f{display:flex;align-items:center;gap:8px;font:11px var(--mono);color:var(--dim)}
+.mc-dirty{color:var(--acc)}
+/* `.impn` is only styled under .collapse > summary and inside .rail, neither of
+   which reaches a card, so the badge rendered as bare text. */
+.mc-f .impn{
+  font:9.5px/1 var(--mono);color:var(--acc3);border:1px solid rgba(74,222,128,.32);
+  border-radius:9px;padding:2px 5px;flex:0 0 auto;
+}
+
+/* --- the module switch in the pane header ------------------------------ */
+.modsw-wrap{display:inline-flex;align-items:center;gap:6px;margin-left:2px}
+.modsw-t{font:11px/1 var(--mono);color:var(--acc3)}
+.modsw-t.off{color:var(--dim)}
+.rail-hd .stg.hd{font-size:11px;padding:3px 6px}
+.rail-hd-sub{flex-basis:100%;font-size:11.5px;color:var(--dim);margin:-4px 0 0}
+/* The section blurb is already in the rail tooltip and the overview card; in the
+   pane it only pushes the first setting down. */
+.rail-pane .secblurb{display:none}
+.rail-dot{width:5px;height:5px;border-radius:50%;background:var(--acc);flex:0 0 auto;
+  visibility:hidden}          /* reserved, so landing an edit never reflows the rail */
+.has-dirty > .rail-dot{visibility:visible}
+.rail-ft{
+  margin-top:auto;padding:9px 12px 0;border-top:1px solid var(--line);
+  font:11px var(--mono);color:var(--dim);display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}
+.rail-empty{padding:8px 12px;font:11px var(--mono);color:var(--dim)}
+/* Postprocessing: the rail lives inside a panel, so it needs its own frame and a
+   height that does not collapse when a group holds three inputs. */
+.panel-bd > .railwrap{
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden;min-height:300px;
+  margin:0 0 12px;
+}
+.panel-bd > .railwrap .rail{max-height:none}
+/* Settings owns .desc visibility in JS; scope the postprocess rule so the two
+   toggles cannot fight over the same element. */
+.railwrap.pp .treerow > .desc{display:none}
+.railwrap.pp.showhelp .treerow > .desc{display:block}
+/* postprocess colorField is a wrapping flex span (swatch + hex + a transparent
+   toggle); in a column it wraps onto three lines, so keep it on one and let the
+   text box shrink instead. */
+.railwrap.pp .treerow.t-color > .ctl > span{flex-wrap:nowrap}
+.railwrap.pp .treerow.t-color input[type=text]{flex:0 1 118px;min-width:74px}
+.railwrap.pp .treerow.t-color .check .lbl{white-space:nowrap}
+/* Run is the point of the tab; it must not scroll away below the form.
+   Two things had to be true for that and neither was:
+   - `.panel{overflow:hidden}` is a scroll container, so `position:sticky` here
+     resolved against a box that never scrolls. `overflow:clip` clips to the same
+     rounded border box WITHOUT creating a scrollport, so sticky falls through to
+     .tabbody, which is the thing that actually scrolls. Scoped to this tab so
+     every other panel keeps the behavior it was written against.
+   - the negative BOTTOM margin pulled the "Command line equivalent" block up
+     into the bar; only the horizontal bleed was wanted. */
+.postprocesstab .panel{overflow:clip}
+.toolbar.runbar{
+  position:sticky;bottom:0;z-index:4;margin:0 -13px;padding:11px 13px;
+  background:var(--panel);border-top:1px solid var(--line);
+}
+
+/* the detail side */
+.rail-pane{min-width:0;padding:12px 14px 18px}
+.rail-hd{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;flex-wrap:wrap}
+.rail-hd .t{font-size:14.5px;font-weight:650;letter-spacing:-.01em;color:var(--ink)}
+.rail-hd .p{font:11px var(--mono);color:var(--dim)}
+.rail-hd .n{margin-left:auto;font:11px var(--mono);color:var(--dim)}
+.grp-off{display:none !important}
+
+/* --- dense rows: only inside a rail pane ------------------------------- */
+.rail-pane [data-grp].collapse{border:0;background:transparent;margin:0}
+.rail-pane [data-grp].collapse > .body{padding:0}
+/* EVERY group heading in a rail pane is a rule, not a box -- including the
+   top-level ones, which used to be unconditionally hidden. They have to be
+   visible now: fifteen of the seventeen modules have no rail sub-navigation, so
+   these headings are the only thing naming "Model" and "Dedup" inside them. */
+.rail-pane .collapse .collapse,
+.rail-pane [data-grp].collapse{margin:10px 0 0}
+.rail-pane [data-grp].collapse:first-of-type{margin-top:0}
+.rail-pane .collapse .collapse{border:0;background:transparent}
+.rail-pane .collapse > summary{
+  background:transparent;padding:7px 0 3px;border:0;min-height:0;
+  font:700 10px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+  /* A heading, not a control: nothing in a rail pane collapses (see applyFilter),
+     so a disclosure triangle would promise something that does not happen. */
+  cursor:default;pointer-events:none;
+}
+.rail-pane .collapse > summary::before{display:none}
+.rail-pane .collapse[open] > summary{border-bottom:0}
+.rail-pane .collapse > summary .key{font-family:var(--sans);font-size:10px;letter-spacing:.09em}
+.rail-pane .collapse > summary .n,
+.rail-pane .collapse > summary .impn{font-size:9.5px}
+.rail-pane .collapse > summary::after{content:"";flex:1 1 auto;height:1px;background:var(--line)}
+.rail-pane .collapse > .body{padding:0}
+/* ...unless the rail entry already says it. `hdr-off` is set in JS on the
+   selected group and on the pass-through chain of ancestors above it, so a
+   Reporter sub-section does not stack "REPORT / OVERLAY / CLASSES / PLANT"
+   above its rows. */
+.rail-pane .collapse.hdr-off > summary{display:none}
+
+/* the columns: a setting stops owning a whole screen row */
+.rail-pane .body{
+  /* min(--col-w, 100%) rather than a bare 390px: a fixed track minimum cannot
+     shrink below itself, so once the pane is narrower than one column the grid
+     overflowed into an overflow:hidden ancestor and the control column was
+     clipped with no scrollbar to reach it. The rail going 206->240px moved that
+     threshold up into window sizes people actually use. */
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(min(var(--col-w,390px),100%),1fr));
+  gap:0 22px;align-content:start;
+}
+/* A sub-group is a BAND, not a column: left as a plain grid item it would take
+   one 390px cell and its own rows would then have only that cell to flow into,
+   collapsing the whole pane back to a single column. */
+.rail-pane .body > details.collapse{grid-column:1 / -1}
+.rail-pane .treerow{
+  grid-template-columns:minmax(0,1fr) minmax(0,auto);
+  gap:0 10px;padding:3px 8px;min-height:28px;
+  border-bottom:1px solid rgba(42,43,48,.6);
+}
+.rail-pane .treerow > .lbl .key{font-size:12px}
+.rail-pane .treerow > .desc,
+.rail-pane .treerow > .err{grid-column:1 / -1;padding-bottom:3px}
+.rail-pane .treerow > .ctl{justify-content:flex-end;flex:0 0 auto;max-width:100%}
+.rail-pane .treerow > .ctl > input[type=text],
+.rail-pane .treerow > .ctl > select{flex:0 1 auto;max-width:200px}
+.rail-pane .treerow > .ctl > input[type=number]{max-width:96px;flex:0 0 96px}
+.rail-pane .treerow .unit{font-size:10.5px}
+/* a color row is swatch + hex + "255, 0, 70" + unit + reset, which wraps and doubles
+   the row height. The hex box says the same thing, so the readout goes. */
+.rail-pane .treerow.t-color > .ctl > .mono.dim{display:none}
+.rail-pane .treerow.t-color > .ctl > input[type=text]{max-width:84px;flex:0 0 84px}
+/* Controls that genuinely need the width take the whole container row rather
+   than being squeezed: a path with a Browse button, a chip list, a free string. */
+.rail-pane .treerow.t-path,
+.rail-pane .treerow.t-list,
+.rail-pane .treerow.t-string{grid-column:1 / -1}
+.rail-pane .treerow.t-path > .ctl,
+.rail-pane .treerow.t-list > .ctl,
+.rail-pane .treerow.t-string > .ctl{flex:1 1 auto}
+.rail-pane .treerow.t-path > .ctl > input[type=text],
+.rail-pane .treerow.t-string > .ctl > input[type=text]{max-width:none;flex:1 1 auto}
+/* a slider is useless at 60px, so in dense mode the number box carries it and
+   the range reappears only when the row spans (postprocess wide types) */
+.rail-pane .treerow:not(.t-path):not(.t-list):not(.t-string) > .ctl > input[type=range]{display:none}
+
+/* raw YAML view */
+.yamlview{
+  font:12px/1.6 var(--mono);background:var(--void);border:1px solid var(--line);
+  border-radius:var(--r);padding:12px 14px;overflow:auto;max-height:60vh;white-space:pre;
+  color:var(--mute);
+}
+.yamlview .k{color:var(--acc2)}
+.yamlview .s{color:var(--acc3)}
+.yamlview .n{color:var(--acc)}
+.yamlview .c{color:var(--dim);font-style:italic}
+
+
+/* ==========================================================================
+   TABLES  (report idiom + sticky header for the DB inspector)
+   ========================================================================== */
+.tblwrap{
+  overflow:auto;margin:0 0 14px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--panel);
+}
+.tblwrap.tall{max-height:min(62vh,640px)}
+table{border-collapse:collapse;width:100%;font-size:12.8px}
+thead th{
+  text-align:right;padding:9px 12px;color:var(--mute);font-weight:600;font-size:11.5px;
+  letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+thead th[title]{cursor:help;border-bottom-style:dotted}
+thead th:hover{color:var(--ink)}
+thead th:first-child,thead th.l{text-align:left}
+tbody td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--hover)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);white-space:nowrap}
+td.mono{font-family:var(--mono)}
+tr.sub td{padding:5px 12px;font-size:12px;background:var(--panel3)}
+
+/* the project-DB inspector: sticky head, zebra, horizontal scroll, min-width so
+   wide tables scroll INSIDE .tblwrap instead of stretching the app */
+table.datatable{min-width:max-content}
+table.datatable thead th{
+  position:sticky;top:0;z-index:3;background:var(--panel2);
+  box-shadow:inset 0 -1px 0 var(--line);border-bottom:none;
+}
+table.datatable thead th.sortable{cursor:pointer;user-select:none}
+table.datatable thead th.sortable:hover{background:#26282e}
+table.datatable thead th.sorted::after{content:" ▲";color:var(--acc2);font-size:9px}
+table.datatable thead th.sorted.desc::after{content:" ▼"}
+table.datatable tbody tr:nth-child(even) td{background:var(--panel3)}
+table.datatable tbody tr:hover td{background:var(--hover)}
+table.datatable tbody td{
+  font-family:var(--mono);font-size:12px;white-space:nowrap;
+  max-width:420px;overflow:hidden;text-overflow:ellipsis;
+}
+table.datatable tbody td.null{color:#4d525b;font-style:italic}
+table.datatable tbody td.wrap{white-space:normal;overflow-wrap:anywhere}
+table.datatable.dense tbody td{padding:4px 10px}
+/* freeze the first column (usually the id) while scrolling sideways */
+table.datatable.pin1 thead th:first-child{left:0;z-index:4}
+table.datatable.pin1 tbody td:first-child{position:sticky;left:0;z-index:2;background:var(--panel)}
+table.datatable.pin1 tbody tr:nth-child(even) td:first-child{background:var(--panel3)}
+table.datatable.pin1 tbody tr:hover td:first-child{background:var(--hover)}
+
+.tblfoot{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:8px 12px;border-top:1px solid var(--line);background:var(--panel2);
+  font-size:11.5px;color:var(--dim);font-family:var(--mono);
+}
+.tblfoot .pager{margin-left:auto;display:flex;gap:5px;align-items:center}
+
+/* table list in the DB inspector sidebar */
+.tablist{list-style:none;margin:0;padding:0}
+.tablist li{
+  display:flex;align-items:baseline;gap:8px;padding:6px 11px;cursor:pointer;
+  border-left:2px solid transparent;font-size:12.5px;
+  transition:background .12s ease;
+}
+.tablist li:hover{background:var(--hover)}
+.tablist li.active{background:rgba(56,189,248,.1);border-left-color:var(--acc2);color:var(--acc2)}
+.tablist li .nm{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tablist li .n{margin-left:auto;font:11px/1 var(--mono);color:var(--dim);font-variant-numeric:tabular-nums}
+
+
+/* ==========================================================================
+   RESULTS — media browser
+   ========================================================================== */
+.mediagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:11px}
+.mediagrid.lg{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+.mediagrid.sm{grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}
+.mediatile{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  overflow:hidden;cursor:pointer;
+  transition:border-color .16s ease,transform .1s ease,box-shadow .16s ease;
+}
+.mediatile:hover{border-color:#3f434b;transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.42)}
+.mediatile.sel{border-color:var(--acc2);box-shadow:0 0 0 1px var(--acc2)}
+.mediatile .thumb{
+  display:block;width:100%;aspect-ratio:4/3;object-fit:contain;
+  background:var(--void);
+}
+.mediatile .thumb.cover{object-fit:cover}
+.mediatile .cap{
+  padding:6px 9px;font:11.5px/1.35 var(--mono);color:var(--mute);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  border-top:1px solid var(--line);
+}
+.mediatile .cap .sz{color:var(--dim);font-size:10.5px}
+.mediatile.folder .thumb{
+  display:flex;align-items:center;justify-content:center;
+  font-size:2.1rem;color:var(--acc);background:var(--panel2);
+}
+
+/* full-size viewer */
+.backdrop{
+  position:fixed;inset:0;z-index:200;background:rgba(6,6,8,.86);
+  display:flex;align-items:center;justify-content:center;padding:26px;
+  animation:lm3-fadein .14s ease;
+}
+.lightbox{display:flex;flex-direction:column;max-width:100%;max-height:100%;gap:9px}
+.lightbox img{
+  max-width:100%;max-height:calc(100vh - 120px);object-fit:contain;
+  border-radius:var(--r);background:var(--void);border:1px solid var(--line);
+}
+.lightbox .cap{
+  font:12px/1.4 var(--mono);color:var(--mute);text-align:center;
+  display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;
+}
+.modal{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  max-width:min(680px,100%);max-height:100%;overflow:auto;
+  box-shadow:0 24px 60px rgba(0,0,0,.6);
+}
+.modal .panel-hd{position:sticky;top:0;z-index:2}
+
+
+/* ==========================================================================
+   POSTPROCESS — tool cards
+   ========================================================================== */
+.toolgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.tool{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px 16px;display:flex;flex-direction:column;gap:9px;
+  transition:border-color .16s ease;
+}
+.tool:hover{border-color:#3a3d45}
+.tool.running{border-color:var(--acc2);box-shadow:0 0 0 1px rgba(56,189,248,.2) inset}
+.tool .tname{font-size:14px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.tool .tname .ic{font-size:16px;line-height:1}
+.tool .tdesc{font-size:12.3px;color:var(--mute);line-height:1.55;flex:1 1 auto}
+.tool .tfoot{display:flex;align-items:center;gap:8px;margin-top:2px}
+.tool .tout{
+  font:11.5px/1.5 var(--mono);color:var(--dim);background:var(--void);
+  border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;
+  max-height:170px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+}
+
+
+/* ==========================================================================
+   PERF MONITOR — pinned bottom panel with live line plots
+   ========================================================================== */
+.perfpanel{
+  background:linear-gradient(180deg,#141518,#111214);
+  border-top:1px solid var(--line);
+  height:var(--perf-h);
+  display:flex;flex-direction:column;
+  transition:height .22s cubic-bezier(.4,0,.2,1);
+  z-index:20;
+}
+.perfpanel.collapsed{height:var(--perf-h-collapsed)}
+.perfpanel.collapsed .perfgrid{display:none}
+.perf-hd{
+  display:flex;align-items:center;gap:12px;flex-wrap:nowrap;
+  padding:0 var(--gutter);height:var(--perf-h-collapsed);flex:0 0 auto;
+  font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute);font-weight:650;
+  border-bottom:1px solid var(--line);
+}
+.perfpanel.collapsed .perf-hd{border-bottom:none}
+.perf-hd .tools{margin-left:auto;display:flex;gap:8px;align-items:center;
+  text-transform:none;letter-spacing:0}
+/* condensed readouts shown in the header when the panel is collapsed */
+.perf-hd .mini-readouts{display:none;gap:16px;align-items:center;text-transform:none;letter-spacing:0}
+.perfpanel.collapsed .perf-hd .mini-readouts{display:flex}
+.perf-hd .mini-readouts .r{display:flex;gap:6px;align-items:baseline;white-space:nowrap}
+.perf-hd .mini-readouts .r .k{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+.perf-hd .mini-readouts .r .v{font:650 12px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+
+.perfgrid{
+  flex:1 1 auto;min-height:0;
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;
+  background:var(--line);
+}
+@media (max-width:840px){.perfgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.perfcell{
+  background:#111214;padding:8px 12px 6px;
+  display:flex;flex-direction:column;min-width:0;min-height:0;
+}
+.perfcell .ch{display:flex;align-items:baseline;gap:8px;margin-bottom:4px;min-width:0}
+.perfcell .ch .k{
+  font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-weight:650;
+  white-space:nowrap;
+}
+.perfcell .ch .v{
+  font:650 16px/1 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+  color:var(--c,var(--acc2));
+}
+.perfcell .ch .sub{
+  margin-left:auto;font:11px/1 var(--mono);color:var(--dim);font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.perfcell.cpu {--c:var(--acc3)}
+.perfcell.ram {--c:var(--acc2)}
+.perfcell.gpu {--c:var(--acc)}
+.perfcell.vram{--c:var(--vio)}
+.perfcell.disk{--c:var(--warn)}
+.perfcell .plotwrap{flex:1 1 auto;min-height:0;position:relative}
+.perfcell canvas.plot{display:block;width:100%;height:100%}
+/* the faint zero/50/100 rules behind a plot */
+.plotwrap.ruled::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(to bottom,
+    var(--line) 0 1px,transparent 1px calc(50% - .5px),
+    var(--line) calc(50% - .5px) calc(50% + .5px),transparent calc(50% + .5px) calc(100% - 1px),
+    var(--line) calc(100% - 1px) 100%);
+  opacity:.55;
+}
+
+/* standalone plot cards (perf history on the status tab, etc.) */
+.plotcard{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0;
+}
+.plotcard .ch{display:flex;align-items:baseline;gap:8px}
+.plotcard .plotwrap{position:relative;height:96px}
+.plotcard canvas.plot{display:block;width:100%;height:100%}
+.plotlegend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--mute)}
+.plotlegend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px}
+
+/* inline sparkline (worker tiles, table cells) */
+.sparkline{
+  display:inline-block;vertical-align:middle;width:88px;height:20px;
+}
+.sparkline canvas{display:block;width:100%;height:100%}
+
+/* the timing.py legend, verbatim */
+.legend{display:flex;gap:18px;margin:10px 0 0;font-size:12.5px;color:var(--mute);flex-wrap:wrap}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+
+/* ==========================================================================
+   GPU TILES  (reused verbatim from timing.py so the app and the run report
+   render GPUs identically)
+   ========================================================================== */
+.gpuh{font-size:.86rem;color:var(--mute);letter-spacing:.09em;text-transform:uppercase;
+  margin:16px 0 8px;font-weight:650}
+.gpugrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:0 0 8px}
+.gputile{
+  background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--dim);
+  border-radius:var(--r);padding:12px 14px;opacity:.72;
+  transition:opacity .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+.gputile.used{border-left-color:var(--acc3);opacity:1;box-shadow:0 0 0 1px var(--acc3) inset}
+.gputile.hot{border-left-color:var(--acc);box-shadow:0 0 0 1px rgba(251,146,60,.55) inset}
+.gname{font-size:12.5px;color:var(--mute);margin-bottom:8px;line-height:1.35}
+.ubadge{
+  margin-left:8px;padding:1px 6px;border-radius:var(--r-xs);font-size:9.5px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--acc3);border:1px solid var(--acc3);white-space:nowrap;
+}
+.ubadge.idle{color:var(--dim);border-color:var(--line)}
+.gvram{font-size:1.16rem;font-variant-numeric:tabular-nums;color:var(--ink);font-family:var(--mono)}
+.gvram b{color:var(--acc3);font-weight:650}
+.gbar{height:6px;border-radius:4px;background:var(--panel2);margin-top:9px;overflow:hidden}
+.gbar span{display:block;height:100%;background:linear-gradient(90deg,var(--acc3),var(--acc2));
+  border-radius:4px;transition:width .35s ease}
+
+
+/* ==========================================================================
+   STATE / FEEDBACK
+   ========================================================================== */
+.empty{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;
+  padding:52px 20px;text-align:center;color:var(--dim);
+}
+.empty .ic{font-size:2rem;opacity:.5;line-height:1}
+.empty .t{font-size:14px;color:var(--mute);font-weight:600}
+.empty .s{font-size:12.5px;max-width:52ch;line-height:1.6}
+
+.spinner{
+  display:inline-block;width:13px;height:13px;flex:0 0 auto;
+  border:2px solid var(--line);border-top-color:var(--acc2);border-radius:50%;
+  animation:lm3-spin .7s linear infinite;
+}
+.spinner.lg{width:22px;height:22px;border-width:3px}
+
+.skeleton{
+  background:linear-gradient(90deg,var(--panel2) 25%,#26282e 37%,var(--panel2) 63%);
+  background-size:400% 100%;border-radius:var(--r-sm);
+  animation:lm3-shimmer 1.4s ease-in-out infinite;
+  color:transparent;
+}
+
+/* toasts (bottom-right, above the perf panel) */
+.toasts{
+  position:fixed;right:16px;bottom:calc(var(--perf-h) + 16px);z-index:300;
+  display:flex;flex-direction:column;gap:8px;max-width:min(420px,80vw);pointer-events:none;
+  transition:bottom .22s cubic-bezier(.4,0,.2,1);
+}
+/* the toast stack is fixed-positioned, so it cannot inherit the panel's height
+   -- :has() lets it follow the collapse instead of floating over empty space */
+body:has(.perfpanel.collapsed) .toasts{bottom:calc(var(--perf-h-collapsed) + 16px)}
+.toast{
+  pointer-events:auto;
+  background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--acc2);
+  border-radius:var(--r);padding:10px 14px;font-size:12.8px;color:var(--mute);line-height:1.5;
+  box-shadow:0 10px 30px rgba(0,0,0,.5);
+  animation:lm3-slidein .2s ease;
+}
+.toast .t{color:var(--ink);font-weight:650;display:block;margin-bottom:2px}
+.toast.ok  {border-left-color:var(--acc3)}
+.toast.warn{border-left-color:var(--warn)}
+.toast.bad {border-left-color:var(--bad)}
+.toast.leaving{animation:lm3-slideout .18s ease forwards}
+
+/* connection state dot in the top bar */
+.conn{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);
+  letter-spacing:.05em;text-transform:uppercase}
+.conn::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--dim)}
+.conn.up::before{background:var(--acc3);box-shadow:0 0 6px rgba(74,222,128,.6)}
+.conn.down::before{background:var(--bad);animation:lm3-pulse 1.1s ease-in-out infinite}
+.conn.wait::before{background:var(--warn)}
+
+
+/* ==========================================================================
+   ANIMATION
+   ========================================================================== */
+@keyframes lm3-stripe   {from{background-position:0 0}   to{background-position:22px 0}}
+@keyframes lm3-spin     {to{transform:rotate(360deg)}}
+@keyframes lm3-pulse    {0%,100%{opacity:1}50%{opacity:.28}}
+@keyframes lm3-fadein   {from{opacity:0}to{opacity:1}}
+@keyframes lm3-shimmer  {0%{background-position:100% 50%}100%{background-position:0 50%}}
+@keyframes lm3-slidein  {from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes lm3-slideout {to{opacity:0;transform:translateY(6px)}}
+@keyframes lm3-shuttle  {0%{transform:translateX(-40%)}100%{transform:translateX(300%)}}
+
+/* Respect the OS setting: kill the decorative motion, keep the information.
+   Bars still move to their new width (that IS the data) but do it instantly,
+   and the running stripe/shuttle/pulse stop entirely. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+    scroll-behavior:auto !important;
+  }
+  .bar.running > .fill::after{display:none}
+  .bar.indeterminate > .fill{width:100% !important;opacity:.5}
+  .spinner{border-top-color:var(--acc2);border-right-color:var(--acc2)}
+  .tab .dot.live,.conn.down::before{animation:none}
+}
+
+
+/* ==========================================================================
+   PRINT — the tab body only, on white-ish paper is pointless here; we keep the
+   dark scheme but drop the fixed chrome so a screenshot-to-PDF is usable.
+   ========================================================================== */
+@media print{
+  .topbar,.tabbar,.perfpanel,.primary,.toasts{display:none !important}
+  body,.app{height:auto;overflow:visible}
+  .tabbody{overflow:visible}
+}

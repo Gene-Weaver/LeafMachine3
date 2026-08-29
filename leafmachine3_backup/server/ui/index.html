@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeafMachine3</title>
+<!-- The server substitutes the Bearer token here so the UI never has to prompt for it. -->
+<meta name="lm3-token" content="{{LM3_TOKEN}}">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ TOP BAR: the global LM3 module progress, outside every tab ============ -->
+  <header class="topbar" id="topbar" style="grid-area:topbar"></header>
+
+  <!-- ============ PRIMARY SETTINGS: input / output / temp + Start-Stop ============ -->
+  <section class="primary" id="primarybar" style="grid-area:primary"></section>
+
+  <!-- ============================== TABS ============================== -->
+  <nav class="tabbar" id="tabbar" style="grid-area:tabbar" role="tablist">
+    <button class="tab active" data-tab="status"      role="tab">Live Status</button>
+    <button class="tab"        data-tab="console"     role="tab">Console</button>
+    <button class="tab"        data-tab="settings"    role="tab">Settings</button>
+    <button class="tab"        data-tab="results"     role="tab" id="tab-results">Results</button>
+    <button class="tab"        data-tab="postprocess" role="tab">Postprocessing</button>
+    <span class="spacer"></span>
+    <span class="conn" id="connstate" title="LM3 server connection">connecting&hellip;</span>
+  </nav>
+
+  <main class="tabbody" id="tabbody" style="grid-area:body">
+    <section class="tabpane active" id="pane-status"      role="tabpanel"></section>
+    <section class="tabpane"        id="pane-console"     role="tabpanel"></section>
+    <section class="tabpane"        id="pane-settings"    role="tabpanel"></section>
+    <section class="tabpane"        id="pane-results"     role="tabpanel"></section>
+    <section class="tabpane"        id="pane-postprocess" role="tabpanel"></section>
+  </main>
+
+  <!-- ====== PERFORMANCE MONITOR: pinned across the bottom, outside the tabs ====== -->
+  <footer class="perfpanel" id="perfpanel" style="grid-area:perf"></footer>
+
+  <div class="toasts" id="toasts"></div>
+</div>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

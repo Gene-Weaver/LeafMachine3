@@ -85,13 +85,17 @@ def build_mock_config(
                 "recursive": True,
                 "image_extensions": [".jpg", ".jpeg", ".png"],
             },
-            "output": {"dir": str(output_dir), "tmp_dir": str(output_dir / "_scratch"), "keep_tmp": True},
+            "output": {"dir": str(output_dir), "tmp_dir": str(output_dir / "_scratch")},
             "run_mode": {"overwrite": False, "restart": [], "fail_fast": True},
             "logging": {"level": "WARNING", "to_file": False, "to_console": False},
         },
         "compute": {"devices": "cpu", "mock": True, "precision": "fp32"},
         "ingest": {"max_working_dim": 3200, "jpg_quality": 95},
         "modules": {
+            "mp_conversion_factor": {
+                "enabled": True,
+                "model": {"path": "models/mp_conversion_factor/model.json", "format": "json"},
+            },
             "archival_detector": {
                 "enabled": True,
                 "classes": ["Ruler", "Barcode", "Colorcard", "Label"],
@@ -100,6 +104,7 @@ def build_mock_config(
                 "enabled": True,
                 "classes": ["Leaf_WHOLE", "Leaf_PARTIAL", "Seed_Fruit_ONE"],
             },
+            "specimen_segmenter": {"enabled": True, "paperclean": True},
             "phenology_detector": {
                 "enabled": True,
                 "targets": {
@@ -114,7 +119,7 @@ def build_mock_config(
                 "ensemble_members": ["a", "b", "c"],
                 "min_conf": 0.35,
             },
-            "ruler_cf": {"enabled": False},
+            "ruler_cf": {"enabled": ruler_classifier_enabled},   # lattice CF; needs the classifier's tiles + verdicts
             "leaf_segmenter": {"enabled": True, "include_partial": False},
             "morphology": {"enabled": True, "classes": ["Leaf"], "find_minimum_bounding_box": True},
             "landmark_detector": {"enabled": True, "source_classes": ["Leaf_WHOLE"], "include_partial": False},
@@ -123,13 +128,16 @@ def build_mock_config(
             "petiole_width": {"enabled": True, "min_kpt_conf": 0.25, "touch_dist_px": 20},
             "metric_grounding": {"enabled": True, "round_ndigits": 4},
             "reporter": {"enabled": True},
+            "ect": {"enabled": True, "num_dirs": 64, "radial_viz": True, "cartesian_viz": True,
+                    "radial_overlay_viz": True},
         },
         "naming": {
             "bbox_prefix": "BBOX",
             "seg_prefix": "SEG",
             "landmark_prefix": "LM",
             "friendly_names": {"Leaf_WHOLE": "leaf", "Leaf_PARTIAL": "leafReject",
-                               "Ruler": "ruler", "Label": "label", "Leaf": "leaf"},
+                               "Ruler": "ruler", "Label": "label", "Leaf": "leaf",
+                               "Specimen": "specimen", "Specimen_Inverse": "specimenInverse"},
         },
         "report": {
             "overlay": {"enabled": True, "draw_masks": True, "draw_landmarks": True,
@@ -143,9 +151,15 @@ def build_mock_config(
                 "Binary_Masks": True,
                 "RGB_Masks_Full_Image": True,
                 "RGB_Masks": True,
+                # the not-specimen complement, with a fill that is neither black nor white so the
+                # end-to-end test can tell "the fill was applied" from "the background leaked in"
+                "Binary_Masks__Specimen_Inverse": True,
+                "RGB_Masks__Specimen_Inverse": True,
+                "inverse_fill": [255, 0, 0],
             },
-            "crops": {"enabled": True, "classes": "all", "source": "working"},
+            "crops": {"enabled": True, "classes": "all"},
             "overlay_petiole": {"enabled": True},
+            "overlay_specimen": {"enabled": True},
             "leaf_products": {"enabled": True, "original": True, "oriented": True, "background": "black"},
             "formats": {"image_ext": "jpg", "jpg_quality": 95, "mask_ext": "png"},
         },

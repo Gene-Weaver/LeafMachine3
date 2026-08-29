@@ -43,10 +43,10 @@ def test_schema_seeds_project_status(db: ProjectDB) -> None:
     rows = db._query("SELECT stage_key, stage_order, state FROM project_status ORDER BY stage_order")
     keys = [r["stage_key"] for r in rows]
     assert keys == [
-        "archival_detector", "plant_detector", "phenology_detector", "ruler_classifier",
-        "ruler_cf", "leaf_segmenter", "morphology", "landmark_detector",
-        "landmark_measurements", "leaf_orientation", "petiole_width",
-        "metric_grounding", "reporter",
+        "mp_conversion_factor", "archival_detector", "plant_detector", "specimen_segmenter",
+        "phenology_detector", "ruler_classifier", "ruler_cf", "leaf_segmenter", "morphology",
+        "landmark_detector", "landmark_measurements", "leaf_orientation", "petiole_width",
+        "bilateral_symmetry", "metric_grounding", "reporter", "ect",
     ]
     assert all(r["state"] == "pending" for r in rows)
 
@@ -155,6 +155,36 @@ def test_reset_stages_purges_rows_and_ledger(db: ProjectDB) -> None:
     assert db.stage_state("archival_detector") == "pending"        # status reset
     assert db.stage_settings_hash("archival_detector") is None
     assert db.pending_specimens("archival_detector") == [sid]      # work is pending again
+
+
+def test_ruler_cf_reset_preserves_foreign_artifacts(db: ProjectDB, tmp_path: Path) -> None:
+    """--restart ruler_cf must delete ONLY its own rasters (rot/tick), never the archival Ruler
+    crop or the classifier's squarify tile whose paths it stores as foreign references."""
+    crop = tmp_path / "ruler_crop.jpg"; tile = tmp_path / "tile.jpg"
+    rot = tmp_path / "rot.png"; ticks = tmp_path / "ticks.png"
+    for p in (crop, tile, rot, ticks):
+        p.write_bytes(b"x")
+    sid = db.upsert_specimen(_specimen("a"))
+    con = db.conn
+    con.execute("INSERT INTO archival_detection(detection_id,specimen_id,cls_id,cls_name,conf,crop_path) "
+                "VALUES (7,?,0,'Ruler',0.9,?)", (sid, str(crop)))
+    con.execute("INSERT INTO ruler_classification(specimen_id,detection_id,unit_type,squarify_path) "
+                "VALUES (?,7,'METRIC_MM',?)", (sid, str(tile)))
+    con.execute("INSERT INTO ruler_CF_lattice(specimen_id,engine_version,created_at,status,confidence) "
+                "VALUES (?,'v','t','published','high')", (sid,))
+    con.execute("INSERT INTO ruler_CF_lattice_crop(specimen_id,detection_id,crop_index,status,"
+                "crop_path,tile_four_path,rot_path,tick_mask_path) VALUES (?,7,0,'measured',?,?,?,?)",
+                (sid, str(crop), str(tile), str(rot), str(ticks)))
+
+    db.reset_stages(["ruler_cf"], {"ruler_cf": _StageStub(
+        key="ruler_cf", owns_tables=("ruler_CF_lattice_crop", "ruler_CF_lattice"))})
+    assert crop.exists() and tile.exists()          # foreign refs (archival crop, classifier tile) survive
+    assert not rot.exists() and not ticks.exists()  # the lattice's own rasters are gone
+
+    # ...and the classifier's own reset DOES remove its squarify tile
+    db.reset_stages(["ruler_classifier"], {"ruler_classifier": _StageStub(
+        key="ruler_classifier", owns_tables=("ruler_classification",))})
+    assert not tile.exists()
 
 
 def test_reclaim_running_reverts_to_pending(db: ProjectDB) -> None:

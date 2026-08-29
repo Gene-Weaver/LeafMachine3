@@ -1,0 +1,385 @@
+{
+  "labels": {
+    "FLAD_1288094006_Hypericaceae_Hypericum_desetangsii.jpg": {
+      "name": "FLAD_1288094006_Hypericaceae_Hypericum_desetangsii.jpg",
+      "width": 2946,
+      "height": 5000,
+      "mp": 14.73,
+      "points": [
+        [
+          2727.47,
+          2070.2
+        ],
+        [
+          2726.87,
+          2186.8
+        ]
+      ],
+      "px_per_cm": 116.6015,
+      "implied_sheet_w_cm": 25.27,
+      "implied_sheet_h_cm": 42.88
+    },
+    "BR_1839447739_Rubiaceae_Pleiocoryne_fernandensis.jpg": {
+      "name": "BR_1839447739_Rubiaceae_Pleiocoryne_fernandensis.jpg",
+      "width": 3183,
+      "height": 5000,
+      "mp": 15.915,
+      "points": [
+        [
+          1961.44,
+          2068.55
+        ],
+        [
+          1958.19,
+          2186.99
+        ]
+      ],
+      "px_per_cm": 118.4846,
+      "implied_sheet_w_cm": 26.86,
+      "implied_sheet_h_cm": 42.2
+    },
+    "BR_1839528855_Dichapetalaceae_Dichapetalum_bodyi.jpg": {
+      "name": "BR_1839528855_Dichapetalaceae_Dichapetalum_bodyi.jpg",
+      "width": 3445,
+      "height": 5000,
+      "mp": 17.225,
+      "points": [
+        [
+          2905.92,
+          1619.96
+        ],
+        [
+          2910.51,
+          1739.14
+        ]
+      ],
+      "px_per_cm": 119.2684,
+      "implied_sheet_w_cm": 28.88,
+      "implied_sheet_h_cm": 41.92
+    },
+    "US_2426860578_Amaranthaceae_Girgensohnia_oppositiflora.jpg": {
+      "name": "US_2426860578_Amaranthaceae_Girgensohnia_oppositiflora.jpg",
+      "width": 3714,
+      "height": 5000,
+      "mp": 18.57,
+      "points": [
+        [
+          3687.58,
+          2022.54
+        ],
+        [
+          3688.36,
+          2139.71
+        ]
+      ],
+      "px_per_cm": 117.1726,
+      "implied_sheet_w_cm": 31.7,
+      "implied_sheet_h_cm": 42.67
+    },
+    "US_1456308791_Asteraceae_Mikania_duidensis.jpg": {
+      "name": "US_1456308791_Asteraceae_Mikania_duidensis.jpg",
+      "width": 3963,
+      "height": 5000,
+      "mp": 19.815,
+      "points": [
+        [
+          3938.24,
+          1989.57
+        ],
+        [
+          3938.75,
+          2107.23
+        ]
+      ],
+      "px_per_cm": 117.6611,
+      "implied_sheet_w_cm": 33.68,
+      "implied_sheet_h_cm": 42.49
+    },
+    "DBG_2242367910_Polemoniaceae_Ipomopsis_globularis.jpg": {
+      "name": "DBG_2242367910_Polemoniaceae_Ipomopsis_globularis.jpg",
+      "width": 3744,
+      "height": 5616,
+      "mp": 21.0263,
+      "points": [
+        [
+          2368.85,
+          700.13
+        ],
+        [
+          2478.89,
+          700.13
+        ]
+      ],
+      "px_per_cm": 110.04,
+      "implied_sheet_w_cm": 34.02,
+      "implied_sheet_h_cm": 51.04
+    },
+    "SBBG_3053467367_Polemoniaceae_Gilia_brecciarum.jpg": {
+      "name": "SBBG_3053467367_Polemoniaceae_Gilia_brecciarum.jpg",
+      "width": 3840,
+      "height": 5760,
+      "mp": 22.1184,
+      "points": [
+        [
+          994.68,
+          195.08
+        ],
+        [
+          1120.96,
+          196.22
+        ]
+      ],
+      "px_per_cm": 126.2851,
+      "implied_sheet_w_cm": 30.41,
+      "implied_sheet_h_cm": 45.61
+    },
+    "DAV_2421774017_Asteraceae_Hymenoxys_cooperi.jpg": {
+      "name": "DAV_2421774017_Asteraceae_Hymenoxys_cooperi.jpg",
+      "width": 4000,
+      "height": 5934,
+      "mp": 23.736,
+      "points": [
+        [
+          2083.08,
+          5645.54
+        ],
+        [
+          2217.81,
+          5644.01
+        ]
+      ],
+      "px_per_cm": 134.7387,
+      "implied_sheet_w_cm": 29.69,
+      "implied_sheet_h_cm": 44.04
+    },
+    "CHSC_2417987367_Brassicaceae_Rorippa_columbiae.jpg": {
+      "name": "CHSC_2417987367_Brassicaceae_Rorippa_columbiae.jpg",
+      "width": 4000,
+      "height": 6185,
+      "mp": 24.74,
+      "points": [
+        [
+          3056.73,
+          408.81
+        ],
+        [
+          3194.01,
+          409.58
+        ]
+      ],
+      "px_per_cm": 137.2822,
+      "implied_sheet_w_cm": 29.14,
+      "implied_sheet_h_cm": 45.05
+    },
+    "TEX_2807216840_Acanthaceae_Anisacanthus_quadrifidus.jpg": {
+      "name": "TEX_2807216840_Acanthaceae_Anisacanthus_quadrifidus.jpg",
+      "width": 4160,
+      "height": 6240,
+      "mp": 25.9584,
+      "points": [
+        [
+          1655.14,
+          218.66
+        ],
+        [
+          1793.9,
+          217.91
+        ]
+      ],
+      "px_per_cm": 138.762,
+      "implied_sheet_w_cm": 29.98,
+      "implied_sheet_h_cm": 44.97
+    },
+    "UM_1424999092_Elaeocarpaceae_Elaeocarpus_millarii.jpg": {
+      "name": "UM_1424999092_Elaeocarpaceae_Elaeocarpus_millarii.jpg",
+      "width": 4275,
+      "height": 6164,
+      "mp": 26.3511,
+      "points": [
+        [
+          4232.25,
+          2261.77
+        ],
+        [
+          4232.25,
+          2399.59
+        ]
+      ],
+      "px_per_cm": 137.82,
+      "implied_sheet_w_cm": 31.02,
+      "implied_sheet_h_cm": 44.73
+    },
+    "UCR_2422413671_Myrtaceae_Eucalyptus_cladocalyx.jpg": {
+      "name": "UCR_2422413671_Myrtaceae_Eucalyptus_cladocalyx.jpg",
+      "width": 4865,
+      "height": 6105,
+      "mp": 29.7008,
+      "points": [
+        [
+          194.76,
+          2298.3
+        ],
+        [
+          196,
+          2450.04
+        ]
+      ],
+      "px_per_cm": 151.7451,
+      "implied_sheet_w_cm": 32.06,
+      "implied_sheet_h_cm": 40.23
+    },
+    "FLAS_1457778078_Lamiaceae_Clerodendrum_laevifolium.jpg": {
+      "name": "FLAS_1457778078_Lamiaceae_Clerodendrum_laevifolium.jpg",
+      "width": 4558,
+      "height": 6533,
+      "mp": 29.7774,
+      "points": [
+        [
+          158.32,
+          5562.25
+        ],
+        [
+          159.13,
+          5721.03
+        ]
+      ],
+      "px_per_cm": 158.7821,
+      "implied_sheet_w_cm": 28.71,
+      "implied_sheet_h_cm": 41.14
+    },
+    "SD_3125143346_Malvaceae_Malacothamnus_enigmaticus.jpg": {
+      "name": "SD_3125143346_Malvaceae_Malacothamnus_enigmaticus.jpg",
+      "width": 4704,
+      "height": 6459,
+      "mp": 30.3831,
+      "points": [
+        [
+          4652.31,
+          3212.93
+        ],
+        [
+          4650.89,
+          3374.06
+        ]
+      ],
+      "px_per_cm": 161.1363,
+      "implied_sheet_w_cm": 29.19,
+      "implied_sheet_h_cm": 40.08
+    },
+    "DAV_2421708402_Brassicaceae_Lepidium_nitidum.jpg": {
+      "name": "DAV_2421708402_Brassicaceae_Lepidium_nitidum.jpg",
+      "width": 4588,
+      "height": 7036,
+      "mp": 32.2812,
+      "points": [
+        [
+          2305.13,
+          6617.79
+        ],
+        [
+          2462.61,
+          6619.1
+        ]
+      ],
+      "px_per_cm": 157.4854,
+      "implied_sheet_w_cm": 29.13,
+      "implied_sheet_h_cm": 44.68
+    },
+    "NY_1928046035_Burseraceae_Protium_leptostachyum.jpg": {
+      "name": "NY_1928046035_Burseraceae_Protium_leptostachyum.jpg",
+      "width": 4800,
+      "height": 7020,
+      "mp": 33.696,
+      "points": [
+        [
+          3336.76,
+          120.71
+        ],
+        [
+          3491.71,
+          121.15
+        ]
+      ],
+      "px_per_cm": 154.9506,
+      "implied_sheet_w_cm": 30.98,
+      "implied_sheet_h_cm": 45.3
+    },
+    "NY_1928197803_Rubiaceae_Bobea_brevipes.jpg": {
+      "name": "NY_1928197803_Rubiaceae_Bobea_brevipes.jpg",
+      "width": 4850,
+      "height": 7180,
+      "mp": 34.823,
+      "points": [
+        [
+          3376.82,
+          129.39
+        ],
+        [
+          3534.85,
+          128.5
+        ]
+      ],
+      "px_per_cm": 158.0325,
+      "implied_sheet_w_cm": 30.69,
+      "implied_sheet_h_cm": 45.43
+    },
+    "NY_1931288167_Asteraceae_Erigeron_elatus.jpg": {
+      "name": "NY_1931288167_Asteraceae_Erigeron_elatus.jpg",
+      "width": 4900,
+      "height": 7350,
+      "mp": 36.015,
+      "points": [
+        [
+          3266.31,
+          257.06
+        ],
+        [
+          3425.35,
+          255.24
+        ]
+      ],
+      "px_per_cm": 159.0504,
+      "implied_sheet_w_cm": 30.81,
+      "implied_sheet_h_cm": 46.21
+    },
+    "MIN_2265570684_Moraceae_Ficus_callophylla.jpg": {
+      "name": "MIN_2265570684_Moraceae_Ficus_callophylla.jpg",
+      "width": 5000,
+      "height": 7500,
+      "mp": 37.5,
+      "points": [
+        [
+          1312.3,
+          148.36
+        ],
+        [
+          1474.59,
+          145.1
+        ]
+      ],
+      "px_per_cm": 162.3227,
+      "implied_sheet_w_cm": 30.8,
+      "implied_sheet_h_cm": 46.2
+    },
+    "BR_1839839931_Vitaceae_Cissus_dinklagei.jpg": {
+      "name": "BR_1839839931_Vitaceae_Cissus_dinklagei.jpg",
+      "width": 5153,
+      "height": 7483,
+      "mp": 38.5599,
+      "points": [
+        [
+          5115.6,
+          2520.46
+        ],
+        [
+          5114.42,
+          2687.16
+        ]
+      ],
+      "px_per_cm": 166.7042,
+      "implied_sheet_w_cm": 30.91,
+      "implied_sheet_h_cm": 44.89
+    }
+  },
+  "finished": true
+}

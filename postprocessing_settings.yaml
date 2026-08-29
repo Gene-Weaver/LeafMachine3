@@ -1,0 +1,103 @@
+# ============================================================================
+# postprocessing_settings.yaml -- settings for LeafMachine3 POSTPROCESSING tools.
+#
+# These are SMALL, DISCRETE tools that run AFTER a project has finished (they are
+# NOT part of the main pipeline). Kept in their own settings file so they stay
+# separate from LM3_settings.yaml. Each top-level key below is one postprocessing
+# module in leafmachine3/postprocessing/<module>.py. Run one with:
+#
+#   .venv_LM3/bin/python -m leafmachine3.postprocessing.<module> \
+#       --config postprocessing_settings.yaml
+#
+# CLI flags override the values set here.
+# ============================================================================
+
+# ---- generate_stl_from_mask -------------------------------------------------
+# Turn a binary-mask PNG into a 3D-printable .stl by extruding the 2D shape to a
+# fixed z thickness (a circle mask -> a cylinder, a leaf mask -> a flat leaf slab).
+generate_stl_from_mask:
+  # Inputs: a LIST of mask PNG paths, or null to pass them on the CLI (--paths a.png b.png ...).
+  paths: null
+  # Output directory for the .stl files. null -> write each <stem>.stl next to its source mask.
+  output_dir: null
+
+  fill_holes: true              # fill internal holes so the solid has no through-gaps
+  # Foreground color(s) in the PNG that become the model. "white" (default) selects 255.
+  # A single color OR a LIST of colors (all unioned into one mask). Each color is a name
+  # ("white" / "black") or an [R, G, B] / [R, G, B, A] list (0-255). Alpha is ignored for matching.
+  colors: ["white"]
+  color_tolerance: 0            # per-channel match tolerance in 0-255 (0 = exact match)
+
+  length_mm: 150.0             # the MASK's longest dimension is scaled to this many mm (overall size)
+  thickness_mm: 2.0            # extrusion height (z thickness) in mm
+  simplify_tolerance_px: 1.5   # smooth the pixel-staircase boundary (0 = none); shrinks the .stl
+  min_area_px: 4.0             # drop foreground blobs smaller than this many px^2
+
+# ---- generate_leaf_collage --------------------------------------------------
+# Tile a finished run's BEST leaf masks into the shape of one primary mask -- a leaf built out of
+# leaves. Leaves are ranked by their bilateral-symmetry archetype score; vetoed leaves (gates_pass
+# = 0) are never used. Reads existing Reporter output only; nothing is re-segmented.
+generate_leaf_collage:
+  # Inputs: a finished LM3 run dir, and the PNG whose foreground becomes the collage outline.
+  # null -> pass them on the CLI (--run-dir <run> --primary-mask <mask.png>).
+  run_dir: null
+  primary_mask: null
+  # Output directory. null -> <run_dir>/reports/Collage
+  output_dir: null
+  name: null                     # output file stem; null -> collage__<layout>__<primary mask stem>
+
+  # ---- which leaves ----
+  min_archetype_score: 0.8       # keep leaves scoring STRICTLY above this (0-1); vetoed ones never qualify
+  max_leaves: 0                  # cap the tile count, best score first. 0 = every leaf that passes
+  tree: Leaf_Oriented            # Leaf_Oriented (rotated tip-up) | Leaf_Original (as detected)
+  # Which per-leaf mask product to tile. The default is the lamina with its holes CUT OUT.
+  # lamina_mask | lamina_holes_mask (holes filled) | lamina_petiole_mask | lamina_petiole_holes_mask
+  mask_variant: lamina_mask
+
+  # ---- how it looks ----
+  style: mask                    # mask = recolor the binary mask | rgb = the matching RGB cutout
+  color: [255, 255, 255]         # the mask style's leaf color; name, "#rrggbb" or [R, G, B]
+  background: transparent        # "transparent", or a color name / "#rrggbb" / [R, G, B]
+  max_dim_px: 10000              # longest side of the output PNG; every tile is scaled to suit
+  tile_scale: 0.98               # shrink each leaf inside its cell (1.0 = leaves touch cell edges)
+
+  # ---- arrangement ----
+  # grid    one square cell per leaf, cell size solved to match the leaf count
+  # mosaic  quadtree -- large tiles inside, subdivided toward the edge; biggest tiles get top leaves
+  # organic greedy distance-transform packing; each leaf fills the largest remaining pocket
+  # puzzle  true shape nesting -- leaves interlock along their real outlines, one size each
+  layout: grid
+  ranking: center                # center = best leaves deepest inside | reading | random
+  random_seed: 0                 # any change re-rolls the random parts (organic placement, shuffle)
+  shuffle_top: 0                 # shuffle the N best leaves among themselves before placing (0 = off)
+  leaf_order: score              # score = best leaves get the prime spots | random = no order at all
+  layout_px: 2048                # resolution the layout is solved at (not the output size)
+
+  # ---- the primary mask ----
+  primary_colors: ["white"]      # which color(s) in the primary mask are its foreground
+  primary_color_tolerance: 0     # per-channel match slack, 0-255 (0 = exact)
+  primary_fill_holes: true       # fill the primary mask's own holes so the outline is solid
+
+  # ---- per-layout tuning ----
+  mosaic_min_cell_px: 24         # the quadtree stops subdividing below this tile size (output px)
+  organic_rotate: true           # give each packed leaf a random rotation
+  organic_fill: 0.9              # leaf size as a fraction of its pocket's inscribed circle
+  organic_gap_px: 2              # minimum clearance between packed leaves (output px)
+  organic_min_tile_px: 12        # stop packing once the biggest free pocket falls below this
+
+  # puzzle: every leaf is scaled so the longest dimension of its white region (the Feret
+  # diameter, which does not change when the leaf is rotated) is the same number of pixels.
+  puzzle_leaf_px: 0              # that dimension, in output px; 0 solves it from puzzle_fill
+  puzzle_fill: 0.6               # target ink coverage of the shape -- what sets the leaf size
+  puzzle_gap_px: 2               # seam kept between nested leaves (output px)
+  puzzle_angles: 8               # orientations tried per leaf, from its own random start angle
+  puzzle_coarse: 6               # search downscale; lower nests tighter and costs ~4x per step
+  puzzle_refine: 3               # coarse candidates re-scored exactly before committing
+  puzzle_nest_px: 3072           # resolution the nest is solved at (independent of layout_px)
+  puzzle_overhang: 0.0           # let leaves spill past the outline, as a fraction of leaf size
+  puzzle_backfill_ratio: 0.72    # retry a leaf that no longer fits at this fraction (0 = off)
+  puzzle_min_leaf_px: 12         # never shrink a backfilled leaf below this (output px)
+  puzzle_max_shrink: 3           # cap on backfill shrink steps, so no leaf becomes a speck
+
+  tmp_dir: null                  # scratch parent for _leaf_collage; null -> beside the run
+  write_manifest: true           # also write <name>.json listing every placed leaf and its score
