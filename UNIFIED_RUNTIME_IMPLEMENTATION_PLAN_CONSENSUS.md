@@ -1,7 +1,7 @@
 # Unified LM3 runtime — consensus implementation plan
 
 Date: 2026-08-28
-Revision: 12 (amended after twelfth-round review)
+Revision: 13 (amended after the Step 1/2 implementation closeout)
 Status: **implementation-ready; every protocol below is stated, not deferred**
 Supersedes: `UNIFIED_RUNTIME_IMPLEMENTATION_PLAN.md` (proposal)
 Inputs reconciled: the original proposal, a code-verified adversarial review
@@ -155,6 +155,19 @@ changes.
 | K2 | Windows section still framed as "event plus file lock" / two primitives | Rewritten as one primitive; §2.2 |
 | K3 | Finalization still said "lock descriptor" universally | Platform-neutral "lease reference"; §3.3 |
 
+### Revision 13 amendments
+
+Raised by implementing Steps 1, 2 and 5a and auditing the result. Two are defects the
+implementation exposed in the plan itself; two are policy the plan never stated.
+
+| # | Issue | Resolution |
+|---|---|---|
+| L1 | **The plan never said what a relative path in a config resolves against.** Step 1 unified settings resolution while `Config.resolve_path()` kept joining the CWD, so `build_dirs()` and `resolve_run_paths()` now return two different run directories for one config in one process — and the shipped default `output.dir` is the relative string `runs` | Six-rule relative-path contract, one seam, and a testable invariant; §3.5 |
+| L2 | The built-in `output.dir: runs` default would, under §3.1's seeded settings location, put first-run results inside a hidden **configuration** directory | Default becomes `auto`, resolving to `<checkout>/runs` in a dev checkout and `<user-data>/lm3/<deployment>/runs` when installed; §3.5 |
+| L3 | `examples/*.yaml` silently depend on being launched from the repository root | Migrated to settings-relative values that preserve their effective locations, with a test; §3.5 |
+| L4 | Gate 13 (token redaction, `no-store`) was stated in §2.11 and §8 but **owned by no step**, so it was implemented nowhere | Assigned explicitly to Step 5b; §4 |
+| L5 | No stated policy on which platforms are qualified when, so Linux-only evidence risked being reported as cross-platform validation | Linux is the qualification target now; Windows/macOS are "implemented but not yet natively validated"; §1.1 |
+
 ### What changed from the original proposal
 
 | Area | Proposal | Consensus |
@@ -216,6 +229,36 @@ Acceptance requirements, not aspirations. Each maps to a gate in §8.
 The coordination boundary is **one named LM3 deployment**. By default that is one OS user on one
 host. `LM3_DEPLOYMENT_ID` splits it deliberately. Multi-user service deployment and cross-user
 arbitration remain out of scope.
+
+### 1.1 Platform qualification policy
+
+The invariants above are platform-neutral. What is *qualified*, and when, is not — and conflating
+"implemented" with "validated" is how a project ships a Windows lease nobody ever ran.
+
+**The qualification target now is Linux: Linux desktop and Linux cluster.** Those two are what the
+gates in §8 must actually pass against before Step 3 proceeds and before release.
+
+**Windows and macOS code and packaging configurations must still be implemented correctly** — the
+Windows lease adapter of §2.2, the `STARTUPINFOEX` handshake of §2.4, and the Electron packaging
+definitions of §2.11 are all in scope and are all expected to be right. What is **deferred** is
+their *native execution testing*:
+
+| Platform | Status while deferred | Validated later on |
+|---|---|---|
+| Linux desktop / cluster | **qualification target** — gates must pass here now | this host and Linux CI |
+| Windows | **implemented but not yet natively validated** | a real Windows machine |
+| macOS | **implemented but not yet natively validated** — packaging, signing, notarization, permissions, and execution all | a real Mac |
+
+Three rules follow, and they are not negotiable:
+
+1. **Deferred native testing does not block Linux Step 3 work.** Windows and macOS qualification is
+   a later release gate, not a prerequisite for the Linux path.
+2. **Windows and macOS are labeled "implemented but not yet natively validated", never "passed".**
+   A gate proven only against the injectable Win32 fake of §2.2 is a test of our *model* of the
+   object manager, not of the object manager. Say so, every time, in every report.
+3. **An unexecuted CI workflow is not evidence.** The cross-platform job definitions are retained
+   deliberately so they run the moment the repository has a remote — but a workflow that has never
+   run proves nothing, and must never be cited as though it had.
 
 ---
 
@@ -1365,6 +1408,92 @@ completion.
 On the cluster, the manifest is written to `artifact_dir` so it survives the allocation, even when
 `active_state_dir` is node-local.
 
+### 3.5 The relative-path contract
+
+Revision 12 specified where the *runtime's own* files live but never said what a **relative path
+written in a configuration** resolves against. That omission was not cosmetic: Step 1 unified the
+settings-path resolution while `Config.resolve_path()` kept joining `Path.cwd()`, so
+`build_dirs()` and `runtime.config_io.resolve_run_paths()` began returning **two different run
+directories for one config in one process** — and the shipped default `output.dir` is the relative
+string `runs`, so this is the default path, not an edge case. This section closes it.
+
+**The contract.** Six rules, and they are exhaustive:
+
+| # | Where the relative path appears | Resolves against |
+|---|---|---|
+| 1 | any path-valued field **written in a YAML settings file** | the **directory containing that settings file** |
+| 2 | a relative **CLI argument** (`--config`, `--input`, `--output`, …) | the **caller's invocation CWD**, absolutized at the CLI boundary |
+| 3 | a relative argument passed directly to `machine3()` (`input_dir`, `output_dir`, …) | the **caller's CWD**, normalized immediately on entry |
+| 4 | a canonical environment path variable | **must already be absolute**; a relative value is an error |
+| 5 | workspace pointer, runtime record, connection descriptor, launch manifest | **absolute only**, never relative |
+| 6 | anywhere else | nothing — **no subsystem may join a configured path onto its own CWD** |
+
+Rule 6 is the load-bearing one. Rules 1-3 decide the base *once*, at the boundary where the
+provenance is still known; rule 6 forbids every later subsystem from deciding it again. A relative
+value that survives past configuration load is a defect, not a deferred decision.
+
+**Rules 2 and 3 must be applied before the merge.** `_cli_overrides()` layers CLI values into the
+merged mapping, after which nothing can tell a CLI-supplied `output.dir` from a YAML-supplied one.
+Absolutize at the boundary or the provenance — and therefore the correct base — is gone.
+
+**Scope: every path-valued field, not just `project.output.dir`.** The contract governs at least
+`project.input.dirs`, `project.output.dir`, `project.output.tmp_dir`, any active-state or
+cluster-state path, every `modules.*.model.path`, every `models_dir`, and every path consumed by
+validation, setup, inference, results, or postprocessing. In the current tree all of these already
+funnel through `Config.resolve_path()` (`config.py:407-412`), which is therefore **the one seam**:
+`core/validate.py:29,34`, `core/ingest.py:164`, `inference/factory.py:46,64,146`,
+`setup/hardware_setup.py:602,607,803`, `server/settings_api.py:577-585`, and `config.py:540,543`
+all call it. `Config` already records `source_path` (`config.py:324`), so rule 1 is implementable
+there without threading a new argument through any caller.
+
+**Required invariant, testable and CWD-independent:**
+
+```
+build_dirs(cfg).root    == resolve_run_paths(cfg).run_dir
+build_dirs(cfg).db_path == resolve_run_paths(cfg).active_db_path
+```
+
+Two implementations that merely happen to agree under today's tests do not satisfy this. Either one
+resolver serves both, or one normalized effective configuration feeds both.
+
+#### The built-in `output.dir` default
+
+`builtin_defaults()` ships `output.dir: "runs"` (`config.py:218`). Under rule 1 that default would
+resolve beside the settings file — and §3.1 puts the seeded settings file at
+`<user-config>/lm3/<deployment>/LM3_settings.yaml`, so a first run would write its results **into a
+hidden configuration directory**. That is unacceptable, and it is an artifact of a *default* being
+treated as if the user had written it.
+
+**Decision: the built-in default becomes `auto`**, matching the existing `tmp_dir: auto` idiom, and
+`auto` resolves to an intentional, documented location:
+
+| Deployment | `output.dir: auto` resolves to |
+|---|---|
+| development checkout (detected from `leafmachine3.__file__` per §3.1, never the CWD) | `<checkout root>/runs` |
+| installed package / container | `<user-data>/lm3/<canonical-deployment>/runs` |
+
+`<user-data>` is `$XDG_DATA_HOME` or `~/.local/share` on Linux, `~/Library/Application Support` on
+macOS, `%LOCALAPPDATA%` on Windows. It is **never** the user-config directory. The dev-checkout row
+preserves today's `<repo>/runs` behavior byte for byte, so no existing checkout moves.
+
+An *explicit* relative `output.dir` written by a user still follows rule 1. Only the absent-key
+default is `auto`.
+
+#### Example configurations must be migrated, not left to luck
+
+`examples/*.yaml` currently depend on being launched from the repository root: five configs carry
+`input.dirs: [examples/images]` and `output.dir: examples_out`, and **all twelve** carry
+`models/...` model paths and `models_dir: models/ruler_classifier`. Under rule 1 those become
+`examples/examples/images` and `examples/models/...` — silently wrong.
+
+Migrate them so their **effective locations are unchanged**: relative to `examples/`, the values
+become `images`, `../examples_out`, and `../models/...`. A test must assert that each migrated
+example resolves to the same repository file it resolved to before, and must run from a CWD that is
+not the repository root.
+
+The absolute-path configurations (`LM3_settings_global_greening.yaml`, and the seven `examples/`
+configs that already use `/datac/...`) are unaffected by rule 1 and must be proven unchanged.
+
 ---
 
 ## 4. Implementation sequence
@@ -1422,10 +1551,33 @@ directory, including under xdist.
   redaction and field bounds; deployment-key canonicalization plus golden vectors shared with
   Electron; network-filesystem refusal and its override.
 
-Exit gate: the primitives pass in isolation on all three platforms. No production entry point has
-changed.
+Exit gate, stated in the terms §1.1 and §3.5 now make available — the original wording contradicted
+both, and a gate nobody can honestly pass is worse than no gate:
+
+- **Linux primitives pass**, in isolation, on the qualification target.
+- **The Windows adapter's behavior passes against the injectable Win32 fake** — ordering, handle
+  lifetime, the close-on-every-failure-path rule, the serialized spawn window, the
+  `CompareObjectHandles` rejection. This is a test of our *model* of the object manager, not of the
+  object manager.
+- **Native Windows and macOS validation is deferred** (§1.1) and does not gate this step. Neither
+  may be reported as "passed".
+- **No runtime-v2 wiring has entered a production execution path**: nothing outside
+  `leafmachine3/core/runtime/` and `tests/` imports it. This is the property the gate exists to
+  protect, and it is checkable.
+
+The gate deliberately no longer says "no production entry point has changed". `machine3.py` changed
+under §3.5 — `_cli_overrides()` absolutizes relative CLI overrides against the caller's CWD before
+the merge, because after the merge the provenance that decides the base is gone. That is
+path-contract work, imports nothing new, and is unrelated to the runtime primitives this step
+delivers. Byte-identity was a proxy for "no runtime-v2 wiring"; the real property is stated directly
+above, so the proxy is retired rather than quietly violated.
 
 ### Step 3 — Execution integration **and** batch ownership (one shipping unit)
+
+**Entry prerequisite (§3.5).** Step 3 wires the runtime record's paths in while `machine3()`
+still creates `build_dirs()`'s paths. Until `build_dirs(cfg).root == resolve_run_paths(cfg).run_dir`
+holds independently of the process CWD, the record would name a directory the run never creates.
+The §3.5 contract must land, with its regression tests, before this step opens.
 
 Revision 1 split these. That was wrong: between them the shell batch would take and release a lease
 per species, which is exactly the window §2.3 exists to close. Ship together, or keep the whole
@@ -1489,6 +1641,12 @@ postprocessing away from the active DB.
   expected-instance-ID handshake for spawned servers; the connection-descriptor auth flow;
   attach-as-client for a matching deployment; named distinct errors for "wrong deployment on this
   port" and "unrelated service on this port".
+- **Own gate 13 here.** §2.11 already requires it and §8 gate 13 already states it, but no step
+  in this sequence claimed it, so it was implemented nowhere: never log the raw bearer token at
+  any level; log the path to `connection.private.json` instead; redact tokens from error
+  messages, tracebacks and `/healthz` diagnostics; serve the token-bearing HTML bootstrap with
+  `Cache-Control: no-store` (token-free static assets may keep revalidation caching); and test
+  that the token appears in no server, setup, batch, or Slurm log.
 - Delete the policy that attached servers are killed on quit. Remove PID-derived shutdown
   authority. `LM3_KEEP_SERVER` may survive as an owned-server lifecycle preference but is no longer
   an ownership safety switch.

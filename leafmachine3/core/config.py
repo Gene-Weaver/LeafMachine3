@@ -117,6 +117,32 @@ def _plain(value: Any) -> Any:
     return value
 
 
+def jsonable(value: Any) -> Any:
+    """Deterministic, JSON-safe projection of a config subtree.
+
+    Stronger than :func:`_plain` in the two ways the plan's launch manifest needs (section 3.4):
+    every mapping comes back with its keys in sorted order, and anything JSON cannot carry --
+    ``Path``, the ``datetime.date`` PyYAML produces for an unquoted ``2026-08-28``, an enum -- is
+    normalized to a string rather than exploding at dump time. Paths go through ``Path`` first so
+    ``runs/`` and ``runs`` cannot fingerprint differently.
+
+    Sorting here as well as at ``json.dumps(sort_keys=True)`` is deliberate: the DICT itself is then
+    already canonical, so a caller that embeds it in a larger structure, hashes ``repr``, or diffs
+    two dumps gets the same answer as the serializer does.
+    """
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(k): jsonable(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(v) for v in value]
+    if isinstance(value, os.PathLike):
+        return str(Path(value))
+    # Anything else (dates, enums, arbitrary objects an override smuggled in) is described, never
+    # dropped: a manifest that silently loses a key is worse than one carrying "2026-08-28".
+    return str(value)
+
+
 def _deep_merge(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
     """Return ``base`` deep-merged with ``override`` (override wins).
 
@@ -189,7 +215,11 @@ def builtin_defaults() -> dict[str, Any]:
             # No keep_tmp knob. It was declared for a cleanup that was never implemented, and under the
             # working-frame contract it must never be: _tmp_original holds the DOWNSAMPLED copies, which
             # are now the only pixels the Reporter reads. A switch promising to delete them is a footgun.
-            "output": {"dir": "runs", "tmp_dir": "auto"},
+            # ``auto``, not ``runs``: plan section 3.5. A relative default would follow rule 1 into
+            # <user-config>/lm3/<deployment>/, i.e. write run outputs into a hidden CONFIG dir.
+            # ``auto`` is <checkout>/runs in a dev checkout and <user-data>/lm3/<deployment>/runs
+            # when installed -- see paths.default_output_dir().
+            "output": {"dir": "auto", "tmp_dir": "auto"},
             "run_mode": {"overwrite": False, "restart": [], "fail_fast": False},
             "logging": {"level": "INFO", "to_file": True, "to_console": True},
         },
@@ -379,11 +409,36 @@ class Config:
 
     # -- path / worker helpers --------------------------------------------- #
     def resolve_path(self, p: str | os.PathLike[str]) -> str:
-        """Absolutize ``p``: expand ``~``; absolute paths pass through; else join CWD."""
+        """Absolutize ``p`` against the SETTINGS FILE that produced this config.
+
+        Plan section 3.5 rule 1: a relative path written in a YAML settings file resolves against the
+        directory containing that file -- never the process CWD. This one method is the seam: input
+        dirs (``core/ingest.py``), artifact validation (``core/validate.py``,
+        ``server/settings_api.py``), model and ``models_dir`` loading (``inference/factory.py``) and
+        the setup scratch probe (``setup/hardware_setup.py``) all route through it, so they cannot
+        drift apart again.
+
+        It used to join ``Path.cwd()``. That made the same YAML mean different files depending on
+        where the launcher happened to be standing, and once Step 1 moved settings resolution to a
+        canonical path it also made ``build_dirs()`` and ``runtime.config_io.resolve_run_paths()``
+        disagree about the run directory inside a single process.
+
+        A relative path with no known settings file raises: rule 6 forbids inventing a base.
+        """
         path = Path(str(p)).expanduser()
         if path.is_absolute():
             return str(path)
-        return str(Path.cwd() / path)
+        source = getattr(self, "source_path", None)
+        if not source:
+            raise ValueError(
+                f"cannot resolve the relative path {str(p)!r}: this Config has no source_path, and "
+                f"LM3 never joins a configured path onto the current working directory "
+                f"(plan section 3.5 rule 6). Load the config with Config.load() or pass an absolute path."
+            )
+        base = Path(source).resolve().parent
+        # normpath, not resolve(): collapse ".." lexically so a migrated "../models/x.onnx" comes
+        # back as a clean absolute path, without following symlinks or requiring the file to exist.
+        return os.path.normpath(str(base / path))
 
     def io_workers(self) -> int:
         """Resolve the ingest / CPU-stage worker count (``auto`` -> tuned or cpu_count-2)."""
@@ -454,6 +509,22 @@ class Config:
             self._hardware = HardwareProfile(Section(profile))
         else:
             self._hardware = HardwareProfile(profile)
+
+    # -- serialization ------------------------------------------------------ #
+    def to_dict(self) -> dict[str, Any]:
+        """The complete EFFECTIVE config -- defaults < YAML < overrides -- as plain JSON data.
+
+        This is what the section 3.4 launch manifest embeds and what config fingerprinting reads,
+        so it must be deterministic: the same ``Config`` produces byte-identical JSON every time.
+        :func:`jsonable` sorts every mapping and normalizes paths to get there.
+
+        It is a deep COPY. Mutating the result cannot reach back into the live config, which is why
+        the manifest writer may hand it straight to ``json.dump`` without a defensive copy.
+
+        ``source_path`` is deliberately not folded in: it describes where the config came from, not
+        what it says, and the manifest carries it separately alongside the file's SHA-256.
+        """
+        return jsonable(self._raw)
 
     # -- settings hashing (resume invalidation) ----------------------------- #
     #: Stages whose behavior is driven by config OUTSIDE their own ``modules.<key>`` block.
@@ -587,4 +658,5 @@ def _discover_nvidia_ordinals() -> list[int]:
     return []
 
 
-__all__ = ["Config", "Section", "HardwareProfile", "CANONICAL_STAGE_KEYS", "builtin_defaults"]
+__all__ = ["Config", "Section", "HardwareProfile", "CANONICAL_STAGE_KEYS", "builtin_defaults",
+           "jsonable"]

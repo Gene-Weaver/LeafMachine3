@@ -3,7 +3,7 @@ project:
   run_name: real_all_cv2
   input:
     dirs:
-    - examples/images
+    - images
     recursive: true
     image_extensions:
     - .jpg
@@ -12,7 +12,7 @@ project:
     - .tif
     - .tiff
   output:
-    dir: examples_out
+    dir: ../examples_out
     tmp_dir: auto
     keep_tmp: false
   run_mode:
@@ -76,7 +76,7 @@ modules:
   archival_detector:
     enabled: true
     model:
-      path: models/archival_detector/model.onnx
+      path: ../models/archival_detector/model.onnx
       format: onnx
     imgsz: 1280
     conf: 0.25
@@ -96,7 +96,7 @@ modules:
   plant_detector:
     enabled: true
     model:
-      path: models/plant_detector/model.onnx
+      path: ../models/plant_detector/model.onnx
       format: onnx
     imgsz: 1280
     conf: 0.3
@@ -127,7 +127,7 @@ modules:
         min_count: 1
   ruler_classifier:
     enabled: true
-    models_dir: models/ruler_classifier
+    models_dir: ../models/ruler_classifier
     ensemble_members:
     - yolo26x_cls_224
     - yolo26n_cls_224
@@ -146,7 +146,7 @@ modules:
   leaf_segmenter:
     enabled: true
     model:
-      path: models/leaf_segmenter/model.pt
+      path: ../models/leaf_segmenter/model.pt
       format: pytorch
     include_partial: false
     imgsz: 1024

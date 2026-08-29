@@ -51,12 +51,15 @@ from typing import Any, Iterator, Optional
 
 import yaml
 
+from leafmachine3.core.paths import PathsError, resolve_project_output_dir
 from leafmachine3.server import metrics
 
 log = logging.getLogger("leafmachine3.server.metrics_api")
 
-# Where the profiler writes its tuned profile. hardware_setup.HW_PATH is RELATIVE ("beside
-# LM3_settings.yaml"), so it resolves against the CWD -- we search the same places a run would.
+# Display names only. Both files are RESOLVED by leafmachine3.core.paths (plan section 3.1 rows
+# 1-2) via the leafmachine3.server.app helpers -- never by scanning the CWD and the checkout for a
+# file with one of these names, which is what made this module disagree with settings_api about
+# which config the app was on.
 HW_FILENAME = "hardware_settings.yaml"
 CFG_FILENAME = "LM3_settings.yaml"
 
@@ -98,45 +101,47 @@ class RunError(RuntimeError):
 
 
 # --------------------------------------------------------------------------- #
-# Path resolution
+# Path resolution -- one canonical chain, shared with every other server module
 # --------------------------------------------------------------------------- #
-def _repo_root() -> Path:
-    """The LM3 checkout root (the directory that holds the ``leafmachine3`` package)."""
-    return Path(__file__).resolve().parents[2]
-
-
-def _search_roots() -> list[Path]:
-    """Candidate working directories, most-specific first: CWD, then the checkout root."""
-    roots: list[Path] = []
-    try:
-        roots.append(Path.cwd())
-    except OSError:                                   # CWD was deleted underneath us
-        pass
-    root = _repo_root()
-    if root not in roots:
-        roots.append(root)
-    return roots
-
-
-def _find_file(filename: str, env_var: str) -> Optional[Path]:
-    """Locate ``filename``: an explicit env override wins, else the first search root that has it."""
-    override = os.environ.get(env_var)
-    if override:
-        path = Path(override).expanduser()
-        return path if path.is_file() else None
-    for root in _search_roots():
-        candidate = root / filename
-        if candidate.is_file():
-            return candidate
-    return None
-
-
+# ``_repo_root`` / ``_search_roots`` / ``_find_file`` are GONE. They implemented a fourth
+# resolution rule (CWD first, then the checkout root, with a set-but-missing override returning
+# None instead of falling through), which is exactly the "three fallbacks reachable from three
+# CWDs" plan section 4 Step 1 says a rename would preserve. Under an installed wheel the checkout
+# root was site-packages itself, so the scan could also read -- and _state_path could write --
+# inside a library directory.
 def hardware_path() -> Optional[Path]:
-    return _find_file(HW_FILENAME, "LM3_HARDWARE_SETTINGS")
+    """The hardware profile, or ``None`` when it has not been written yet.
+
+    Section 3.1 row 2: ``LM3_HARDWARE`` (honoring the deprecated ``LM3_HARDWARE_SETTINGS`` for one
+    release), else ``<user-config>/lm3/<deployment>/hardware_settings.<machine-key>.yaml``, with a
+    one-release adopt of a profile sitting beside the resolved settings file. ``None`` is still the
+    miss shape because ``hardware_profile()`` renders a "run LM3_Setup" panel from it.
+    """
+    from leafmachine3.server.app import canonical_hardware_path
+
+    try:
+        path = canonical_hardware_path()
+    except PathsError as exc:
+        log.warning("cannot resolve the hardware profile: %s", exc)
+        return None
+    return path if path.is_file() else None
 
 
 def default_config_path() -> Optional[Path]:
-    return _find_file(CFG_FILENAME, "LM3_SETTINGS")
+    """The canonical next-run settings file, or ``None`` when nothing resolves to a real file.
+
+    Section 3.1 row 1. ``start_run`` turns ``None`` into a 400, so resolution never seeds here:
+    creating a settings file as a side effect of pressing Start would be a surprise, and
+    ``lm3 serve`` has already seeded one at startup if the install needed it.
+    """
+    from leafmachine3.server.app import canonical_settings_path
+
+    try:
+        path = canonical_settings_path()
+    except PathsError as exc:
+        log.warning("cannot resolve the LM3 settings file: %s", exc)
+        return None
+    return path if path.is_file() else None
 
 
 def _free_gb(path: Path) -> Optional[float]:
@@ -430,11 +435,16 @@ _ADOPT_TRIED = False
 
 
 def _state_path() -> Path:
-    """Where the active-run record is cached (beside the server's job dirs)."""
-    root = Path(os.environ.get("LM3_SERVER_JOBS", "runs/_server_jobs"))
-    if not root.is_absolute():
-        root = _repo_root() / root
-    return root / "active_run.json"
+    """Where the active-run record is cached (beside the server's job dirs).
+
+    Section 3.1 row 4, resolved by the SAME helper ``JobManager`` uses. Previously this read
+    ``LM3_SERVER_JOBS`` independently and absolutized a relative value against the checkout root
+    while ``app.DEFAULT_JOBS_ROOT`` left it CWD-relative -- so the server could create job dirs in
+    one tree and write the record that describes them into another.
+    """
+    from leafmachine3.server.app import server_jobs_root
+
+    return server_jobs_root() / "active_run.json"
 
 
 def _pid_alive(pid: int, create_time: Optional[float] = None) -> bool:
@@ -669,7 +679,15 @@ def start_run(config_path: Optional[str] = None, input_dir: Optional[str] = None
                     "stop it before starting another", status=409)
             _reap_stale(current)
 
-        cfg_path = Path(config_path).expanduser() if config_path else default_config_path()
+        if config_path:
+            cfg_path = Path(str(config_path)).expanduser()
+            if not cfg_path.is_absolute():
+                # Precedence row 1 is "explicit argument", not "explicit argument joined onto
+                # whatever directory the server was launched from" (section 3.1: no path falls
+                # back to the CWD). Refuse rather than guess.
+                raise RunError(f"config_path must be absolute; got {config_path!r}", status=400)
+        else:
+            cfg_path = default_config_path()
         if cfg_path is None:
             raise RunError(f"no {CFG_FILENAME} found -- pass config_path", status=400)
         cfg_path = cfg_path.resolve()
@@ -697,16 +715,22 @@ def start_run(config_path: Optional[str] = None, input_dir: Optional[str] = None
         except (ValueError, FileNotFoundError) as exc:
             raise RunError(str(exc), status=400) from exc
 
-        # The run's CWD decides where hardware_settings.yaml and every relative model path resolve
-        # (hardware_setup.HW_PATH is relative), so prefer the directory that actually holds the
-        # profile: the config's own directory, then the server's CWD, then the checkout root.
-        cwd = next((d for d in [cfg_path.parent, *_search_roots()] if (d / HW_FILENAME).is_file()),
-                   cfg_path.parent)
+        # The child runs in the CONFIG's own directory, always. The old election ("the first of
+        # [config dir, server CWD, checkout root] that contains hardware_settings.yaml") existed
+        # only because hardware_setup.HW_PATH was CWD-relative; now that the profile is
+        # deployment-scoped (section 3.1 row 2) that probe can only ever fall through, and a run
+        # whose relative model paths resolved against the server's launch directory is precisely
+        # the GUI/CLI disagreement this step removes. The child inherits LM3_DEPLOYMENT_ID and
+        # LM3_RUNTIME_DIR through ``env`` below, so it resolves the same deployment we did.
+        cwd = cfg_path.parent
 
         run_name = str(cfg.project.run_name)
-        out_dir = Path(str(cfg.project.output.dir)).expanduser()
-        if not out_dir.is_absolute():
-            out_dir = cwd / out_dir
+        # Relative output dirs hang off the settings FILE, which is also how progress_api's
+        # _from_settings and core.paths.resolve_project_output_dir read them -- one rule, so the
+        # status stream describes the directory the child actually writes into.
+        out_dir = resolve_project_output_dir(cfg_path, str(cfg.project.output.dir))
+        if out_dir is None:                            # settings with no output dir at all
+            raise RunError("project.output.dir is empty in the settings file", status=400)
         run_dir = out_dir / run_name
         logs_dir = run_dir / "logs"
         tmp_cfg = str(getattr(cfg.project.output, "tmp_dir", "auto") or "auto")

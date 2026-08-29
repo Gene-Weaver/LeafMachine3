@@ -35,12 +35,30 @@ from typing import Any, Callable, Optional
 
 import yaml
 
+from leafmachine3.core import paths
+
 log = logging.getLogger("leafmachine3.setup.calibrate")
 
-# Bundled sheets that exercise every GPU module (rulers, labels, leaves, petioles).
-DEFAULT_IMAGE_DIR = Path("examples/images")
+# Bundled sheets that exercise every GPU module (rulers, labels, leaves, petioles). They ship
+# INSIDE the package and are resolved through importlib.resources, never as a path relative to the
+# process CWD: calibration has to work identically from a wheel, a container image and this
+# checkout, and "examples/images" only ever existed in the last of the three (section 3.1, row 7).
+CALIBRATION_IMAGE_PACKAGE = "leafmachine3.setup.calibration_images"
 DEFAULT_N_IMAGES = 6                    # enough to reach steady state; keeps calibration ~minutes
 CALIBRATION_RUN_NAME = "_lm3_calibration"
+
+
+def default_image_dir() -> Path:
+    """The packaged calibration sheets.
+
+    A function rather than a module constant on purpose: a constant is bound at import time, which
+    is exactly how the old CWD-relative default survived so long -- it looked resolved when it was
+    only deferred to whoever happened to read it.
+
+    Raises :class:`leafmachine3.core.paths.PackagedResourceError` when the data did not ship and no
+    development checkout is detectable; callers treat that as "no calibration" rather than an abort.
+    """
+    return paths.calibration_images_dir(package=CALIBRATION_IMAGE_PACKAGE)
 
 
 def calibrate_gpu_stages(
@@ -59,12 +77,24 @@ def calibrate_gpu_stages(
     every module is reported, and a CPU module picks up whatever VRAM was still resident from
     the GPU module before it.
 
+    ``image_dir`` overrides the bundled sheets; unset, they come from the packaged resource, so
+    the answer does not change with the directory the caller was launched from.
+
     Returns ``{stage_key: {"vram_per_worker_mb": float, "seconds": float, ...}}``.
     Returns ``{}`` -- never raises -- if calibration cannot run or produces nothing usable;
     callers fall back to the heuristic estimate.
     """
     cfg_path = Path(cfg_path).resolve()
-    src_dir = Path(image_dir) if image_dir else DEFAULT_IMAGE_DIR
+    if image_dir is not None:
+        src_dir = Path(image_dir).expanduser()
+    else:
+        try:
+            src_dir = default_image_dir()
+        except paths.PathsError as exc:
+            # A packaging fault, not a user error: say so plainly instead of reporting a missing
+            # directory the user never chose and could not have created.
+            log.warning("calibration: %s -- keeping heuristic VRAM estimates", exc)
+            return {}
     if not src_dir.is_dir():
         log.warning("calibration: no image dir at %s -- keeping heuristic VRAM estimates", src_dir)
         return {}

@@ -52,6 +52,9 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Iterator, Optional
 
+from leafmachine3.core import paths
+from leafmachine3.core.paths import PathsError
+
 log = logging.getLogger("leafmachine3.server.results")
 
 # --------------------------------------------------------------------------- #
@@ -460,31 +463,56 @@ def run_roots() -> list[Path]:
 
     for extra in _EXTRA_ROOTS:
         _push(extra)
-    for entry in os.environ.get("LM3_RUNS_ROOTS", "").split(os.pathsep):
-        _push(entry.strip())
 
-    # The output dir the user is actually configured to write into. Read straight off disk each
-    # time so saving the Settings tab immediately changes what the Results tab can see.
-    _push(_settings_output_dir())
+    # LM3_RUNS_ROOTS, then the configured project.output.dir -- section 3.1 row 5, resolved by the
+    # canonical resolver so a relative output dir hangs off the settings FILE. Read straight off
+    # disk each time so saving the Settings tab immediately changes what the Results tab can see.
+    try:
+        for root in paths.runs_roots(env=_env(), settings_file=_settings_file(),
+                                     settings_output_dir=_settings_output_dir()):
+            _push(root)
+    except PathsError as exc:                                # a broken env must not empty the tab
+        log.debug("could not resolve the run-history roots (%s)", exc)
 
     # Runs submitted through POST /v1/jobs. Imported lazily: server.app must be free to import this
     # module at the top of create_app without a circular import.
     try:
-        from leafmachine3.server.app import DEFAULT_JOBS_ROOT
+        from leafmachine3.server.app import server_jobs_root
 
-        _push(DEFAULT_JOBS_ROOT)
+        _push(server_jobs_root())
     except Exception:                                        # noqa: BLE001 - app.py is optional here
         pass
 
-    _push(Path.cwd() / "runs")
-    _push(Path.cwd() / "examples_out")
-    _push(Path.cwd())
+    # ``Path.cwd()``, ``cwd/runs`` and ``cwd/examples_out`` used to be pushed here unconditionally.
+    # They are gone (section 3.1: "No path falls back to the current working directory"): with the
+    # variable unset they were the ONLY roots, so the Results tab listed whatever happened to sit
+    # beside the launcher -- and listed nothing at all when the server was started from elsewhere,
+    # for the same configuration. An empty list is the honest answer; LM3_RUNS_ROOTS is the knob.
     return roots
 
 
+def _env() -> Any:
+    """The environment with the deprecated aliases folded in (see ``app.server_env``)."""
+    from leafmachine3.server.app import server_env
+
+    return server_env()
+
+
+def _settings_file() -> Optional[Path]:
+    """The canonical settings file (section 3.1 row 1), or ``None`` if it cannot be resolved."""
+    try:
+        from leafmachine3.server.app import canonical_settings_path
+
+        return canonical_settings_path()
+    except Exception as exc:                                 # noqa: BLE001 - never fail discovery
+        log.debug("could not resolve the settings file (%s)", exc)
+        return None
+
+
 def _settings_output_dir() -> Optional[str]:
-    path = Path("LM3_settings.yaml")
-    if not path.is_file():
+    """``project.output.dir`` verbatim from the canonical settings file (may be relative)."""
+    path = _settings_file()
+    if path is None or not path.is_file():
         return None
     try:
         import yaml
@@ -542,9 +570,9 @@ def discover_runs(*, refresh: bool = False) -> list[Run]:
 
 def _jobs_root() -> Optional[Path]:
     try:
-        from leafmachine3.server.app import DEFAULT_JOBS_ROOT
+        from leafmachine3.server.app import server_jobs_root
 
-        return Path(DEFAULT_JOBS_ROOT).expanduser().resolve()
+        return server_jobs_root().expanduser().resolve()
     except Exception:                                        # noqa: BLE001
         return None
 

@@ -33,12 +33,15 @@ from typing import Any, Iterable, Optional
 
 import yaml
 
+from leafmachine3.core.paths import PathsError, resolve_project_output_dir
+
 log = logging.getLogger("leafmachine3.server.settings")
 
-# Where the settings file lives. app.py resolves ``LM3_settings.yaml`` relative to the CWD the
-# server was started in; we honor the same default plus an explicit env override so a packaged
-# Electron shell can point at a user-data copy without a code change.
-_SETTINGS_ENV = "LM3_SETTINGS_PATH"
+# Where the settings file lives: the ONE canonical chain in leafmachine3.core.paths (plan section
+# 3.1 row 1), reached through leafmachine3.server.app so the deprecated ``LM3_SETTINGS_PATH``
+# spelling warns once per process rather than once per request. This module used to own a third
+# answer -- ``$LM3_SETTINGS_PATH`` else ``./LM3_settings.yaml`` -- which is why the Settings tab
+# could edit one file while the run launcher started another from the same directory.
 _META_ENV = "LM3_SETTINGS_META"
 DEFAULT_SETTINGS_NAME = "LM3_settings.yaml"
 
@@ -107,10 +110,19 @@ _SETTINGS_SUFFIXES = frozenset({".yaml", ".yml"})
 
 
 def settings_path(explicit: str | os.PathLike[str] | None = None) -> Path:
-    """Resolve the settings file: explicit argument > ``$LM3_SETTINGS_PATH`` > ``./LM3_settings.yaml``.
+    """Resolve the settings file through the canonical section 3.1 chain.
 
-    Always returned absolute so the UI can display it and so backups/presets land in a
-    predictable place regardless of the server's CWD.
+    With no ``explicit`` argument this is exactly what ``metrics_api``, ``progress_api``,
+    ``postprocess_api`` and ``results_api`` resolve: ``LM3_SETTINGS`` (honoring the deprecated
+    ``LM3_SETTINGS_PATH`` for one release), then the deployment workspace pointer, then
+    ``<user-config>/lm3/<deployment>/LM3_settings.yaml``, then -- in a development checkout only --
+    the checkout's own file. **No step falls back to the current working directory.**
+
+    ``explicit`` is the caller-supplied ``yaml_path`` a route accepts, i.e. precedence row 1. It
+    must be ABSOLUTE: a relative HTTP-supplied path used to be joined onto the server's CWD, which
+    made the answer depend on where the server happened to be launched. It is NOT required to
+    exist -- ``GET /v1/settings?yaml_path=...`` reports ``exists: false`` for a file the user is
+    about to create, and ``PUT`` creates it.
 
     The suffix check is a SECURITY boundary, not tidiness. Every ``yaml_path`` the routes accept
     funnels through here, and the endpoints downstream both read the target's raw bytes back to
@@ -118,10 +130,22 @@ def settings_path(explicit: str | os.PathLike[str] | None = None) -> Path:
     ``save_preset``). Without it, ``GET /v1/settings?yaml_path=/etc/passwd`` is an arbitrary-file
     reader and ``PUT /v1/settings`` an arbitrary-file writer for anyone holding the token.
     """
-    raw = str(explicit) if explicit else os.environ.get(_SETTINGS_ENV) or DEFAULT_SETTINGS_NAME
-    path = Path(raw).expanduser()
-    if not path.is_absolute():
-        path = Path.cwd() / path
+    if explicit is not None and str(explicit).strip():
+        raw = str(explicit)
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            raise SettingsError(
+                f"a settings path must be absolute; got {raw!r}. LM3 never resolves a settings "
+                f"path against the server's working directory (plan section 3.1)."
+            )
+    else:
+        from leafmachine3.server.app import canonical_settings_path
+
+        try:
+            path = canonical_settings_path()
+        except PathsError as exc:                    # split-brain env, unreadable pointer, ...
+            raise SettingsError(str(exc)) from exc
+        raw = str(path)
     # normpath (not resolve) so a symlinked settings file is written through, not replaced.
     path = Path(os.path.normpath(str(path)))
     if path.suffix.lower() not in _SETTINGS_SUFFIXES:
@@ -418,12 +442,21 @@ def _count_images_recursive(root: Path, exts: frozenset, *, cap: int = _RECURSIV
     return n, False
 
 
-def _collect_warnings(cfg: Any, values: dict) -> list:
+def _collect_warnings(cfg: Any, values: dict, settings_file: Path | None = None) -> list:
     """Non-fatal problems worth surfacing before a run starts.
 
     ``Config.validate()`` deliberately checks structure only (artifact existence is
     ``core.validate.validate_ml_artifacts``' job, and it only runs at run start). A GUI that
     waits until then to mention a missing model folder is a GUI that wastes the user's time.
+
+    ``settings_file`` is the CANONICAL settings path, passed in rather than taken off ``cfg``.
+    ``cfg`` here was loaded from a throwaway temp file (see :func:`validate_values`), so
+    ``cfg.source_path`` points into the system temp directory and must never be used to
+    absolutize a configured path -- and ``Config.resolve_path`` joins the server's CWD, which
+    the section 3.1 precedence-table preamble forbids outright ("No path falls back to the
+    current working directory", gate 44). Passing the real path in is what makes the Settings
+    tab name the SAME output folder that ``progress_api``/``metrics_api`` report for the same
+    file. ``None`` (no resolvable settings path) simply drops the checks that need one.
     """
     out: list = []
 
@@ -472,10 +505,16 @@ def _collect_warnings(cfg: Any, values: dict) -> list:
     resolved_inputs: list[str] = []
     for d in input_dirs:
         try:
-            p = Path(cfg.resolve_path(d))
+            # Same settings-relative rule as core.runtime.config_io._resolve_input_dirs, so the
+            # preview names the folder the run will actually read (PathsError -> a warning, not
+            # a 500: a relative dir with no settings file is unresolvable, not a crash).
+            resolved = resolve_project_output_dir(settings_file, d)
         except Exception:  # noqa: BLE001
             warn("bad_input", "project.input.dirs", f"Input folder is not a usable path: {d!r}")
             continue
+        if resolved is None:
+            continue
+        p = resolved
         resolved_inputs.append(os.path.normpath(str(p)))
         if not _exists(p):
             warn("missing_input", "project.input.dirs", f"Input folder does not exist: {p}")
@@ -500,16 +539,22 @@ def _collect_warnings(cfg: Any, values: dict) -> list:
     # -- output / tmp --------------------------------------------------------- #
     try:
         outp = cfg.project.get("output", {}) or {}
-        out_dir = Path(cfg.resolve_path(outp.get("dir", "runs")))
-        if not _dir_writable(out_dir):
-            warn("output_unwritable", "project.output.dir", f"Output folder is not writable: {out_dir}")
-        if os.path.normpath(str(out_dir)) in resolved_inputs:
-            warn("output_is_input", "project.output.dir",
-                 "Output folder is also an input folder: a second run would ingest its own results.")
+        # ONE rule for the output root -- the one progress_api/metrics_api/config_io use. The
+        # Settings tab warning has to name the folder the run writes to, or it is worse than no
+        # warning at all.
+        out_dir = resolve_project_output_dir(settings_file, outp.get("dir", "runs"))
+        if out_dir is not None:
+            if not _dir_writable(out_dir):
+                warn("output_unwritable", "project.output.dir",
+                     f"Output folder is not writable: {out_dir}")
+            if os.path.normpath(str(out_dir)) in resolved_inputs:
+                warn("output_is_input", "project.output.dir",
+                     "Output folder is also an input folder: a second run would ingest its own "
+                     "results.")
         tmp = outp.get("tmp_dir", "auto")
         if isinstance(tmp, str) and tmp.strip().lower() != "auto":
-            tmp_dir = Path(cfg.resolve_path(tmp))
-            if not _dir_writable(tmp_dir):
+            tmp_dir = resolve_project_output_dir(settings_file, tmp)
+            if tmp_dir is not None and not _dir_writable(tmp_dir):
                 warn("tmp_unwritable", "project.output.tmp_dir",
                      f"Temp folder is not writable (LM3 falls back to the run folder): {tmp_dir}")
     except Exception as exc:  # noqa: BLE001
@@ -553,7 +598,12 @@ def _collect_warnings(cfg: Any, values: dict) -> list:
     return out
 
 
-def validate_values(values: Any, *, warnings: bool = True) -> dict:
+def validate_values(
+    values: Any,
+    *,
+    warnings: bool = True,
+    settings_file: str | os.PathLike[str] | None = None,
+) -> dict:
     """Validate a settings tree WITHOUT touching the real file.
 
     Writes the tree to a throwaway file, runs the real ``Config.load`` + ``Config.validate``
@@ -561,6 +611,13 @@ def validate_values(values: Any, *, warnings: bool = True) -> dict:
 
         {"ok": bool, "errors": [str], "field_errors": {path: [str]},
          "warnings": [{code, path, msg}], "preview": "<yaml text>"}
+
+    ``settings_file`` is the file the tree is destined for -- precedence row 1 when a caller
+    supplies one, else the canonical chain. It exists ONLY so the advisory warnings absolutize
+    relative paths against the settings file rather than the server's CWD (gate 44); the
+    throwaway temp copy the validator actually loads is never a usable anchor. Resolution
+    failures degrade to ``None``, because validation is advisory and must never become fatal on
+    a broken environment.
     """
     result: dict[str, Any] = {"ok": False, "errors": [], "field_errors": {},
                               "warnings": [], "preview": None}
@@ -575,6 +632,16 @@ def validate_values(values: Any, *, warnings: bool = True) -> dict:
         result["errors"] = [f"settings could not be serialized to YAML: {exc}"]
         return result
     result["preview"] = text
+
+    # Resolved once, outside the temp-file dance, and never allowed to raise: a split-brain
+    # environment or an unreadable workspace pointer should downgrade path warnings, not turn
+    # "is this settings tree valid?" into an error.
+    anchor: Optional[Path] = None
+    if warnings:
+        try:
+            anchor = settings_path(settings_file)
+        except SettingsError as exc:
+            log.debug("warning path anchor unavailable: %s", exc)
 
     tmp_path: Optional[str] = None
     try:
@@ -600,7 +667,7 @@ def validate_values(values: Any, *, warnings: bool = True) -> dict:
 
         if warnings:
             try:
-                result["warnings"] = _collect_warnings(cfg, values)
+                result["warnings"] = _collect_warnings(cfg, values, anchor)
             except Exception as exc:  # noqa: BLE001 - advisory only, never fatal
                 log.debug("warning collection failed: %s", exc)
     finally:
@@ -739,7 +806,8 @@ def write_settings(
     (a second window, or a hand edit). Omit it to write unconditionally.
     """
     p = settings_path(path)
-    check = validate_values(values)
+    # The tree is about to land in ``p``, so ``p`` is what its relative paths mean.
+    check = validate_values(values, settings_file=p)
     if not check["ok"]:
         raise SettingsError(
             "settings are invalid and were NOT written",
@@ -904,6 +972,20 @@ def delete_preset(name: str, path: str | os.PathLike[str] | None = None) -> dict
 # --------------------------------------------------------------------------- #
 # Folder browser (for the `path`-typed settings)
 # --------------------------------------------------------------------------- #
+def _picker_base() -> Path:
+    """Where the folder picker starts, and what a RELATIVE path from it is resolved against.
+
+    The settings file's own directory, else the user's home. It was the server's CWD, which made
+    "browse ``data/``" mean different directories depending on where the server was launched --
+    the same defect as the settings split, in the one place a user types a path by hand
+    (plan section 3.1: no path falls back to the current working directory).
+    """
+    try:
+        return settings_path().parent
+    except SettingsError:
+        return Path.home()
+
+
 def _roots() -> list:
     """Sensible starting points for the picker."""
     out: list = []
@@ -916,10 +998,13 @@ def _roots() -> list:
             out.append({"label": label, "path": s})
 
     add("Home", Path.home())
-    add("Working folder", Path.cwd())
+    # "Working folder" (the server's CWD) used to be listed here. It is gone with the rest of the
+    # CWD dependence (plan section 3.1): under the Electron shell it named the checkout, under a
+    # wheel install it named wherever the user happened to be, and it never described the user's
+    # data. The settings folder below is the equivalent that actually means something.
     try:
         add("Settings folder", settings_path().parent)
-    except SettingsError:            # a misconfigured $LM3_SETTINGS_PATH must not break the picker
+    except SettingsError:            # a misconfigured LM3_SETTINGS must not break the picker
         pass
     for extra in ("/data", "/datac", "/mnt", "/media", "/scratch"):
         add(extra, Path(extra))
@@ -944,11 +1029,11 @@ def browse(
     """
     requested = path
     if path is None or not str(path).strip():
-        target = Path.cwd()
+        target = _picker_base()
     else:
         target = Path(str(path).strip()).expanduser()
         if not target.is_absolute():
-            target = Path.cwd() / target
+            target = _picker_base() / target
     # normpath collapses ".."/"." textually; realpath then resolves symlinks. Both stop at "/",
     # which IS the containment guarantee on POSIX -- there is nothing above the root to escape to.
     try:
@@ -1059,7 +1144,7 @@ def make_dir(path: str) -> dict:
     """Create a folder from the picker (``mkdir -p``). Used by the output/tmp path fields."""
     p = Path(str(path).strip()).expanduser()
     if not p.is_absolute():
-        p = Path.cwd() / p
+        p = _picker_base() / p
     p = Path(os.path.normpath(str(p)))
     try:
         p.mkdir(parents=True, exist_ok=True)
@@ -1184,7 +1269,9 @@ def create_router(require_token: Any = None, dependencies: Optional[list] = None
 
     @api.post("/validate")
     def post_validate(body: ValidateBody) -> dict:
-        return validate_values(body.values)
+        # Honor precedence row 1: the caller-supplied path (already required to be absolute and
+        # ``.yaml`` by ``settings_path``) is the anchor for the tree's relative paths.
+        return validate_values(body.values, settings_file=body.yaml_path)
 
     @api.get("/meta")
     def get_meta() -> dict:

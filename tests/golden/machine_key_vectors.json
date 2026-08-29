@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "purpose": "Pins the canonical serialization hashed into <machine-key>, the suffix of <user-config>/lm3/<deployment>/hardware_settings.<machine-key>.yaml.",
+  "algorithm": "key = sha256(serialized utf-8).hexdigest()[:16]. The serialization is four lines, each terminated by '\\n', always present, in this order: 'machine-key/v1', 'os-machine-id: <value>|none', 'node: <SLURM_NODENAME or hostname>', 'gpu-uuids: <sorted UUIDs joined by \",\">|none'.",
+  "notes": [
+    "node: is UNCONDITIONAL, never merely a fallback -- that is what separates two containerized nodes sharing one baked /etc/machine-id (gate 20).",
+    "Driver versions, ORT/provider versions, selected devices, enabled stages and model fingerprints must NOT enter the key; they are staleness fields inside the profile."
+  ],
+  "vectors": [
+    {
+      "name": "desktop_linux_one_gpu",
+      "os_machine_id": "3f2a1c9d4e5b6a7c8d9e0f1a2b3c4d5e",
+      "node": "workstation-01",
+      "gpu_uuids": [
+        "GPU-11111111-2222-3333-4444-555555555555"
+      ],
+      "serialized": "machine-key/v1\nos-machine-id: 3f2a1c9d4e5b6a7c8d9e0f1a2b3c4d5e\nnode: workstation-01\ngpu-uuids: GPU-11111111-2222-3333-4444-555555555555\n",
+      "machine_key": "9687ee8f7f46e042",
+      "note": "The ordinary desktop case."
+    },
+    {
+      "name": "desktop_no_machine_id",
+      "os_machine_id": null,
+      "node": "workstation-01",
+      "gpu_uuids": [
+        "GPU-11111111-2222-3333-4444-555555555555"
+      ],
+      "serialized": "machine-key/v1\nos-machine-id: none\nnode: workstation-01\ngpu-uuids: GPU-11111111-2222-3333-4444-555555555555\n",
+      "machine_key": "f88ec59da475e756",
+      "note": "An unreadable /etc/machine-id becomes the explicit marker 'none', never an omitted line."
+    },
+    {
+      "name": "cpu_only_node",
+      "os_machine_id": "3f2a1c9d4e5b6a7c8d9e0f1a2b3c4d5e",
+      "node": "workstation-01",
+      "gpu_uuids": [],
+      "serialized": "machine-key/v1\nos-machine-id: 3f2a1c9d4e5b6a7c8d9e0f1a2b3c4d5e\nnode: workstation-01\ngpu-uuids: none\n",
+      "machine_key": "94ab3c255b36098e",
+      "note": "No GPUs is normal, and 'none' is explicit."
+    },
+    {
+      "name": "container_image_node_a",
+      "os_machine_id": "ffffffffffffffffffffffffffffffff",
+      "node": "node0042",
+      "gpu_uuids": [],
+      "serialized": "machine-key/v1\nos-machine-id: ffffffffffffffffffffffffffffffff\nnode: node0042\ngpu-uuids: none\n",
+      "machine_key": "83eb98c5f95287f6",
+      "note": "GATE 20: one baked image machine id, CPU-only, node A."
+    },
+    {
+      "name": "container_image_node_b",
+      "os_machine_id": "ffffffffffffffffffffffffffffffff",
+      "node": "node0043",
+      "gpu_uuids": [],
+      "serialized": "machine-key/v1\nos-machine-id: ffffffffffffffffffffffffffffffff\nnode: node0043\ngpu-uuids: none\n",
+      "machine_key": "60fe5c36c2fba775",
+      "note": "GATE 20: the SAME baked machine id and no GPUs, node B -- the key must still differ."
+    },
+    {
+      "name": "slurm_node_named",
+      "os_machine_id": "ffffffffffffffffffffffffffffffff",
+      "node": "gl1234",
+      "gpu_uuids": [],
+      "serialized": "machine-key/v1\nos-machine-id: ffffffffffffffffffffffffffffffff\nnode: gl1234\ngpu-uuids: none\n",
+      "machine_key": "ac913ea3de821ea7",
+      "note": "node: takes SLURM_NODENAME when the scheduler names the node."
+    },
+    {
+      "name": "gpu_uuid_order",
+      "os_machine_id": "3f2a1c9d4e5b6a7c8d9e0f1a2b3c4d5e",
+      "node": "workstation-01",
+      "gpu_uuids": [
+        "GPU-bbbbbbbb-0000-0000-0000-000000000000",
+        "GPU-aaaaaaaa-0000-0000-0000-000000000000"
+      ],
+      "serialized": "machine-key/v1\nos-machine-id: 3f2a1c9d4e5b6a7c8d9e0f1a2b3c4d5e\nnode: workstation-01\ngpu-uuids: GPU-aaaaaaaa-0000-0000-0000-000000000000,GPU-bbbbbbbb-0000-0000-0000-000000000000\n",
+      "machine_key": "30f95e2e8e2a7519",
+      "note": "UUIDs are sorted before joining, so enumeration order cannot move the key."
+    },
+    {
+      "name": "two_gpus_sorted",
+      "os_machine_id": "3f2a1c9d4e5b6a7c8d9e0f1a2b3c4d5e",
+      "node": "workstation-01",
+      "gpu_uuids": [
+        "GPU-aaaaaaaa-0000-0000-0000-000000000000",
+        "GPU-bbbbbbbb-0000-0000-0000-000000000000"
+      ],
+      "serialized": "machine-key/v1\nos-machine-id: 3f2a1c9d4e5b6a7c8d9e0f1a2b3c4d5e\nnode: workstation-01\ngpu-uuids: GPU-aaaaaaaa-0000-0000-0000-000000000000,GPU-bbbbbbbb-0000-0000-0000-000000000000\n",
+      "machine_key": "30f95e2e8e2a7519",
+      "note": "Same host as gpu_uuid_order: the two MUST produce one key."
+    },
+    {
+      "name": "all_none",
+      "os_machine_id": null,
+      "node": "",
+      "gpu_uuids": [],
+      "serialized": "machine-key/v1\nos-machine-id: none\nnode: \ngpu-uuids: none\n",
+      "machine_key": "cd1cb7f808cd6bba",
+      "note": "Degenerate but representable: every probe failed. Still a stable, serializable key."
+    }
+  ]
+}

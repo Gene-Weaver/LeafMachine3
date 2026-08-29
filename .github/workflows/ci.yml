@@ -24,3 +24,68 @@ jobs:
         run: ruff check leafmachine3 || true
       - name: Test (mock pipeline — no models/GPU required)
         run: pytest -q
+
+  # §4 Step 2 exit gate: "the primitives pass in isolation on all three platforms", and §2.2's
+  # kill-the-root test is "a first-class CI job, not an extrapolation from the POSIX result — the
+  # two implementations share no mechanism". §7 "Platform CI" names Linux, macOS and Windows. The
+  # `test` job above covers Linux; this one covers the other two.
+  #
+  # Deliberately scoped to the runtime primitive files rather than all of `tests/`: the exit gate is
+  # "in isolation", and a whole-suite run on a fresh runner drowns the platform signal in unrelated
+  # optional-dependency failures (the `ModuleNotFoundError: No module named 'ect'` family).
+  #
+  # No `-p no:recording` here: that flag exists only for developer interpreters where
+  # pytest-recording and pytest-vcr collide, and `.[cpu,dev]` installs neither.
+  #
+  # NOT YET DEMONSTRATED: this checkout has no git remote, so nothing under .github/workflows/
+  # executes from it. Step 2 may not claim its "all three platforms" exit gate, or §8 gate 27, on
+  # the strength of this file alone — only on a green run of this job after the branch reaches the
+  # upstream named by pyproject's Homepage.
+  platform-primitives:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (CPU, no heavy ML deps)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[cpu,dev]"
+      - name: Step 2 runtime primitives (isolated)
+        run: >
+          python -m pytest -q -rs
+          tests/test_runtime_lease.py
+          tests/test_runtime_lease_windows.py
+          tests/test_runtime_records.py
+          tests/test_runtime_grant.py
+          tests/test_runtime_config_io.py
+          tests/test_runtime_isolation.py
+          tests/test_paths.py
+          tests/test_setup_paths.py
+          tests/test_settings_path_unification.py
+      # The two `skipif(sys.platform != "win32")` tests are the only ones in the tree that touch
+      # the real object manager -- the one thing the Linux FakeWin32 harness cannot establish
+      # (CreateEventW, ERROR_ALREADY_EXISTS, CompareObjectHandles, DuplicateHandle, STARTUPINFOEX).
+      # They are named here so the Windows leg proves they RAN; the step above already ran them,
+      # but a skip there would pass silently.
+      - name: The real Win32 surface must not have skipped
+        if: matrix.os == 'windows-latest'
+        # bash (git-bash on the Windows runner) rather than PowerShell, because GitHub runs it with
+        # `set -eo pipefail`, so the grep guards below are load-bearing and `tee` cannot swallow
+        # pytest's exit code.
+        shell: bash
+        run: |
+          python -m pytest -q -rs \
+            "tests/test_runtime_lease_windows.py::test_the_real_allowlist_is_a_startupinfo" \
+            "tests/test_runtime_lease_windows.py::test_the_real_surface_acquires_and_releases" \
+            | tee win32-real-surface.log
+          # pytest exits 0 on a skip, so a passing run is NOT by itself proof that the real object
+          # manager was touched. These two lines are the actual assertion behind gate 27's
+          # "verified against the Windows adapter itself, not inferred from the POSIX result".
+          grep -q "2 passed" win32-real-surface.log
+          ! grep -qi "skipped" win32-real-surface.log

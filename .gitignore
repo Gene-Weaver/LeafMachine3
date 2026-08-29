@@ -54,3 +54,20 @@ htmlcov/
 
 # test/run outputs (one subdir per test/run name)
 examples_out/
+
+# ---- Electron packaging (app/electron-builder.yml) ----
+# Build output: one unpacked ~250 MB tree plus an AppImage/deb/tar.gz per Linux target, and
+# considerably more once Windows and macOS targets are built. Never committed.
+/app/dist/
+# electron-builder's local caches, if a build is ever run with a project-local cache dir.
+/app/.cache/
+# ...but app/build/ is TRACKED packaging input (icon, entitlements, icon generator). The generic
+# Python `build/` rule above matches any directory named "build" at any depth and would swallow
+# it, so re-include it here. This negation must stay AFTER that rule to take effect.
+!/app/build/
+
+# Raw verification material from the Step 1/2 closeout. Deliberately NOT committed: it carries the
+# machine key, GPU UUIDs, node name, absolute home paths and full pytest output. The committed,
+# sanitized equivalents are docs/verification/STEP2_VERIFICATION_SUMMARY.md and
+# docs/verification/STEP2_BASELINE_NODE_IDS.txt.
+.step2_evidence/

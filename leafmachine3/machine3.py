@@ -164,12 +164,22 @@ def _cli_overrides(
     output_dir: str | Path | None,
     restart: RestartArg,
 ) -> dict:
-    """Build the override tree so CLI flags win over the YAML (deep-merged in ``Config.load``)."""
+    """Build the override tree so CLI flags win over the YAML (deep-merged in ``Config.load``).
+
+    Relative override paths are absolutized HERE, against the caller's CWD (plan section 3.5 rules
+    2 and 3). It has to happen at this boundary: once these values are deep-merged into the config
+    mapping, nothing downstream can tell a CLI-supplied ``output.dir`` from a YAML-supplied one, and
+    the two take different bases -- the caller's CWD for a flag, the settings file's directory for
+    YAML. Absolutize while the provenance still exists, or lose the ability to be correct.
+    """
+    def _from_cwd(value: str | Path) -> str:
+        return str(Path(str(value)).expanduser().resolve())
+
     overrides: dict = {"project": {}}
     if input_dir:
-        overrides["project"]["input"] = {"dirs": [str(input_dir)]}
+        overrides["project"]["input"] = {"dirs": [_from_cwd(input_dir)]}
     if output_dir:
-        overrides["project"]["output"] = {"dir": str(output_dir)}
+        overrides["project"]["output"] = {"dir": _from_cwd(output_dir)}
     if restart is not None:
         overrides["project"]["run_mode"] = {"restart": restart}
     return overrides

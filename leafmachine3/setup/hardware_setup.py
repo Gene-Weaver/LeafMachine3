@@ -1,9 +1,14 @@
 """leafmachine3.setup.hardware_setup -- LM3_Setup: the one-time (rerunnable) profiler.
 
-Runs ONCE per install (or on demand) to measure THIS specific machine and write
-``hardware_settings.yaml`` -- the tuned, machine-derived layer every module reads for
-worker counts, batch sizes, queue sizes, tmp location, GPU availability + VRAM,
-precision, and the bound execution provider.
+Runs ONCE per install (or on demand) to measure THIS specific machine and write the
+hardware profile -- the tuned, machine-derived layer every module reads for worker counts,
+batch sizes, queue sizes, tmp location, GPU availability + VRAM, precision, and the bound
+execution provider.
+
+The profile is deployment-scoped and machine-keyed
+(``<user-config>/lm3/<deployment>/hardware_settings.<machine-key>.yaml``, see
+:func:`hardware_profile_path`), NOT a ``hardware_settings.yaml`` beside whatever directory the
+process was started in. That older location is still adopted once, by copy, for one release.
 
 The profiler is deliberately conservative and dependency-light: every probe degrades
 gracefully so that a CPU-only host (or a ``compute.mock`` run) always produces a valid
@@ -31,12 +36,54 @@ from typing import Any, Callable, Optional, Sequence
 
 import yaml
 
+from leafmachine3.core import paths
+
 log = logging.getLogger("leafmachine3.setup")
 
-HW_PATH = Path("hardware_settings.yaml")     # top-level, beside LM3_settings.yaml
 LM3_VERSION = "3.0.0"
 
 ProgressCB = Callable[..., None]
+
+
+def hardware_profile_path(cfg: Any = None) -> Path:
+    """Where THIS deployment's profile for THIS machine lives (section 3.1, table row 2).
+
+    ``LM3_HARDWARE``, else
+    ``<user-config>/lm3/<canonical-deployment>/hardware_settings.<machine-key>.yaml``, else a
+    one-release legacy adopt that COPIES a profile sitting beside the resolved settings file into
+    that path and uses the copy.
+
+    Two properties are load-bearing and neither is obvious:
+
+    * **Deployment-scoped, not machine-scoped.** ``run_setup`` sizes GPU stages against the
+      *selected* ``compute.devices`` subset, instantiates only the stages the supplied config
+      enables, and fingerprints config-derived model hashes. Two named deployments hold separate
+      leases, so nothing stops them tuning concurrently -- one pinned to GPU 0, one to GPU 1 --
+      and a machine-scoped file would let each carry the other's measurements forward. The
+      deployment lock cannot protect a path outside the deployment.
+    * **Resolved per call, never a module constant.** The old ``HW_PATH`` was bound at import, so
+      it silently named a different file from every launch directory, and a spawned child could
+      not be pointed anywhere by its environment. Resolution has to happen after the process has
+      its environment, not while it is being imported.
+
+    ``cfg`` is accepted for call-site symmetry but no longer moves the path: ``--config`` selects
+    settings and nothing else.
+
+    **Pure.** Resolution never writes. The one-release legacy adopt is
+    :func:`migrate_legacy_profile`, called from the two controlled entry points below.
+    """
+    return paths.hardware_profile_path()
+
+
+def migrate_legacy_profile(cfg: Any = None) -> Path | None:
+    """Adopt a beside-the-settings ``hardware_settings.yaml`` once, at a controlled entry point.
+
+    Deliberately separate from :func:`hardware_profile_path`: a function that RESOLVES a path is
+    called from status snapshots and health probes many times a second, and one that WRITES must
+    not be. Returns the adopted target, or ``None`` when there was nothing to adopt.
+    """
+    settings_file = getattr(cfg, "source_path", None) if cfg is not None else None
+    return paths.migrate_legacy_hardware_profile(settings_file=settings_file)
 
 
 # --------------------------------------------------------------------------- #
@@ -71,7 +118,7 @@ class Fingerprint:
 
 @dataclass
 class HardwareSettings:
-    """The complete, serialisable machine profile written to ``hardware_settings.yaml``."""
+    """The complete, serialisable machine profile written to the resolved profile path."""
 
     fingerprint: Fingerprint
     provider: str
@@ -92,33 +139,40 @@ class HardwareSettings:
 def ensure_hardware_profile(cfg: Any) -> Path:
     """Bind a hardware profile onto ``cfg``, auto-running LM3_Setup on first use.
 
-    If ``hardware_settings.yaml`` is MISSING, the full LM3_Setup runs once (the only
-    time it self-triggers) so the first run is tuned. If it EXISTS it is never re-run
-    automatically: a drifted fingerprint only LOGS a suggestion to rerun. The profile
-    is then bound so every ``auto`` in the config resolves from it.
+    If the profile is MISSING, the full LM3_Setup runs once (the only time it self-triggers)
+    so the first run is tuned. If it EXISTS it is never re-run automatically: a drifted
+    fingerprint only LOGS a suggestion to rerun. The profile is then bound so every ``auto``
+    in the config resolves from it.
+
+    The path comes from :func:`hardware_profile_path`, so it is the same file whatever directory
+    the run was launched from -- and resolving it here is also what performs the one-release
+    legacy adopt, before the "is it missing?" question is asked.
     """
-    if not HW_PATH.exists():
+    migrate_legacy_profile(cfg)          # controlled entry point: adopt once, here
+    hw_path = hardware_profile_path(cfg)
+    if not hw_path.exists():
         log.info(
-            "no hardware_settings.yaml found -- running LM3_Setup once to tune this machine "
-            "(cached for every future run)"
+            "no hardware profile at %s -- running LM3_Setup once to tune this machine "
+            "(cached for every future run)", hw_path
         )
         run_setup(cfg, optimize=True)
     else:
         try:
-            if _load(HW_PATH).fingerprint != _fingerprint(cfg):
+            if _load(hw_path).fingerprint != _fingerprint(cfg):
                 log.warning(
                     "hardware / driver / models changed since the last LM3_Setup -- this run uses the "
-                    "EXISTING profile; rerun `python -m leafmachine3.setup` to re-tune when convenient"
+                    "EXISTING profile at %s; rerun `python -m leafmachine3.setup` to re-tune when "
+                    "convenient", hw_path
                 )
         except Exception as exc:  # noqa: BLE001 - a malformed profile must not abort the run
-            log.warning("could not read %s (%s) -- rebuilding profile", HW_PATH, exc)
+            log.warning("could not read %s (%s) -- rebuilding profile", hw_path, exc)
             run_setup(cfg, optimize=True, force=True)
 
     try:
-        cfg.bind_hardware(_load(HW_PATH))
+        cfg.bind_hardware(_load(hw_path))
     except Exception as exc:  # noqa: BLE001 - never let profile binding crash a run
-        log.warning("could not bind %s (%s) -- proceeding without a tuned profile", HW_PATH, exc)
-    return HW_PATH
+        log.warning("could not bind %s (%s) -- proceeding without a tuned profile", hw_path, exc)
+    return hw_path
 
 
 def run_setup(
@@ -131,7 +185,7 @@ def run_setup(
     tmp_override: str | None = None,
     on_progress: ProgressCB | None = None,
 ) -> Path:
-    """Profile the machine and (re)write ``hardware_settings.yaml``.
+    """Profile the machine and (re)write this deployment's hardware profile.
 
     Idempotent: a valid profile whose fingerprint already matches this machine is kept
     unless ``force``. Returns the path written (or reused).
@@ -142,12 +196,14 @@ def run_setup(
     opt-in; without it, any measurement from a previous calibration is carried forward
     rather than discarded.
     """
+    migrate_legacy_profile(cfg)          # controlled entry point: adopt once, here
+    hw_path = hardware_profile_path(cfg)
     fingerprint = _fingerprint(cfg)
-    if HW_PATH.exists() and not force:
+    if hw_path.exists() and not force:
         try:
-            if _load(HW_PATH).fingerprint == fingerprint:
-                log.info("hardware_settings.yaml is current -- nothing to do (use --force to redo)")
-                return HW_PATH
+            if _load(hw_path).fingerprint == fingerprint:
+                log.info("%s is current -- nothing to do (use --force to redo)", hw_path)
+                return hw_path
         except Exception:  # noqa: BLE001 - fall through and rewrite a broken file
             pass
 
@@ -173,7 +229,8 @@ def run_setup(
     # Real per-worker VRAM beats the heuristic by a wide margin (the estimates over-counted
     # detectors ~5x), so measure when asked and otherwise carry any earlier measurement forward
     # -- a routine re-profile must not silently downgrade measured numbers back to guesses.
-    _apply_vram_measurements(stages, cfg, sweep_gpus, calibrate=calibrate, on_progress=on_progress)
+    _apply_vram_measurements(stages, cfg, sweep_gpus, calibrate=calibrate,
+                             on_progress=on_progress, profile_path=hw_path)
     # CPU stages: light thread-pooled stages get flat io_workers; process-pooled stages
     # (cpu_parallel="process") get the measured process-scaling knee (so the spawn pool isn't
     # over-subscribed); disk-write-bound thread stages (io_bound, e.g. the Reporter) get the
@@ -218,9 +275,9 @@ def run_setup(
         stages=stages,
         generated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
     )
-    _write(HW_PATH, profile)
-    log.info("wrote %s | %d GPU(s) | provider=%s | tmp=%s", HW_PATH, len(gpus), provider, tmp_dir)
-    return HW_PATH
+    _write(hw_path, profile)
+    log.info("wrote %s | %d GPU(s) | provider=%s | tmp=%s", hw_path, len(gpus), provider, tmp_dir)
+    return hw_path
 
 
 # --------------------------------------------------------------------------- #
@@ -294,6 +351,7 @@ def _apply_vram_measurements(
     *,
     calibrate: bool,
     on_progress: ProgressCB | None,
+    profile_path: Path,
 ) -> None:
     """Fold measured per-worker VRAM into ``stages`` (mutates in place).
 
@@ -314,7 +372,7 @@ def _apply_vram_measurements(
             measured = calibrate_gpu_stages(cfg_path, gpu_index=gpu, gpu_keys=set(stages),
                                             on_progress=on_progress)
     else:
-        measured = _previous_measurements()
+        measured = _previous_measurements(profile_path)
 
     if not measured:
         return
@@ -339,12 +397,16 @@ def _apply_vram_measurements(
             plan["peak_vram_mb"] = int(budgeted * plan["workers_per_gpu"])
 
 
-def _previous_measurements() -> dict[str, dict]:
-    """Measured VRAM from the existing profile, so a re-profile does not lose it."""
-    if not HW_PATH.exists():
+def _previous_measurements(profile_path: Path) -> dict[str, dict]:
+    """Measured VRAM from the existing profile, so a re-profile does not lose it.
+
+    Takes the path rather than reading a module constant: the profile is deployment-scoped, so
+    "the existing profile" is only well defined relative to the one this run resolved.
+    """
+    if not profile_path.exists():
         return {}
     try:
-        raw = yaml.safe_load(HW_PATH.read_text()) or {}
+        raw = yaml.safe_load(profile_path.read_text()) or {}
     except Exception:  # noqa: BLE001 - a broken profile just means no carry-forward
         return {}
     out: dict[str, dict] = {}
@@ -857,7 +919,7 @@ def _benchmark_disk_writers(target_dir: Path, on_progress: Optional[Any] = None,
 # YAML load / write
 # --------------------------------------------------------------------------- #
 def _load(path: Path) -> HardwareSettings:
-    """Read ``hardware_settings.yaml`` back into a :class:`HardwareSettings`."""
+    """Read a profile YAML back into a :class:`HardwareSettings`."""
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     fp_data = dict(data.get("fingerprint", {}) or {})
@@ -889,17 +951,39 @@ def _load(path: Path) -> HardwareSettings:
 
 
 def _write(path: Path, profile: HardwareSettings) -> None:
-    """Serialise ``profile`` to ``path`` as plain YAML (dataclasses -> dicts)."""
+    """Serialise ``profile`` to ``path`` as plain YAML (dataclasses -> dicts).
+
+    Creates the deployment config directory first. It used to be safe not to: the target was a
+    file in an existing CWD. The canonical target is under ``<user-config>/lm3/<deployment>/``,
+    which on a first run has never existed, and ``Path.replace`` onto a missing parent is an
+    ``OSError``, not a mkdir.
+    """
     payload = asdict(profile)
+    _mkdir_private(path.parent)
     tmp = path.with_suffix(path.suffix + ".tmp")
     with tmp.open("w", encoding="utf-8") as fh:
         fh.write(
-            "# hardware_settings.yaml -- MACHINE-DERIVED runtime settings, written by LM3_Setup\n"
+            "# LM3 hardware profile -- MACHINE-DERIVED runtime settings, written by LM3_Setup\n"
             "# (python -m leafmachine3.setup). Reused by every module so runs never re-probe.\n"
             "# Do NOT hand-edit unless you know why; rerun LM3_Setup after a hardware/driver/model change.\n"
         )
         yaml.safe_dump(payload, fh, sort_keys=False, default_flow_style=False)
     tmp.replace(path)
+
+
+def _mkdir_private(directory: Path) -> None:
+    """``mkdir -p`` with user-only permissions on POSIX, matching how the resolver creates it.
+
+    Best effort on the mode: an existing directory keeps whatever permissions it has, and a
+    filesystem that cannot express them (a Windows share, a FAT scratch disk) is not a reason to
+    refuse to write a profile.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    if os.name == "posix":
+        try:
+            os.chmod(directory, 0o700)
+        except OSError:  # noqa: PERF203 - permissions are a nicety here, not a precondition
+            log.debug("could not tighten permissions on %s", directory, exc_info=True)
 
 
 def _cfg_get(section: Any, key: str, default: Any = None) -> Any:
@@ -919,11 +1003,22 @@ def _cfg_get(section: Any, key: str, default: Any = None) -> Any:
 # CLI
 # --------------------------------------------------------------------------- #
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Console entry point: ``python -m leafmachine3.setup`` / ``lm3-setup``."""
+    """Console entry point: ``python -m leafmachine3.setup`` / ``lm3-setup``.
+
+    Both of its paths come from the canonical resolver (section 3.1 puts the standalone
+    hardware-setup CLI explicitly in scope), so this command and a GUI- or CLI-started run agree
+    on which settings file and which profile they are talking about no matter where each was
+    launched from.
+    """
     parser = argparse.ArgumentParser(
-        prog="lm3-setup", description="Profile this machine and write hardware_settings.yaml."
+        prog="lm3-setup", description="Profile this machine and write its LM3 hardware profile."
     )
-    parser.add_argument("--config", default="LM3_settings.yaml", help="path to LM3_settings.yaml")
+    # No default: an OMITTED --config runs the full precedence chain (LM3_SETTINGS, the deployment
+    # workspace pointer, the deployment settings file, this checkout), while a --config the user
+    # actually typed and that does not exist is a hard error rather than a silent fall-through to
+    # some other configuration. A relative default string could not tell those two cases apart.
+    parser.add_argument("--config", default=None,
+                        help="path to LM3_settings.yaml (default: the canonical resolved settings)")
     parser.add_argument("--optimize", action="store_true", help="run the per-stage VRAM-fit sweep")
     parser.add_argument("--quick", action="store_true", help="shorter sweep (batches 1/2/4)")
     parser.add_argument("--force", action="store_true", help="rewrite even if the profile is current")
@@ -937,7 +1032,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     from leafmachine3.core.config import Config
 
-    cfg = Config.load(args.config)
+    try:
+        cfg_path = paths.settings_path(args.config)
+    except paths.PathsError as exc:
+        # A stated intent that cannot be satisfied. Report it as a usage error instead of a
+        # traceback, and never guess at a different settings file.
+        log.error("%s", exc)
+        return 2
+    log.info("settings: %s", cfg_path)
+
+    cfg = Config.load(str(cfg_path))
+    log.info("hardware profile: %s", hardware_profile_path(cfg))
     run_setup(
         cfg,
         optimize=args.optimize or not args.quick,

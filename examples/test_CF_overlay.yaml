@@ -39,10 +39,10 @@ naming:
 modules:
   mp_conversion_factor:
     enabled: true
-    model: {path: models/mp_conversion_factor/model.json, format: json}
+    model: {path: ../models/mp_conversion_factor/model.json, format: json}
   archival_detector:
     enabled: true
-    model: {path: models/archival_detector/model.onnx, format: onnx}
+    model: {path: ../models/archival_detector/model.onnx, format: onnx}
     imgsz: 1280
     conf: 0.25
     iou: 0.6
@@ -52,7 +52,7 @@ modules:
     dedup: {enabled: true, overlap: 0.95, metric: min}
   plant_detector:
     enabled: true
-    model: {path: models/plant_detector/model.onnx, format: onnx}
+    model: {path: ../models/plant_detector/model.onnx, format: onnx}
     imgsz: 1280
     conf: 0.3
     iou: 0.55
@@ -63,7 +63,7 @@ modules:
     dedup: {enabled: true, overlap: 0.95, metric: min}
   specimen_segmenter:
     enabled: true
-    model: {path: models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx, format: onnx}
+    model: {path: ../models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx, format: onnx}
     imgsz: 1024
     conf: 0.5
     paperclean: true
@@ -75,14 +75,14 @@ modules:
       fruits: {min_conf: 0.4, min_count: 1}
   ruler_classifier:
     enabled: true
-    models_dir: models/ruler_classifier
+    models_dir: ../models/ruler_classifier
     ensemble_members: [yolo26x_cls_224, yolo26n_cls_224, dinov2_frozen_mlp]
     min_conf: 0.35
     squarify: {sz: 720, method: tile_four}
   ruler_cf: {enabled: true, anchor_tol: 0.25, min_frame_cm: null}
   leaf_segmenter:
     enabled: true
-    model: {path: models/leaf_segmenter/model.pt, format: pytorch}
+    model: {path: ../models/leaf_segmenter/model.pt, format: pytorch}
     include_partial: false
     imgsz: 1024
     conf: 0.3
@@ -97,7 +97,7 @@ modules:
     find_minimum_bounding_box: true
   landmark_detector:
     enabled: true
-    model: {path: models/landmark_detector/model.onnx, format: onnx}
+    model: {path: ../models/landmark_detector/model.onnx, format: onnx}
     source_classes: [Leaf_WHOLE]
     include_partial: false
     imgsz: 640

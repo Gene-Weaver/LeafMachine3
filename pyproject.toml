@@ -45,6 +45,11 @@ include = ["leafmachine3*"]
 
 [tool.setuptools.package-data]
 leafmachine3 = ["core/schema.sql"]
+# The calibration sheets are resolved with importlib.resources (paths.calibration_images_dir), so
+# they MUST ship inside the package -- an install that omits them silently drops `--calibrate` back
+# to heuristic VRAM estimates. Downscaled copies of examples/images, ~7 MB total; see that package's
+# README before swapping the set.
+"leafmachine3.setup.calibration_images" = ["*.jpg", "README.md"]
 
 [tool.ruff]
 line-length = 110

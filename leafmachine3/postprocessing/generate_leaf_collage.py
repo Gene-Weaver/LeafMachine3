@@ -1388,7 +1388,10 @@ def _color_from_cli(tokens):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Arrange a run's best leaf masks into the shape of a primary mask.")
-    ap.add_argument("--config", default="postprocessing_settings.yaml", help="postprocessing_settings.yaml")
+    ap.add_argument(
+        "--config", default=None,
+        help="postprocessing settings YAML (default: the deployment's canonical "
+             "postprocessing.yaml -- plan section 3.1 row 3, never the working directory)")
     ap.add_argument("--run-dir", default=None, help="a finished LM3 run directory")
     ap.add_argument("--primary-mask", default=None, help="PNG whose foreground is the collage outline")
     ap.add_argument("--output-dir", default=None, help="output dir (default: <run>/reports/Collage)")
@@ -1440,6 +1443,16 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     from leafmachine3.postprocessing.config import load_settings, module_settings
+
+    # A CLI main() is a controlled entry point -- once per process, user-initiated -- so the
+    # one-release adopt of a checkout-level postprocessing_settings.yaml belongs here and not
+    # in load_settings(), which must stay a pure read.
+    if args.config is None:
+        from leafmachine3.core.paths import PathsError, migrate_legacy_postprocessing_settings
+        try:
+            migrate_legacy_postprocessing_settings()
+        except PathsError:
+            pass                      # row 3 on-miss is "packaged defaults", never a crash
 
     s = module_settings(load_settings(args.config), "generate_leaf_collage")
     overrides = {

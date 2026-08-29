@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional
 
+from leafmachine3.core.paths import PathsError
+
 log = logging.getLogger("leafmachine3.server.postprocess")
 
 # -- limits (bounded by construction: a long batch must never grow memory without end) --------
@@ -51,9 +53,11 @@ SSE_POLL_S = 0.4               # task polling cadence for the events stream
 SSE_PING_S = 15.0              # keep-alive frame interval
 SSE_MAX_S = 6 * 3600.0         # hard cap on one stream
 
+#: Canonical names only (plan section 3.1). ``LM3_POSTPROCESS_SETTINGS`` is read by the resolver;
+#: ``LM3_POSTPROCESS_ROOTS`` is NOT a path-resolution variable -- it extends the write sandbox
+#: below and has no row in the section 3.1 table.
 _SETTINGS_ENV = "LM3_POSTPROCESS_SETTINGS"
 _ROOTS_ENV = "LM3_POSTPROCESS_ROOTS"
-_DEFAULT_SETTINGS = "postprocessing_settings.yaml"
 
 # Directory names skipped when scanning for run directories (noise, not results).
 _SKIP_DIRS = {".git", ".hg", "__pycache__", "node_modules", ".idea", ".vscode", ".ipynb_checkpoints"}
@@ -188,9 +192,19 @@ _yaml_lock = threading.Lock()
 
 
 def _settings_path() -> Path:
-    raw = os.environ.get(_SETTINGS_ENV) or _DEFAULT_SETTINGS
-    p = Path(raw).expanduser()
-    return p if p.is_absolute() else (Path.cwd() / p)
+    """Section 3.1 row 3: ``LM3_POSTPROCESS_SETTINGS``, else the deployment's ``postprocessing.yaml``.
+
+    Previously ``postprocessing_settings.yaml`` off the server's CWD, which meant the Postprocess
+    tab configured a different file than the standalone CLIs unless both were launched from the
+    same directory.
+    """
+    from leafmachine3.server.app import canonical_postprocess_settings_path
+
+    try:
+        return canonical_postprocess_settings_path()
+    except PathsError as exc:
+        log.debug("cannot resolve the postprocessing settings: %s", exc)
+        return Path(os.devnull)
 
 
 def _load_settings() -> dict:
@@ -229,12 +243,21 @@ _roots_cache: dict[str, Any] = {"key": None, "roots": []}
 _roots_lock = threading.Lock()
 
 
+def _lm3_settings_path() -> Optional[Path]:
+    """The canonical settings file (section 3.1 row 1), or ``None`` when it cannot be resolved."""
+    from leafmachine3.server.app import canonical_settings_path
+
+    try:
+        return canonical_settings_path()
+    except PathsError as exc:
+        log.debug("cannot resolve the LM3 settings file: %s", exc)
+        return None
+
+
 def _lm3_settings() -> dict:
     """Best-effort parse of LM3_settings.yaml (for the configured output / tmp / input dirs)."""
-    path = Path(os.environ.get("LM3_SETTINGS", "LM3_settings.yaml")).expanduser()
-    if not path.is_absolute():
-        path = Path.cwd() / path
-    if not path.is_file():
+    path = _lm3_settings_path()
+    if path is None or not path.is_file():
         return {}
     try:
         import yaml
@@ -252,13 +275,19 @@ def allowed_roots() -> list[Path]:
     Loopback binding plus a Bearer token already gates WHO can call; this gates WHERE. The set is
     intentionally the same ground the CLI covers (the project dir and its configured data dirs) so
     nothing the user can do from the terminal is blocked in the app -- and nothing beyond it works.
+
+    The server's CWD is NOT a root any more (plan section 3.1: "No path falls back to the current
+    working directory"). It was never a statement about the user's data -- it was a statement about
+    where someone happened to type ``lm3 serve`` -- and as a WRITE sandbox that is the wrong shape:
+    a server started from ``/`` or from a home directory authorized the lot. The settings file's own
+    directory replaces it, which is the directory the project is actually described from.
     """
-    cwd = Path.cwd().resolve()
+    settings_file = _lm3_settings_path()
     cfg = _lm3_settings()
     # The tool output_dirs below come from postprocessing_settings.yaml, so that file has to be part
     # of the cache key -- otherwise editing it updates the FORM (Tool.describe re-reads on every GET)
     # while the roots stay stale, and the tool's own configured output is rejected as outside them.
-    key = json.dumps([str(cwd), os.environ.get(_ROOTS_ENV, ""), cfg.get("project", {}),
+    key = json.dumps([str(settings_file), os.environ.get(_ROOTS_ENV, ""), cfg.get("project", {}),
                       {t.settings_key: _yaml_block(t.settings_key).get("output_dir")
                        for t in _TOOLS.values()}],
                      default=str, sort_keys=True)
@@ -269,11 +298,16 @@ def allowed_roots() -> list[Path]:
     out: list[Path] = []
 
     def add(raw: Any) -> None:
-        if not raw or not isinstance(raw, str):
+        if not raw or not isinstance(raw, (str, os.PathLike)):
             return
-        p = Path(raw).expanduser()
+        p = Path(str(raw)).expanduser()
         if not p.is_absolute():
-            p = cwd / p
+            # Relative entries are resolved against the settings file, exactly like
+            # project.output.dir -- never against the CWD, and dropped outright when there is no
+            # settings file to resolve them against.
+            if settings_file is None:
+                return
+            p = settings_file.parent / p
         try:
             real = Path(os.path.realpath(p))
         except OSError:
@@ -281,7 +315,8 @@ def allowed_roots() -> list[Path]:
         if real not in out:
             out.append(real)
 
-    add(str(cwd))
+    if settings_file is not None:
+        add(settings_file.parent)
     for extra in os.environ.get(_ROOTS_ENV, "").split(os.pathsep):
         add(extra.strip())
 
@@ -295,12 +330,22 @@ def allowed_roots() -> list[Path]:
     for d in inp.get("dirs") or []:
         add(d)
 
-    # the server's staged job dirs (runs/_server_jobs by default)
+    # the server's staged job dirs (section 3.1 row 4)
     try:
-        from leafmachine3.server.app import DEFAULT_JOBS_ROOT
+        from leafmachine3.server.app import server_jobs_root
 
-        add(str(DEFAULT_JOBS_ROOT))
+        add(server_jobs_root())
     except Exception:  # noqa: BLE001 - app.py is optional here
+        pass
+
+    # every run-history root the Results tab can list, so a run visible in the app is a run the
+    # Postprocess tab may read (section 3.1 row 5)
+    try:
+        from leafmachine3.server.results_api import run_roots
+
+        for root in run_roots():
+            add(root)
+    except Exception:  # noqa: BLE001 - results_api is optional here
         pass
 
     # anything a tool is already configured to write to
@@ -330,7 +375,17 @@ def resolve_path(raw: Any, *, must_exist: bool, kind: str = "any", label: str = 
         raise ParamError(f"{label}: expected a path string, got {type(raw).__name__}")
     p = Path(str(raw)).expanduser()
     if not p.is_absolute():
-        p = Path.cwd() / p
+        # A relative path is resolved against the SETTINGS FILE's directory -- the same rule
+        # project.output.dir follows (core.paths.resolve_project_output_dir) and the same base
+        # allowed_roots() uses. It used to be joined onto the server's CWD, so one request meant
+        # different files depending on where the server was launched (section 3.1).
+        base = _lm3_settings_path()
+        if base is None:
+            raise ParamError(
+                f"{label}: {raw!r} is relative and there is no resolved settings file to resolve "
+                f"it against; give an absolute path"
+            )
+        p = base.parent / p
     try:
         real = Path(os.path.realpath(p))
     except (OSError, ValueError) as exc:      # ValueError = embedded NUL byte; still a bad PARAM

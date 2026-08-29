@@ -65,6 +65,8 @@ from typing import Any, Callable, Iterator, Optional
 
 import yaml
 
+from leafmachine3.core.paths import PathsError, resolve_project_output_dir
+
 log = logging.getLogger("leafmachine3.server.progress")
 
 # Cadence. The status stream pushes at 2 Hz while a run is live and backs off to a slow
@@ -331,8 +333,33 @@ def _read_yaml(path: Path) -> dict:
 
 
 def _settings_path() -> Path:
-    """The LM3_settings.yaml the server is driving (``LM3_SETTINGS`` overrides the cwd copy)."""
-    return Path(os.environ.get("LM3_SETTINGS", "LM3_settings.yaml"))
+    """The canonical ``LM3_settings.yaml`` (plan section 3.1 row 1), always ABSOLUTE.
+
+    This used to return the bare relative name ``LM3_settings.yaml`` when ``LM3_SETTINGS`` was
+    unset, so the file that answered a status frame was decided by the CWD at the moment of the
+    read -- late binding, and a different file from the one the Settings tab was editing. The
+    chain now lives in :mod:`leafmachine3.core.paths` and is shared with every other module.
+    """
+    from leafmachine3.server.app import canonical_settings_path
+
+    try:
+        return canonical_settings_path()
+    except PathsError as exc:
+        # The status stream must degrade, never 500: an unreadable pointer or a split-brain
+        # environment is reported by /healthz and the startup log, not by killing every frame.
+        log.debug("cannot resolve the LM3 settings file: %s", exc)
+        return Path(os.devnull)
+
+
+def _jobs_root() -> Path:
+    """The server's staged-job root (section 3.1 row 4) -- resolved, never guessed as ``runs/``."""
+    from leafmachine3.server.app import server_jobs_root
+
+    try:
+        return server_jobs_root()
+    except PathsError as exc:
+        log.debug("cannot resolve the server jobs root: %s", exc)
+        return Path(os.devnull)
 
 
 def _hardware() -> dict:
@@ -342,7 +369,13 @@ def _hardware() -> dict:
     imports the app module (that import would be circular once app.py mounts this router) and
     so it can be mtime-cached -- this is read on every status frame.
     """
-    return _read_yaml(Path(os.environ.get("LM3_HARDWARE", "hardware_settings.yaml")))
+    from leafmachine3.server.app import canonical_hardware_path
+
+    try:
+        return _read_yaml(canonical_hardware_path())
+    except PathsError as exc:
+        log.debug("cannot resolve the hardware profile: %s", exc)
+        return {}
 
 
 def _dig(node: Any, *keys: str, default: Any = None) -> Any:
@@ -487,8 +520,9 @@ def _search_roots() -> list[Path]:
         if path not in roots:
             roots.append(path)
 
-    add(_dig(_read_yaml(_settings_path()), "project", "output", "dir"))
-    add(os.environ.get("LM3_SERVER_JOBS", "runs/_server_jobs"))
+    settings = _settings_path()
+    add(resolve_project_output_dir(settings, _dig(_read_yaml(settings), "project", "output", "dir")))
+    add(_jobs_root())
     for extra in (os.environ.get("LM3_STATUS_ROOTS") or "").split(os.pathsep):
         add(extra.strip())
     return roots
@@ -601,14 +635,16 @@ def _from_settings() -> Optional[RunRef]:
     out = str(_dig(cfg, "project", "output", "dir", default="") or "").strip()
     if not name or not out:
         return None
-    root = Path(out).expanduser()
-    if not root.is_absolute():
-        # Relative output dirs (the default is just "runs") hang off the settings file itself,
-        # which is also how metrics_api.start_run resolves them.
-        try:
-            root = _settings_path().resolve().parent / root
-        except OSError:
-            return None
+    # Relative output dirs (the default is just "runs") hang off the settings file itself. That
+    # is now ONE rule, in core.paths.resolve_project_output_dir, shared with metrics_api.start_run
+    # -- the two used to disagree whenever the config's directory did not happen to hold a
+    # hardware_settings.yaml, and the comment here claiming otherwise was simply false.
+    try:
+        root = resolve_project_output_dir(_settings_path(), out)
+    except (OSError, PathsError):
+        return None
+    if root is None:
+        return None
     return _run_ref(root / name, source="settings")
 
 

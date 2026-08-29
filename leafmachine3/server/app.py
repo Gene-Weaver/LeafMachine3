@@ -30,10 +30,182 @@ from typing import Any, Iterable, Iterator, Optional
 
 import yaml
 
+from leafmachine3.core import paths
+
 log = logging.getLogger("leafmachine3.server")
 
-DEFAULT_JOBS_ROOT = Path(os.environ.get("LM3_SERVER_JOBS", "runs/_server_jobs"))
 _TOKEN_ENV = "LM3_SERVER_TOKEN"
+
+
+# --------------------------------------------------------------------------- #
+# Canonical path resolution (plan section 3.1) -- the ONE seam every server module uses
+# --------------------------------------------------------------------------- #
+# Every settings / hardware / postprocessing / jobs path in leafmachine3.server resolves through
+# the helpers below, which are thin wrappers over leafmachine3.core.paths. They live HERE, in the
+# module that already owns server startup, because the one-release legacy-variable migration has
+# to warn ONCE PER PROCESS rather than once per request: that requires shared state, and app.py is
+# the only module the other five may import without a cycle (it imports none of them at module
+# scope -- create_app imports them lazily, long after this module is fully initialized).
+#
+# Nothing here is resolved at IMPORT time. The old ``DEFAULT_JOBS_ROOT`` constant froze the answer
+# before a spawned child had even read LM3_DEPLOYMENT_ID; every helper below reads the environment
+# at call time instead.
+
+#: Memoized results of the legacy-alias migration, keyed by the exact (canonical, new, old) triple
+#: so a deprecation warning is emitted once per process per distinct environment -- and so a
+#: split-brain conflict keeps failing on every later call instead of only the first.
+_LEGACY_CACHE: dict[tuple[str, str | None, str | None], str | None] = {}
+_LEGACY_CONFLICTS: dict[tuple[str, str | None, str | None], str] = {}
+_LEGACY_LOCK = threading.Lock()
+
+
+def _legacy_value(source: Any, canonical: str, legacy: str) -> str | None:
+    """Resolve one canonical/legacy pair, warning at most once per process.
+
+    :func:`leafmachine3.core.paths.resolve_legacy_env` does the deciding (and the warning); this
+    only calls it the first time a given environment is seen. A conflict is cached as its message
+    and re-raised every time, because "the two variables disagree" is a startup-fatal condition,
+    not a one-off notice.
+    """
+    new = source.get(canonical)
+    old = source.get(legacy)
+    key = (canonical, new, old)
+    with _LEGACY_LOCK:
+        if key in _LEGACY_CONFLICTS:
+            raise paths.LegacyEnvConflictError(_LEGACY_CONFLICTS[key])
+        if key in _LEGACY_CACHE:
+            return _LEGACY_CACHE[key]
+    try:
+        value = paths.resolve_legacy_env(source, canonical, legacy)
+    except paths.LegacyEnvConflictError as exc:
+        with _LEGACY_LOCK:
+            _LEGACY_CONFLICTS[key] = str(exc)
+        raise
+    with _LEGACY_LOCK:
+        _LEGACY_CACHE[key] = value
+    return value
+
+
+def server_env(env: Any = None) -> Any:
+    """The environment with the deprecated aliases folded into their canonical names.
+
+    ``LM3_SETTINGS_PATH`` -> ``LM3_SETTINGS`` and ``LM3_HARDWARE_SETTINGS`` -> ``LM3_HARDWARE``,
+    for one release (plan section 4, Step 1). Legacy alone is honored with a deprecation warning;
+    legacy plus canonical naming the same file warns once and uses it; legacy plus canonical
+    naming DIFFERENT files raises :class:`~leafmachine3.core.paths.LegacyEnvConflictError`, which
+    stops server startup rather than silently picking a winner.
+
+    Returned as a plain mapping handed to every ``paths`` call, so the resolver never sees the
+    deprecated spellings at all and never re-warns from inside a per-request code path.
+    """
+    source = os.environ if env is None else env
+    folded: dict[str, str] | None = None
+    for canonical, legacy in paths.LEGACY_ENV_ALIASES.items():
+        if source.get(legacy) is None:
+            continue
+        value = _legacy_value(source, canonical, legacy)
+        if folded is None:
+            folded = dict(source)
+        folded.pop(legacy, None)
+        if value is None:
+            folded.pop(canonical, None)
+        else:
+            folded[canonical] = value
+    return source if folded is None else folded
+
+
+def check_legacy_env() -> None:
+    """Fail fast on conflicting legacy variables. Called before anything else at startup.
+
+    Raising from inside a router factory would be swallowed by the per-router ``try/except`` in
+    :func:`create_app`, leaving a half-mounted API; Step 1's exit gate says conflicting legacy
+    variables must STOP startup, so the check happens up front.
+    """
+    server_env()
+
+
+def canonical_settings_path(explicit: Any = None, *, seed: bool = False) -> Path:
+    """Row 1 of the section 3.1 precedence table -- the next-run ``LM3_settings.yaml``.
+
+    ``seed`` is off by default: resolving a path must never create a file as a side effect of a
+    status poll. Seeding happens once per process at startup -- in :func:`create_app` for any
+    server entry point, and additionally in :func:`serve`, which also pins the result into
+    ``LM3_SETTINGS``.
+    """
+    return paths.settings_path(explicit, env=server_env(), seed=seed)
+
+
+#: Memoized canonical hardware-profile path, keyed by the resolved deployment key. The status
+#: stream asks for this at 2 Hz; the answer depends only on the deployment and the machine, neither
+#: of which changes inside a process.
+_HARDWARE_PATH_CACHE: dict[str, Path] = {}
+
+
+def canonical_hardware_path() -> Path:
+    """Row 2 -- the deployment-scoped, machine-keyed hardware profile. PURE and memoized.
+
+    This used to resolve the settings file on every call in order to perform the one-release legacy
+    adopt, which made a READ endpoint copy a file: that is how two legacy profiles were written into
+    a real developer's ``~/.config/lm3`` during a test run. Adoption now happens exactly once, in
+    :func:`create_app`, through ``paths.migrate_legacy_hardware_profile``. Resolution writes nothing.
+    """
+    env = server_env()
+    # The key must name every input the answer depends on -- deployment, config root and the
+    # LM3_HARDWARE override -- so a deliberate environment change is never masked by the memo.
+    key = "\x00".join((
+        paths.deployment_key(env),
+        str(paths.user_config_dir(env)),
+        env.get(paths.ENV_HARDWARE, ""),
+    ))
+    cached = _HARDWARE_PATH_CACHE.get(key)
+    if cached is None:
+        cached = paths.hardware_profile_path(env=env)
+        _HARDWARE_PATH_CACHE[key] = cached
+    return cached
+
+
+def reset_path_caches() -> None:
+    """Drop the per-process path memos. For tests, and after a deliberate deployment change."""
+    _HARDWARE_PATH_CACHE.clear()
+    paths.reset_machine_key_cache()
+
+
+def canonical_postprocess_settings_path() -> Path:
+    """Row 3 -- ``<user-config>/lm3/<deployment>/postprocessing.yaml`` unless overridden."""
+    return paths.postprocessing_settings_path(env=server_env())
+
+
+def server_jobs_root(*, create: bool = False) -> Path:
+    """Row 4 -- ``LM3_SERVER_JOBS``, else ``<user-state>/lm3/<deployment>/jobs``.
+
+    Replaces the import-time ``DEFAULT_JOBS_ROOT`` constant. One reader, one answer: the old
+    module-level constant and ``metrics_api``'s independent env read absolutized the SAME variable
+    two different ways, so the server could write job dirs to one place and its active-run record
+    to another.
+    """
+    return paths.server_jobs_root(env=server_env(), create=create)
+
+
+def path_diagnostics(explicit_settings: Any = None) -> dict:
+    """Flat, log-safe summary of every canonical path (startup logs and ``/healthz``).
+
+    Never raises -- a diagnostics view that dies on a bad environment tells the user nothing about
+    why (plan section 4, Step 1: "Expose resolved paths in startup logs and ``/healthz``
+    diagnostics").
+    """
+    try:
+        env = server_env()
+    except paths.PathsError as exc:                  # a split-brain env must still be REPORTABLE
+        return {"error": str(exc)}
+    return paths.describe_resolved_paths(env=env, explicit_settings=explicit_settings, seed=False)
+
+
+def log_resolved_paths(where: str = "startup") -> dict:
+    """Log every canonical path once, at INFO, so a support log answers "which config?" outright."""
+    resolved = path_diagnostics()
+    log.info("LM3 %s path resolution: %s", where,
+             ", ".join(f"{k}={v}" for k, v in resolved.items()))
+    return resolved
 
 
 # --------------------------------------------------------------------------- #
@@ -63,8 +235,11 @@ class Job:
 class JobManager:
     """Filesystem-backed registry of jobs (one project dir each)."""
 
-    def __init__(self, root: Path = DEFAULT_JOBS_ROOT) -> None:
-        self.root = Path(root)
+    def __init__(self, root: Path | None = None) -> None:
+        # Resolved HERE, not in the signature: a default argument is evaluated at import time, so
+        # the old ``root: Path = DEFAULT_JOBS_ROOT`` froze the jobs root before a spawned child had
+        # read LM3_DEPLOYMENT_ID (plan section 3.1, "server jobs root").
+        self.root = Path(root) if root is not None else server_jobs_root()
         self.root.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, Job] = {}
 
@@ -114,7 +289,10 @@ class JobManager:
         job_id = uuid.uuid4().hex[:12]
         root = self.root / job_id
         root.mkdir(parents=True, exist_ok=True)
-        job = Job(id=job_id, root=root, cfg_path=Path("LM3_settings.yaml"), kind="setup")
+        # The canonical settings path, not a bare relative name: with a CWD-relative cfg_path the
+        # profiler was handed ``cfg=None`` (app.py's ``job.cfg_path.is_file()`` check) whenever the
+        # server was started from anywhere but the checkout (plan section 3.1 row 1).
+        job = Job(id=job_id, root=root, cfg_path=canonical_settings_path(), kind="setup")
         self._jobs[job_id] = job
         return job
 
@@ -122,7 +300,7 @@ class JobManager:
         """Start from the user's ``LM3_settings.yaml`` if present, else built-in defaults."""
         if settings:
             return json.loads(json.dumps(settings))     # deep copy of a plain dict
-        base = Path("LM3_settings.yaml")
+        base = canonical_settings_path()
         if base.is_file():
             with base.open("r", encoding="utf-8") as fh:
                 return yaml.safe_load(fh) or {}
@@ -281,13 +459,40 @@ def _progress_snapshot(db_path: Path) -> dict:
 # Auth
 # --------------------------------------------------------------------------- #
 def _server_token() -> str:
-    """Return the shared Bearer secret, generating and exporting one if unset."""
+    """Return the shared Bearer secret, generating and exporting one if unset.
+
+    **The raw token is never logged, at any level** (plan section 2.11, gate 13). It used to be
+    printed at WARNING, which on a cluster lands the bearer token in Slurm job output and retained
+    container logs, where it long outlives the allocation. What gets logged instead is WHERE to
+    find it, which is all a user actually needs.
+    """
     token = os.environ.get(_TOKEN_ENV)
     if not token:
         token = secrets.token_urlsafe(24)
         os.environ[_TOKEN_ENV] = token
-        log.warning("LM3 server token (set %s to override): %s", _TOKEN_ENV, token)
+        try:
+            descriptor = (paths.deployment_runtime_dir(env=server_env())
+                          / paths.CONNECTION_PRIVATE_FILENAME)
+            where = f"it will be written to {descriptor}"
+        except (paths.PathsError, OSError):
+            where = "set it explicitly to choose your own"
+        log.warning(
+            "generated an LM3 server token for this process; %s. Set %s to override. "
+            "The token itself is deliberately not logged.", where, _TOKEN_ENV)
     return token
+
+
+def redact_token(text: str) -> str:
+    """Replace the live bearer token wherever it appears in ``text``.
+
+    A last line of defense for error messages, tracebacks and diagnostics: gate 13 says the raw
+    token appears in NO log, and a string that merely passes near an exception handler is exactly
+    how a secret escapes.
+    """
+    token = os.environ.get(_TOKEN_ENV)
+    if not token or not text:
+        return text
+    return text.replace(token, "***redacted***")
 
 
 #: Host names that mean "this machine" for the purposes of handing over the shared secret.
@@ -438,6 +643,49 @@ def create_app(jobs: JobManager | None = None) -> Any:
     globals().setdefault("UploadFile", UploadFile)
     globals().setdefault("Request", Request)          # same trick, for /v1/shutdown below
 
+    # BEFORE anything else: conflicting legacy variables must stop startup (plan section 4,
+    # Step 1's exit gate). It cannot live in a router factory -- the per-router try/except below
+    # would swallow it into a silently half-mounted API.
+    check_legacy_env()
+
+    # section 3.1 precedence table row 1, on-miss column: "seed 4 from the packaged template, log
+    # the path loudly, continue", and the bullet "Missing settings seed from the packaged template
+    # ... so a first-run install works". serve() is not the only entry point -- the Electron shell
+    # spawns ``uvicorn leafmachine3.server.app:create_app --factory`` (app/main.js:162-165) and
+    # never reaches it, so a first-run GUI install would otherwise meet a 400 "no LM3_settings.yaml
+    # found" instead of a seeded file. Once per process at startup is not "a file created as a side
+    # effect of a status poll" -- the seed=False default above stays. It runs AFTER the legacy check
+    # so a split-brain environment still stops startup before anything is written, and BEFORE the
+    # log line so the startup diagnostics name a file that now exists.
+    try:
+        canonical_settings_path(seed=True)
+    except (paths.PathsError, OSError) as exc:       # startup must not die on this
+        # An explicit LM3_SETTINGS naming a missing file is row 1's hard error, but it belongs to
+        # the request that needs the file: a half-mounted or dead API says less than a late 400.
+        log.warning("could not resolve or seed the LM3 settings file at startup: %s", exc)
+
+    # The one-release legacy hardware-profile adopt, performed EXACTLY here: once, at startup, in a
+    # controlled path. It is deliberately not part of hardware_profile_path() any more -- resolving
+    # a path must never mutate the filesystem, or a 2 Hz status poll becomes a writer.
+    try:
+        adopted = paths.migrate_legacy_hardware_profile(
+            env=server_env(), settings_file=canonical_settings_path(seed=False))
+        if adopted is not None:
+            log.info("adopted a legacy hardware profile into %s", adopted)
+    except (paths.PathsError, OSError) as exc:
+        log.warning("legacy hardware-profile migration skipped: %s", exc)
+
+    # Same one-release adopt for the postprocessing settings, so the Postprocess tab and the two
+    # standalone CLIs converge on one file instead of the CWD-relative one they used to disagree over.
+    try:
+        adopted = paths.migrate_legacy_postprocessing_settings(env=server_env())
+        if adopted is not None:
+            log.info("adopted legacy postprocessing settings into %s", adopted)
+    except (paths.PathsError, OSError) as exc:
+        log.warning("legacy postprocessing-settings migration skipped: %s", exc)
+
+    log_resolved_paths("server")
+
     manager = jobs or JobManager()
     jobs_q: asyncio.Queue = asyncio.Queue(maxsize=64)
     token = _server_token()
@@ -534,8 +782,12 @@ def create_app(jobs: JobManager | None = None) -> Any:
         # `pid` is what lets a client that ATTACHED to an already-running server still stop it: with
         # no process handle of its own, that pid is its only escalation path when the server is too
         # wedged to honor POST /v1/shutdown.
+        # `paths` is DIAGNOSTIC ONLY (plan section 4, Step 1: "Expose resolved paths in startup
+        # logs and /healthz diagnostics"). It is what makes the Step 1 exit gate -- "from any
+        # supported CWD every subsystem reports the same canonical settings path" -- checkable
+        # from outside the process. The rest of this body is untouched; section 4 Step 5b owns it.
         return {"status": "ok", "version": "3.0.0", "provider": _current_provider(),
-                "pid": os.getpid()}
+                "pid": os.getpid(), "paths": path_diagnostics()}
 
     @app.post("/v1/shutdown", dependencies=[Depends(require_token)])
     async def shutdown(request: Request) -> dict:
@@ -651,10 +903,17 @@ def create_app(jobs: JobManager | None = None) -> Any:
             client = request.client.host if request.client else None
             host = request.headers.get("host", "")
             embed = os.environ.get("LM3_EMBED_TOKEN", "1").strip().lower() not in {"0", "false", "no"}
+            # ``no-store``, NOT ``no-cache`` (gate 13). The distinction is documented below and it
+            # matters here more than anywhere: ``no-cache`` STORES the response and merely
+            # revalidates it, so a token-bearing page would be written to the browser cache on
+            # disk. ``no-store`` is the only directive that keeps it out. Applied to the bootstrap
+            # document unconditionally -- it is one small file, and whether it carries a token
+            # depends on request details that are the wrong thing to hang a security header on.
+            no_store = {"Cache-Control": "no-store"}
             if embed and _client_is_loopback(client) and _host_header_is_loopback(host):
-                return html.replace("{{LM3_TOKEN}}", _server_token())
+                return HTMLResponse(html.replace("{{LM3_TOKEN}}", _server_token()), headers=no_store)
             log.warning("refusing to embed the LM3 server token (client=%r, Host=%r)", client, host)
-            return html.replace("{{LM3_TOKEN}}", "")
+            return HTMLResponse(html.replace("{{LM3_TOKEN}}", ""), headers=no_store)
 
         # The UI bundle is unversioned -- no build step, no content hashes, just files on disk that
         # a `git pull` replaces in place. StaticFiles sends Last-Modified and ETag but no
@@ -678,8 +937,13 @@ def create_app(jobs: JobManager | None = None) -> Any:
 
 
 def read_hardware_settings() -> dict:
-    """Return the current ``hardware_settings.yaml`` as a plain dict (empty if absent)."""
-    path = Path("hardware_settings.yaml")
+    """Return the current hardware profile as a plain dict (empty if absent).
+
+    The profile is deployment-scoped and machine-keyed (section 3.1 row 2), resolved through the
+    same helper ``metrics_api`` uses -- previously this read a bare ``hardware_settings.yaml``
+    from the server's CWD and could therefore describe a different file than the tuning panel.
+    """
+    path = canonical_hardware_path()
     if not path.is_file():
         return {}
     with path.open("r", encoding="utf-8") as fh:
@@ -700,9 +964,26 @@ def _current_provider() -> str:
 # --------------------------------------------------------------------------- #
 # ``lm3 serve`` entry point
 # --------------------------------------------------------------------------- #
-def serve(host: str = "127.0.0.1", port: int = 8765, *, jobs_root: Path | None = None) -> None:
-    """Run the server on loopback (requires the ``server`` extra)."""
+def serve(host: str = "127.0.0.1", port: int = 8765, *, jobs_root: Path | None = None,
+          settings: str | os.PathLike[str] | None = None) -> None:
+    """Run the server on loopback (requires the ``server`` extra).
+
+    ``lm3 serve`` PINS the canonical settings path explicitly (plan section 3.1: "``lm3 serve``
+    and Electron always pass the canonical settings path explicitly rather than relying on any
+    fallback"). It is resolved once here -- seeding a first-run file from the packaged template if
+    nothing exists yet -- and exported as ``LM3_SETTINGS``, so every router, every request and
+    every child process the server spawns reads the SAME file no matter where it was launched
+    from. :func:`create_app` seeds too, for the entry points that never reach here; what is unique
+    to ``lm3 serve`` is the explicit pin and honoring ``--config``. Resolution inside a request
+    handler must still never create a file as a side effect.
+    """
     import uvicorn
+
+    check_legacy_env()
+    resolved = canonical_settings_path(settings, seed=True)
+    os.environ[paths.ENV_SETTINGS] = str(resolved)
+    os.environ.pop(paths.LEGACY_ENV_ALIASES[paths.ENV_SETTINGS], None)   # folded in above
+    log.info("lm3 serve: settings %s", resolved)
 
     app = create_app(JobManager(jobs_root) if jobs_root else None)
     _server_token()                                  # ensure a token is minted + logged before start
@@ -717,10 +998,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--host", default="127.0.0.1", help="bind address (loopback by default)")
     parser.add_argument("--port", type=int, default=8765, help="port")
     parser.add_argument("--jobs-root", default=None, help="directory for staged job dirs")
+    parser.add_argument("--config", default=None,
+                        help="LM3_settings.yaml to serve (default: the canonical resolved path)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    serve(args.host, args.port, jobs_root=Path(args.jobs_root) if args.jobs_root else None)
+    serve(args.host, args.port, jobs_root=Path(args.jobs_root) if args.jobs_root else None,
+          settings=args.config)
     return 0
 
 

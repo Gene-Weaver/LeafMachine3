@@ -1,0 +1,46 @@
+# Pre-refactor test baseline for the LM3 unified-runtime work.
+#
+# Measured on the clean tree at commit 5ddfee4 (working tree clean, no unified-runtime work
+# applied) on 2026-08-28, under CPython 3.11.5.
+#
+#   $ python -m pytest tests/ -q -p no:recording
+#   11 failed, 321 passed, 3 skipped
+#
+# `-p no:recording` is required in this environment: pytest-recording and pytest-vcr conflict and
+# pytest hard-errors at startup without it.
+#
+# This file is the AUTHORITATIVE list of node IDs that already failed before the work began.
+# Compare by SET DIFFERENCE on node IDs, never by count -- a count comparison hides a swap in which
+# one test starts failing as another starts passing:
+#
+#   comm -23 <(now_failing) <(sort -u this_file)   -> new failing node IDs   (must be empty)
+#   comm -13 <(now_failing) <(sort -u this_file)   -> newly passing node IDs
+#
+# THREE CATEGORIES OF PRE-EXISTING FAILURES IN THIS ENVIRONMENT, verified 2026-08-29.
+# They are legitimately pre-existing -- all 11 fail identically at 5ddfee4 -- but they are NOT
+# proven to be merely environmental, and none has been diagnosed to a root cause or fixed:
+#
+#   5 x NumPy       AttributeError: module 'numpy' has no attribute 'trapezoid'.
+#                   np.trapezoid arrived in NumPy 2.0; this interpreter has 1.26.4. NOTE:
+#                   pyproject.toml declares numpy>=1.24 while production code calls np.trapezoid,
+#                   so a clean install inside the declared range reproduces this. Packaging defect.
+#   4 x ect         ModuleNotFoundError: No module named 'ect'. NOTE: `ect` is in no declared
+#                   runtime dependency or optional extra, while the ECT module is enabled by
+#                   default. A default-on stage with an undeclared import.
+#   2 x Settings UI 'report.data' rail-group / settings_meta.json assertions -- apparently a
+#                   code/test contract discrepancy (metadata describing settings that no longer
+#                   exist), not an environment property.
+#
+# None is caused by or affected by the Step 1/2 work.
+
+tests/test_bilateral_symmetry.py::test_area_ratio_is_mirror_consistent
+tests/test_bilateral_symmetry.py::test_cumulative_integral_has_no_half_bin_bias
+tests/test_bilateral_symmetry.py::test_mirror_symmetric_mask_is_exactly_symmetric
+tests/test_bilateral_symmetry.py::test_mirroring_the_mask_negates_the_signed_measures_exactly
+tests/test_bilateral_symmetry.py::test_width_guard_drops_the_tip_slivers
+tests/test_pipeline_mock.py::test_end_to_end_mock_pipeline
+tests/test_pipeline_mock.py::test_pipeline_resumes_without_duplicates
+tests/test_pipeline_mock.py::test_restart_reruns_a_stage
+tests/test_settings_ui.py::test_declared_subsection_paths_resolve_to_real_rail_groups
+tests/test_settings_ui.py::test_no_metadata_for_settings_that_do_not_exist
+tests/test_working_frame.py::test_reporter_outputs_are_working_sized_and_survive_a_deleted_original
