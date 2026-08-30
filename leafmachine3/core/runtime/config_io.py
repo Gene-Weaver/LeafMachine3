@@ -414,12 +414,20 @@ def launch_manifest_path(early: paths.EarlyRunPaths) -> Path:
 
 
 def lm3_version() -> str:
-    """The installed LM3 version, or ``"unknown"`` when running from a checkout without metadata."""
-    try:
-        from importlib.metadata import version  # noqa: PLC0415 - only paid on a real launch
+    """The LM3 version recorded in the launch manifest.
 
-        return version("leafmachine3")
-    except Exception:  # noqa: BLE001 - a missing dist must not break a launch
+    Derived from ``leafmachine3.__version__``, which is the one authoritative source (installed
+    distribution metadata, falling back to the pinned constant in a bare checkout). It previously
+    read ``importlib.metadata`` directly and returned ``"unknown"`` from a checkout, so a manifest
+    could record ``"unknown"`` -- or, before the versions were unified, ``0.1.0`` -- for a run whose
+    ``/healthz`` advertised ``3.0.0``. Step 5b compares exactly these values across a process
+    boundary, so they must come from one place.
+    """
+    try:
+        from leafmachine3 import __version__  # noqa: PLC0415 - only paid on a real launch
+
+        return __version__
+    except Exception:  # noqa: BLE001 - a version lookup must never break a launch
         return "unknown"
 
 

@@ -36,11 +36,15 @@ from typing import Any, Callable, Optional, Sequence
 
 import yaml
 
+from leafmachine3 import __version__ as _pkg_version
 from leafmachine3.core import paths
 
 log = logging.getLogger("leafmachine3.setup")
 
-LM3_VERSION = "3.0.0"
+#: Stamped into the hardware profile so a stale profile is detected across an LM3 upgrade. Derived
+#: from the package version rather than restated, so the profile, /healthz and the runtime launch
+#: manifest can never disagree about which LM3 wrote what.
+LM3_VERSION = _pkg_version
 
 ProgressCB = Callable[..., None]
 

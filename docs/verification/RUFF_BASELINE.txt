@@ -1,0 +1,66 @@
+# Ruff debt baseline: "<count> <rule> <file>", sorted by file.
+#
+# The tree carries pre-existing lint debt this refactor did not create and will not fix wholesale --
+# ~79 findings across unrelated modules, where touching them all is scope creep with real regression
+# risk. But `ruff check ... || true` is not a gate, it is decoration, and a blocking full-tree gate
+# would be red on arrival. So CI RATCHETS: any new (rule, file) pair, or a higher count for an
+# existing pair, fails the build. Debt can only go down.
+#
+# Regenerate deliberately, after fixing something, with the TESTED checker -- not by hand and not
+# with a shell pipeline (the hand-rolled one that produced this file first swept in ruff's own
+# summary line as a finding):
+#
+#   ruff check --output-format=json leafmachine3 tests > ruff.json; rc=$?
+#   python tools/ci/check_lint_ratchet.py --json ruff.json --status "$rc" \
+#     --baseline docs/verification/RUFF_BASELINE.txt --write-baseline
+#
+# Rewriting is idempotent: it preserves this leading comment block and replaces the findings, so
+# running it twice produces byte-identical output. Pinned by
+# tests/test_ci_gates.py::test_rewriting_the_lint_baseline_is_idempotent.
+#
+# Line and column are excluded on purpose: they churn on every edit.
+# Every module added by the Step 1/2 work is absent from this file -- i.e. lint-clean.
+1 F401 leafmachine3/core/bilateral.py
+1 F401 leafmachine3/core/config.py
+1 E702 leafmachine3/inference/ruler_lattice/analysis.py
+1 E741 leafmachine3/inference/ruler_lattice/analysis.py
+6 F401 leafmachine3/inference/ruler_lattice/analysis.py
+1 E741 leafmachine3/inference/ruler_lattice/engine.py
+1 F401 leafmachine3/inference/ruler_lattice/engine.py
+1 F841 leafmachine3/inference/ruler_lattice/engine.py
+5 E702 leafmachine3/inference/ruler_lattice/lattice.py
+3 E702 leafmachine3/inference/ruler_lattice/qc.py
+3 F541 leafmachine3/inference/ruler_lattice/qc.py
+1 E702 leafmachine3/inference/ruler_lattice/sheet_cf.py
+1 F401 leafmachine3/modules/ect.py
+2 E702 leafmachine3/modules/experiments/ACF_comb/comb_eval.py
+2 F401 leafmachine3/modules/experiments/MP_range/dissent_eval.py
+1 F841 leafmachine3/modules/experiments/MP_range/dissent_eval.py
+1 F541 leafmachine3/modules/experiments/MP_range/expand_and_plot.py
+1 E741 leafmachine3/modules/experiments/MP_range/frame_bounds_eval.py
+1 F401 leafmachine3/modules/experiments/MP_range/frame_bounds_eval.py
+1 F541 leafmachine3/modules/experiments/MP_range/frame_bounds_eval.py
+1 F401 leafmachine3/modules/experiments/MP_range/gate_eval.py
+1 E741 leafmachine3/modules/experiments/bilateral_symmetry/report.py
+1 F841 leafmachine3/modules/experiments/bilateral_symmetry/report.py
+3 F401 leafmachine3/modules/experiments/bilateral_symmetry/run.py
+7 E402 leafmachine3/modules/reporter.py
+2 F401 leafmachine3/modules/reporter.py
+1 F401 leafmachine3/postprocessing/generate_leaf_collage.py
+1 E741 leafmachine3/postprocessing/stl_webview/_build.py
+3 E702 leafmachine3/reporting/bilateral_viz.py
+1 F841 leafmachine3/reporting/bilateral_viz.py
+1 F401 leafmachine3/setup/hardware_setup.py
+1 F841 leafmachine3/setup/hardware_setup.py
+2 E741 leafmachine3/setup/timing.py
+1 E401 tests/manual/deadlock_fault_injection.py
+1 F401 tests/manual/deadlock_fault_injection.py
+1 E702 tests/rotated_bbox_comparision/compare_methods.py
+1 F841 tests/rotated_bbox_comparision/compare_methods.py
+2 E702 tests/test_db.py
+5 E402 tests/test_executor.py
+1 E702 tests/test_generate_leaf_collage.py
+1 F841 tests/test_generate_leaf_collage.py
+3 E702 tests/test_leaf_segmenter_masks.py
+2 E402 tests/test_petiole.py
+1 E402 tests/test_ruler_cf_gate.py

@@ -22,9 +22,11 @@ pytest hard-errors at startup without it.
 | # | Scope | Result |
 |---|---|---|
 | 1 | Focused postprocessing + path tests | **221 passed, 1 skipped** |
+| 1b | CI gate negative controls (`tests/test_ci_gates.py`) | **36 passed** |
+| 1c | Python 3.10 gate/version tests | **38 passed, 2 skipped** |
 | 2 | Focused Step 1/2 suite (23 files) | **652 passed, 3 skipped** |
-| 3 | `ruff check` on 14 changed files, no `\|\| true` | **exit 1 — 4 findings, all pre-existing** (see below) |
-| 4 | Full Linux suite | **11 failed, 966 passed, 6 skipped** |
+| 3 | Lint ratchet via `tools/ci/check_lint_ratchet.py`, no `\|\| true` | **79 findings, none new** (baseline 79) |
+| 4 | Full Linux suite | **11 failed, 1007 passed, 6 skipped** — 1018 executed, floor 980 |
 | 5 | New failing node IDs vs baseline | **none** |
 | 6 | Real user config / production runtime | **unchanged** |
 
@@ -40,7 +42,8 @@ comm -13 now_failing baseline_failing   ->  (empty)   newly passing node IDs
 now=11  baseline=11
 ```
 
-**Zero new failing test node IDs. +645 passing tests** over the 321-passing baseline.
+**Zero new failing test node IDs. +686 passing tests** over the 321-passing baseline.
+Gated by `tools/ci/check_test_baseline.py`, the same checker CI runs.
 
 Three categories of pre-existing failures **in this environment**. They are legitimately
 pre-existing — every one fails identically at `5ddfee4` — but "environmental, not code defects" was

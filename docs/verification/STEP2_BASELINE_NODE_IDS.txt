@@ -33,6 +33,17 @@
 #
 # None is caused by or affected by the Step 1/2 work.
 
+# COVERAGE FLOOR. The node-id diff above protects failure IDENTITIES; it does not protect VOLUME.
+# "6 skipped in 0.01s" has no failures, no errors, a valid summary and exit 0, so an entirely
+# skipped suite -- or one accidentally reduced to a handful of tests by a broken conftest or a stray
+# marker expression -- passes an identity-only gate. This is the number of tests that must actually
+# EXECUTE (passed + failed; skips run nothing and do not count).
+#
+# Set below the current 1014 executed with deliberate slack, so ordinary churn does not trip it while
+# catastrophic loss does. RAISE IT DELIBERATELY as the suite grows; lowering it is a decision, not
+# a formality.
+min-executed: 980
+
 tests/test_bilateral_symmetry.py::test_area_ratio_is_mirror_consistent
 tests/test_bilateral_symmetry.py::test_cumulative_integral_has_no_half_bin_bias
 tests/test_bilateral_symmetry.py::test_mirror_symmetric_mask_is_exactly_symmetric

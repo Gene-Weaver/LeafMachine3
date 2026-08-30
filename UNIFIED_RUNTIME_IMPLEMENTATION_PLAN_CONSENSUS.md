@@ -908,7 +908,11 @@ midway through a backup and prove the previous archive still opens.
 
 ### 2.11 Electron: upgrade first, then lock, then attach
 
-The installed Electron is **33.4.11** (`app/package-lock.json`).
+The installed Electron **was 33.4.11** when this section was written. Step 5a has since
+landed: it is now pinned exactly at **43.4.1** (`app/package.json`, `app/package-lock.json`),
+above the CVE fix on every affected line and on a currently supported major. The analysis below
+is retained because it is why the upgrade had to precede `requestSingleInstanceLock()`, which
+remains Step 5b work and is still absent from `app/main.js`.
 
 **CVE-2026-34776 / GHSA-3c8v-cfp5-9885** (published April 2026, CVSS 5.3): on macOS and Linux, apps
 calling `app.requestSingleInstanceLock()` are vulnerable to an out-of-bounds heap read when parsing
@@ -1574,6 +1578,33 @@ above, so the proxy is retired rather than quietly violated.
 
 ### Step 3 — Execution integration **and** batch ownership (one shipping unit)
 
+**Entry tasks, ordered.** Step 2 deliberately shipped primitives that are defined but not yet
+enforced. Each becomes wrong in a different way once Step 3 starts publishing records, so they are
+listed here as explicit first work rather than left to be rediscovered during integration:
+
+1. **Enforce `STATE_TRANSITIONS` before the first writer exists.** It is defined in `_types.py` and
+   consulted by nothing. Step 3 is what begins publishing `starting → running → terminal` from
+   `machine3()`, the batch and the handshake; if enforcement lands after the record builders, every
+   builder is written against an unenforced machine and inherits the gap. A root must not be able to
+   publish `done` and then `running`.
+2. **One canonical `DeploymentInfo` builder.** Nothing today guarantees `DeploymentInfo.id` receives
+   the *canonical* deployment key rather than the raw `LM3_DEPLOYMENT_ID`. Two call sites that
+   differ produce two registry directories for one deployment, which is the failure the key exists
+   to prevent. Build it in one place and give it no other constructor.
+3. **One subprocess-argument merging helper for every child launch.** The lease reference (POSIX
+   `pass_fds`, Windows `STARTUPINFOEX` allowlist) and the launch status pipe (§2.4) both need to
+   inject arguments into the same `Popen` / `CreateProcess` call. Supplied independently, the second
+   silently discards the first's handle and the child starts without a lease it believes it has.
+   One helper composes them, and it is the only thing allowed to.
+4. **`process_start_time()` returning `0.0` must mean UNKNOWN, never a match.** On Windows and macOS
+   it returns `0.0` when the optional `psutil` is absent (`records.py`). §2.5's five-way `can_stop`
+   match compares process creation time; if `0.0 == 0.0` counts as agreement, PID reuse defeats the
+   check and a server signals a process it does not own. Model it as unknown and refuse control.
+5. **Wire `resolve_port()`** — it is implemented and unit-tested with no production caller, so gate
+   41 (a named non-default deployment without `LM3_PORT` fails at startup) cannot currently fire.
+   Owned by Step 5b's server startup, but named here because Step 3 is where named deployments start
+   being used in anger.
+
 **Entry prerequisite (§3.5).** Step 3 wires the runtime record's paths in while `machine3()`
 still creates `build_dirs()`'s paths. Until `build_dirs(cfg).root == resolve_run_paths(cfg).run_dir`
 holds independently of the process CWD, the record would name a directory the run never creates.
@@ -1946,7 +1977,7 @@ Every reference checked against the tree on 2026-08-28.
 | Electron invents a token when unset | `main.js:25`, used at `main.js:277` |
 | Electron kills attached servers | `main.js:36`, `main.js:86` |
 | No `requestSingleInstanceLock` anywhere | absent from `app/main.js` |
-| Installed Electron | 33.4.11 (`app/package-lock.json`) |
+| Installed Electron | **43.4.1** exactly (`app/package.json`); was 33.4.11 when Appendix A was first recorded, upgraded by Step 5a |
 | Postprocessors are CPU-only today | `leafmachine3/postprocessing/` — no torch/onnxruntime imports |
 
 **Settings resolution split — Step 1 must unify the fallbacks, not just the names:**
@@ -1991,7 +2022,7 @@ Recorded because each changes scope.
 - **C5 — the PID-reuse guard already exists.** `_pid_alive` (`metrics_api.py:440-450`) compares
   process creation time. The genuine defect is granting stop authority to a server that did not
   spawn the process, then signaling a process group derived from that PID (`:494`, `:804`).
-- **C6 — CVE-2026-34776 was missed.** Adding `requestSingleInstanceLock()` on Electron 33.4.11 on
+- **C6 — CVE-2026-34776 was missed.** Adding `requestSingleInstanceLock()` on the then-installed Electron 33.4.11 on
   Linux introduces a known out-of-bounds read with no app-side workaround. Now a hard prerequisite
   (§2.11, gate 21).
 

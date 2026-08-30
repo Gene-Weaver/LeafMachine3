@@ -163,13 +163,31 @@ def test_the_platform_job_does_not_carry_the_local_only_recording_flag(
         assert "no:recording" not in str(step.get("run", ""))
 
 
-def test_the_platform_job_installs_only_the_cpu_and_dev_extras(workflow: dict[str, Any]) -> None:
-    """The runtime primitives are pure-Python; pulling GPU or ML extras onto a hosted runner would
-    make the job slow and flaky for reasons unrelated to the lease adapter."""
+def test_the_platform_job_installs_no_heavy_extras_but_does_install_the_server(
+    workflow: dict[str, Any]
+) -> None:
+    """No GPU or ML extras on a hosted runner -- but the ``server`` extra is NOT optional.
+
+    This asserted ``".[cpu,dev]"`` literally. The intent behind that was "nothing heavy": the runtime
+    primitives are pure Python, and pulling torch or onnxruntime-gpu onto a hosted runner makes the
+    job slow and flaky for reasons unrelated to the lease adapter. That intent is intact.
+
+    The literal was wrong, though. This job runs ``tests/test_settings_path_unification.py``, which
+    imports the server modules, and ``server`` is a separate extra in ``pyproject.toml`` -- so on a
+    genuinely clean runner the job failed at COLLECTION for want of FastAPI. ``server`` is
+    fastapi + uvicorn + python-multipart + sse-starlette: pure Python, no GPU, no ML stack, so it
+    costs the runner nothing that the original intent was protecting against.
+    """
     job = _platform_job(workflow)
     installs = _steps_running(job, "pip install")
     assert installs, "the platform job never installs the package"
-    assert any('".[cpu,dev]"' in _flat(str(s["run"])) for s in installs)
+    flat = " ".join(_flat(str(s["run"])) for s in installs)
+    for needed in ("cpu", "dev", "server", "test"):
+        assert needed in flat, (
+            f"the platform job must install [cpu,dev,server,test]; {needed!r} is missing from: {flat}")
+    for heavy in ("gpu", "yolo", "macos"):
+        assert f",{heavy}" not in flat and f"[{heavy}" not in flat, (
+            f"the platform job must not pull the {heavy!r} extra onto a hosted runner")
 
 
 # --- gate 27: the real Win32 surface must EXECUTE, not skip -------------------------------------

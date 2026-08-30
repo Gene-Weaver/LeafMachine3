@@ -4,7 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "leafmachine3"
-version = "0.1.0"
+# THE authoritative LM3 version. Everything else derives from it:
+#   - leafmachine3.__version__ reads it back with importlib.metadata
+#   - the server, /healthz and the hardware profile import that
+#   - the runtime launch manifest records it
+#   - app/package.json is checked against it by tests/test_version_identity.py
+# It was 0.1.0 here while the server, Electron and the hardware profile all said 3.0.0, so a launch
+# manifest recorded 0.1.0 for a run whose /healthz advertised 3.0.0.
+version = "3.0.0"
 description = "LeafMachine3 — herbarium specimen image analysis pipeline (runtime)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,24 +39,76 @@ macos = ["onnxruntime>=1.19"]   # macOS wheel exposes CoreMLExecutionProvider; t
 yolo = ["ultralytics>=8.3"]
 server = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9", "sse-starlette>=2.0"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
+# Everything CI needs to RUN the suite and the gates. `dev` was not enough: fastapi's base
+# dependency does not pull httpx -- it lives in fastapi's own optional extras -- and
+# `starlette.testclient.TestClient` imports it at construction, so `.[cpu,dev,server]` still failed
+# at COLLECTION on a clean runner. `build` is needed by the wheel-contract test, and pytest-xdist by
+# gate 46, which asserts each xdist worker gets its own deployment id.
+test = [
+    "pytest>=8.0",
+    "pytest-xdist>=3.5",
+    "ruff>=0.5",
+    "httpx>=0.27",
+    "build>=1.2",
+    # tomllib is stdlib only from 3.11, and LM3 supports 3.10 (`requires-python = ">=3.10"`), which
+    # CI tests. Without this, tests/test_version_identity.py fails at COLLECTION on the 3.10 leg.
+    "tomli>=2.0; python_version < '3.11'",
+]
 
 [project.scripts]
 machine3 = "leafmachine3.machine3:main"
 lm3-setup = "leafmachine3.setup.hardware_setup:main"
+# The canonical LM3 command. The plan specifies `lm3 serve` (section 3.1's settings contract and
+# Step 5's exit gate) and anticipates `lm3 connect`; a separate `lm3-serve` script would have been a
+# second public spelling of one command -- the redundant control surface this refactor removes.
+# Until now the only way to start the server was `python -m leafmachine3.server`, so an installed
+# wheel had no documented way to run it at all.
+lm3 = "leafmachine3.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Gene-Weaver/LeafMachine3"
 
 [tool.setuptools.packages.find]
+# `leafmachine3*` also globs `leafmachine3_backup*` -- 13 packages and 13 MB of superseded code that
+# would ship in every wheel. Exclude it explicitly; a narrower include pattern would still match.
 include = ["leafmachine3*"]
+exclude = ["leafmachine3_backup*", "leafmachine3.egg-info*"]
 
 [tool.setuptools.package-data]
-leafmachine3 = ["core/schema.sql"]
+# `leafmachine3/server/ui/` has no __init__.py, so packages.find does not see it and its 12 files --
+# index.html, the JS bundle, the CSS and settings_meta.json -- were absent from the wheel. The
+# browser UI is not optional: it is the entire interface for the loopback and SSH-tunnelled cluster
+# deployments, so an installed LM3 without it serves 404 at "/".
+leafmachine3 = [
+    "core/schema.sql",
+    "server/ui/*",
+    "server/ui/css/*",
+    "server/ui/js/*",
+    "server/ui/js/tabs/*",
+]
 # The calibration sheets are resolved with importlib.resources (paths.calibration_images_dir), so
 # they MUST ship inside the package -- an install that omits them silently drops `--calibrate` back
 # to heuristic VRAM estimates. Downscaled copies of examples/images, ~7 MB total; see that package's
 # README before swapping the set.
 "leafmachine3.setup.calibration_images" = ["*.jpg", "README.md"]
+# The STL web deliverable. `electron_app_plan.md` and closeout finding F-017 both call for it to
+# ship, and before this the wheel contained `_build.py` and NOTHING ELSE from that tree -- a build
+# script with no inputs, which is the worst of both options. `stl_webview/` has no `__init__.py`, so
+# packages.find never saw it; declaring it as package data of the parent package ships the generated
+# single-file page, its sources, and the fonts and sample masks `_build.py` inlines. ~1.1 MB.
+"leafmachine3.postprocessing" = [
+    "stl_webview/*.html",
+    "stl_webview/*.md",
+    "stl_webview/src/*",
+    "stl_webview/assets/*",
+    "stl_webview/assets/fonts/*",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: builds a wheel or otherwise takes seconds; CI runs these, `-m 'not slow'` skips them",
+    "characterization: pins PRE-refactor behavior, including behavior the consensus plan calls a defect; expected to change deliberately",
+]
 
 [tool.ruff]
 line-length = 110

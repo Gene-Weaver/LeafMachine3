@@ -30,6 +30,7 @@ from typing import Any, Iterable, Iterator, Optional
 
 import yaml
 
+from leafmachine3 import __version__
 from leafmachine3.core import paths
 
 log = logging.getLogger("leafmachine3.server")
@@ -721,7 +722,7 @@ def create_app(jobs: JobManager | None = None) -> Any:
         finally:
             worker.cancel()
 
-    app = FastAPI(title="LeafMachine3", version="3.0.0", lifespan=lifespan)
+    app = FastAPI(title="LeafMachine3", version=__version__, lifespan=lifespan)
 
     @app.post("/v1/jobs", dependencies=[Depends(require_token)])
     async def create_job(files: list[UploadFile] | None = None) -> dict:
@@ -786,7 +787,7 @@ def create_app(jobs: JobManager | None = None) -> Any:
         # logs and /healthz diagnostics"). It is what makes the Step 1 exit gate -- "from any
         # supported CWD every subsystem reports the same canonical settings path" -- checkable
         # from outside the process. The rest of this body is untouched; section 4 Step 5b owns it.
-        return {"status": "ok", "version": "3.0.0", "provider": _current_provider(),
+        return {"status": "ok", "version": __version__, "provider": _current_provider(),
                 "pid": os.getpid(), "paths": path_diagnostics()}
 
     @app.post("/v1/shutdown", dependencies=[Depends(require_token)])
@@ -991,10 +992,10 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, jobs_root: Path | None =
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    """CLI for ``python -m leafmachine3.server`` / ``lm3 serve``."""
+    """CLI for ``lm3 serve`` and ``python -m leafmachine3.server``."""
     import argparse
 
-    parser = argparse.ArgumentParser(prog="lm3-serve", description="Run the local LeafMachine3 server.")
+    parser = argparse.ArgumentParser(prog="lm3 serve", description="Run the local LeafMachine3 server.")
     parser.add_argument("--host", default="127.0.0.1", help="bind address (loopback by default)")
     parser.add_argument("--port", type=int, default=8765, help="port")
     parser.add_argument("--jobs-root", default=None, help="directory for staged job dirs")

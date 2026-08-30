@@ -181,6 +181,22 @@ Net: **37 reported → 33 distinct defects.**
 
 ## 5. The 37 findings
 
+> **Superseded facts, flagged rather than silently rewritten.** This report is an audit record, so
+> the findings below still read as they were measured at the 10:48–10:57 snapshot. Three statements
+> in them are no longer true of the tree, and the next implementer must not take them as
+> specification:
+>
+> | Reads | Now |
+> |---|---|
+> | `hardware_profile_path()` takes `adopt_legacy` / `settings_file` and can adopt | **Both parameters and the embedded adopt are removed.** Migration is reachable only through `migrate_legacy_hardware_profile()`. Pinned by `test_postprocessing_cli_agreement.py::test_the_hardware_resolver_exposes_no_migration_parameter`. |
+> | F-001 / F-031 open — a read path performs the legacy adopt | **Fixed.** Resolution is pure and memoized; adoption happens once, at controlled startup. `test_read_paths_are_pure.py`. |
+> | F-009 has 7 tests | **16**, including two that execute each CLI's real `main()` and an 8-process adopt race. |
+> | F-017 open; "no wheel was built" | **Closed.** A wheel is now built, INSTALLED into a throwaway venv and probed from an unrelated CWD (`tests/test_version_identity.py`, and a CI job). It ships the browser UI, `settings_meta.json`, `schema.sql`, the calibration images and all 33 `stl_webview` files; `leafmachine3_backup` is excluded. |
+> | F-010's account of the available commands | **Partially superseded.** There is now a canonical `lm3` command with a `serve` subcommand (`leafmachine3/cli.py`), so an installed wheel has a documented way to start the server. F-010's substance — a packaged Electron app resolves `ROOT` to `<install>/resources` and so cannot SPAWN a server without `LM3_PYTHON` — is unchanged and still owned by Step 5b. |
+>
+> Ownership reassignments (§ below) and the Phase 8 evidence are current.
+
+
 > **Currency note.** The fix-status column below was written against the 10:48–10:57 snapshot.
 > Phases 3–6 of this pass then fixed **F-007, F-008, F-011 and F-031**, and a follow-up pass fixed
 > **F-009**; §Phase 8 measured all five, and those rows have been brought current. Ownership was
@@ -205,7 +221,7 @@ fix; **"unassigned"** means no §4 bullet claims it, which is itself a plan defe
 | F-006 | high | `leafmachine3/core/paths.py:382`, `server/app.py:893` | confirmed | **5b** (server startup) | no | open | `tests/test_paths.py::test_named_deployment_without_port_is_a_startup_error` covers the function, **nothing** covers a call site |
 | F-007 | blocking | `leafmachine3/core/dirs.py:53` → now `:58` | confirmed | **3** (entry prerequisite, `plan:1559-1563`) | **yes** | **FIXED and VERIFIED** (Phase 3; §Phase 8) | `tests/test_relative_path_contract.py::test_build_dirs_and_the_early_resolver_agree` (created 10:50:26) |
 | F-008 | high | `leafmachine3/core/config.py:412` → now `:411-438` | confirmed | **3** (§3.5) | **yes** | **FIXED and VERIFIED** (Phase 3; §Phase 8) | `tests/test_relative_path_contract.py::test_relative_input_and_model_paths_resolve_against_the_settings_file` |
-| F-009 | high | `postprocessing/generate_stl_from_mask.py:254`; `generate_leaf_collage.py:1391` | confirmed | unassigned (§3.1 resolver scope) | no | **FIXED and VERIFIED** (`test_postprocessing_cli_agreement.py`) | `test_postprocessing_cli_agreement.py` (7 tests) |
+| F-009 | high | `postprocessing/generate_stl_from_mask.py:254`; `generate_leaf_collage.py:1391` | confirmed | unassigned (§3.1 resolver scope) | no | **FIXED and VERIFIED** (`test_postprocessing_cli_agreement.py`) | `test_postprocessing_cli_agreement.py` (16 tests) |
 | F-010 | high | `app/main.js:162-183` | **confirmed** — measured in a packaged AppImage (Phase 7) | **5b** | no | open | packaged-layout probe (Phase 7); no automated test yet |
 | F-011 | high | `leafmachine3/server/app.py:447`, `:857` | confirmed | **5b** (assigned in revision 13, `plan:1626-1631`) | no | **FIXED and VERIFIED** (Phase 6; `test_token_hygiene.py`) | none |
 | F-012 | high | `leafmachine3/core/runtime/_types.py:238-240` | confirmed | **3 — first task** | no | open | none |

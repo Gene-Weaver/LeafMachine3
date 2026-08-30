@@ -71,3 +71,8 @@ examples_out/
 # sanitized equivalents are docs/verification/STEP2_VERIFICATION_SUMMARY.md and
 # docs/verification/STEP2_BASELINE_NODE_IDS.txt.
 .step2_evidence/
+
+# Long-form notes for the CI-gate / version / packaging checkpoint. The commit message itself is
+# one line; this holds the reasoning. Deliberately untracked: it is a working note, not a
+# deliverable, and git log already carries what history needs.
+UNIFIED_RUNTIME_STEP2_CI_NOTES.txt
