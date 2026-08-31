@@ -21,7 +21,7 @@ Five ideas carry the whole file:
 * **Bounded records.** A record is a description, never a log. Strings, error text, and
   ``input_dirs`` are capped, secret-shaped keys are refused outright, secret-shaped *values* are
   redacted, and the serialized result must fit :data:`MAX_RECORD_BYTES`. ``active.json`` carries
-  only bounded child *summaries* precisely so it cannot grow with batch length.
+  only bounded child *summaries* precisely so it cannot grow with the number of children.
 * **Skew fails safe** (section 2.9). A higher ``schema_version`` is never interpreted: the OS lock
   still decides occupancy, the snapshot reports ``active: true, compatible: false``, and the raw
   payload is carried through uninterpreted for display only.
@@ -70,7 +70,6 @@ from ._types import (
     ActivityRole,
     ArchiveMode,
     ArchiveStatus,
-    BatchBlock,
     ChildSummary,
     ChildSummaryDict,
     ConfigRef,
@@ -172,7 +171,7 @@ _RECORD_KEYS = frozenset(
     {
         "schema_version", "run_id", "activity", "activity_role", "parent_run_id", "state",
         "launcher", "pid", "process_started_at", "started_at", "updated_at", "deployment",
-        "error", "finished_at", "returncode", "config", "project", "batch", "hardware",
+        "error", "finished_at", "returncode", "config", "project", "hardware",
         "control", "current_child", "last_child",
     }
 )
@@ -185,7 +184,6 @@ _PROJECT_KEYS = frozenset(
         "log_path", "archive_error",
     }
 )
-_BATCH_KEYS = frozenset({"total", "completed", "failed", "current_run_name"})
 _HARDWARE_KEYS = frozenset({"destination_path"})
 _CONTROL_KEYS = frozenset({"mode", "owner_instance_id"})
 _CHILD_SUMMARY_KEYS = frozenset({"run_id", "activity", "state", "started_at", "run_name", "run_dir"})
@@ -415,13 +413,6 @@ def record_to_dict(record: RuntimeRecord) -> RuntimeRecordDict:
             "log_path": project.log_path,
             "archive_error": project.archive_error,
         }
-    if record.batch is not None:
-        payload["batch"] = {
-            "total": int(record.batch.total),
-            "completed": int(record.batch.completed),
-            "failed": int(record.batch.failed),
-            "current_run_name": record.batch.current_run_name,
-        }
     if record.hardware is not None:
         payload["hardware"] = {"destination_path": record.hardware.destination_path}
     if record.control is not None:
@@ -572,18 +563,6 @@ def _project_from_dict(payload: Mapping[str, Any]) -> ProjectBlock:
     )
 
 
-def _batch_from_dict(payload: Mapping[str, Any]) -> BatchBlock:
-    _reject_unknown_keys(payload, _BATCH_KEYS, field="batch")
-    return BatchBlock(
-        total=_as_int(_require(payload, "total", field="batch.total"), field="batch.total"),
-        completed=_as_int(_require(payload, "completed", field="batch.completed"),
-                          field="batch.completed"),
-        failed=_as_int(_require(payload, "failed", field="batch.failed"), field="batch.failed"),
-        current_run_name=_as_opt_str(_optional(payload, "current_run_name"),
-                                     field="batch.current_run_name"),
-    )
-
-
 def _hardware_from_dict(payload: Mapping[str, Any]) -> HardwareBlock:
     _reject_unknown_keys(payload, _HARDWARE_KEYS, field="hardware")
     return HardwareBlock(
@@ -642,7 +621,6 @@ def record_from_dict(payload: Mapping[str, Any], *, path: Path | None = None) ->
                                      field="deployment")
     config_payload = _optional(payload, "config")
     project_payload = _optional(payload, "project")
-    batch_payload = _optional(payload, "batch")
     hardware_payload = _optional(payload, "hardware")
     control_payload = _optional(payload, "control")
     current_child = _optional(payload, "current_child")
@@ -675,8 +653,6 @@ def record_from_dict(payload: Mapping[str, Any], *, path: Path | None = None) ->
                 else _config_from_dict(_as_mapping(config_payload, field="config"))),
         project=(None if project_payload is None
                  else _project_from_dict(_as_mapping(project_payload, field="project"))),
-        batch=(None if batch_payload is None
-               else _batch_from_dict(_as_mapping(batch_payload, field="batch"))),
         hardware=(None if hardware_payload is None
                   else _hardware_from_dict(_as_mapping(hardware_payload, field="hardware"))),
         control=(None if control_payload is None
@@ -763,16 +739,6 @@ def _check_role_and_blocks(record: RuntimeRecord) -> None:
                 f"calibration_pipeline: project.run_name must be {CALIBRATION_RUN_NAME!r}, got "
                 f"{record.project.run_name!r}"
             )
-    if record.batch is not None:
-        batch = record.batch
-        if min(batch.total, batch.completed, batch.failed) < 0:
-            raise RecordSchemaError("batch: total/completed/failed must not be negative")
-        if batch.completed + batch.failed > batch.total:
-            raise RecordSchemaError(
-                f"batch: completed({batch.completed}) + failed({batch.failed}) exceeds "
-                f"total({batch.total})"
-            )
-
 
 def _check_paths(record: RuntimeRecord) -> None:
     if record.config is not None:
@@ -1081,7 +1047,7 @@ def read_runtime(
 
     ``children`` is deliberately bounded to the records the root *references*
     (``current_child`` then ``last_child``), which is how the API merges "the latest child record"
-    without the response growing with batch length (section 3.2).
+    without the response growing with the number of children (section 3.2).
     """
     deployment_dir = Path(deployment_dir)
     active_path = deployment_dir / ACTIVE_RECORD_FILENAME
@@ -1219,7 +1185,7 @@ def prune_children(
 
     * anything referenced by ``active.json`` or ``last.json`` is preserved, as is anything in
       ``keep_run_ids`` (the run the caller is finalizing right now, whose files it still needs);
-    * durable per-species history lives in the batch manifest/DB, never here, so nothing in this
+    * durable per-species history lives in each species' own DB and the wrapper's TSV, never here, so nothing in this
       directory is history and pruning it loses nothing;
     * an **unexpired** grant is preserved even though nothing references it yet -- it belongs to a
       child that has been approved but has not started;

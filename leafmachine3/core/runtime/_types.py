@@ -43,7 +43,7 @@ from .. import paths
 SCHEMA_VERSION = 1
 
 #: The stable busy exit code (plan sections 2.3 and 3.3). A losing root exits with exactly this,
-#: and the batch orchestrator / shell wrapper distinguish it from an ordinary pipeline failure.
+#: and the shell wrapper distinguish it from an ordinary pipeline failure.
 EXIT_CODE_BUSY = 75
 
 #: The HTTP equivalent of :data:`EXIT_CODE_BUSY` (plan section 2.3): the launch handshake turns a
@@ -150,13 +150,18 @@ HANDLE_FLAG_INHERIT = 0x00000001
 # --------------------------------------------------------------------------------------------- #
 
 class Activity(str, enum.Enum):
-    """What is running. Three roots, two inherited subactivities -- no others exist."""
+    """What is running. Two roots, one inherited subactivity -- no others exist.
+
+    There was a third root, ``batch``, with a ``batch_item_pipeline`` child. Plan revision 14
+    removed both: the Global Greening wrapper is a shell loop that invokes ordinary LM3 runs, so
+    each species takes an ordinary ``pipeline`` lease and the wrapper owns only sequencing. Lease
+    inheritance is therefore exercised by calibration alone -- which genuinely needs it, because a
+    calibration child runs nested LM3 work while ``hardware_setup`` owns the deployment.
+    """
 
     PIPELINE = "pipeline"
     HARDWARE_SETUP = "hardware_setup"
-    BATCH = "batch"
     CALIBRATION_PIPELINE = "calibration_pipeline"
-    BATCH_ITEM_PIPELINE = "batch_item_pipeline"
 
 
 class ActivityRole(str, enum.Enum):
@@ -171,11 +176,9 @@ class ActivityRole(str, enum.Enum):
 
 
 ROOT_ACTIVITIES: frozenset[Activity] = frozenset(
-    {Activity.PIPELINE, Activity.HARDWARE_SETUP, Activity.BATCH}
+    {Activity.PIPELINE, Activity.HARDWARE_SETUP}
 )
-CHILD_ACTIVITIES: frozenset[Activity] = frozenset(
-    {Activity.CALIBRATION_PIPELINE, Activity.BATCH_ITEM_PIPELINE}
-)
+CHILD_ACTIVITIES: frozenset[Activity] = frozenset({Activity.CALIBRATION_PIPELINE})
 
 #: The role an activity is REQUIRED to declare. ``activity_role`` is not free-form: a
 #: ``calibration_pipeline`` claiming ``root`` is a schema error, because it would imply a lock
@@ -183,16 +186,13 @@ CHILD_ACTIVITIES: frozenset[Activity] = frozenset(
 ACTIVITY_ROLE: dict[Activity, ActivityRole] = {
     Activity.PIPELINE: ActivityRole.ROOT,
     Activity.HARDWARE_SETUP: ActivityRole.ROOT,
-    Activity.BATCH: ActivityRole.ROOT,
     Activity.CALIBRATION_PIPELINE: ActivityRole.CHILD,
-    Activity.BATCH_ITEM_PIPELINE: ActivityRole.CHILD,
 }
 
-#: The parent activity each subactivity may legitimately run under. A ``batch_item_pipeline`` whose
-#: grant names a ``hardware_setup`` parent is forged or mis-ordered, and fails closed.
+#: The parent activity each subactivity may legitimately run under. A ``calibration_pipeline`` whose
+#: grant names any other parent is forged or mis-ordered, and fails closed.
 CHILD_PARENT_ACTIVITY: dict[Activity, Activity] = {
     Activity.CALIBRATION_PIPELINE: Activity.HARDWARE_SETUP,
-    Activity.BATCH_ITEM_PIPELINE: Activity.BATCH,
 }
 
 
@@ -206,7 +206,6 @@ class Launcher(str, enum.Enum):
     PYTHON = "python"
     SERVER = "server"
     LEGACY_JOB = "legacy-job"
-    BATCH = "batch"
 
 
 # --------------------------------------------------------------------------------------------- #
@@ -530,8 +529,8 @@ class ConfigRef:
 class ProjectBlock:
     """The effective project identity, where the activity has one.
 
-    ``batch`` and ``hardware_setup`` roots deliberately carry NO project (invariant 6): a batch has
-    many, and a setup has none.
+    A ``hardware_setup`` root deliberately carries NO project (invariant 6): tuning the machine is
+    not work on anybody's specimens.
 
     ``tmp_dir`` is deliberately absent (plan section 2.7): ``dirs._ensure_tmp`` falls back to
     ``<root>/_tmp_original`` on ``OSError``, so a configured scratch path is not knowable before
@@ -551,17 +550,6 @@ class ProjectBlock:
     log_path: str
     #: Set when a checkpoint failed. Required alongside ``stale`` and ``failed`` (section 2.10).
     archive_error: str | None = None
-
-
-@dataclass(frozen=True)
-class BatchBlock:
-    """Progress of a ``batch`` root. Bounded: counters plus the current item's run name, never the
-    per-species history -- that lives in the batch manifest/DB (plan section 3.2)."""
-
-    total: int
-    completed: int
-    failed: int
-    current_run_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -587,7 +575,7 @@ class ControlBlock:
 @dataclass(frozen=True)
 class ChildSummary:
     """The bounded child summary embedded in the root's ``active.json`` -- exactly six keys, so the
-    root record cannot grow with batch length (plan section 3.2)."""
+    root record stays bounded however many children a root launches over its life (section 3.2)."""
 
     run_id: str
     activity: Activity
@@ -626,7 +614,6 @@ class RuntimeRecord:
     # -- per-activity blocks (plan section 3.2 table) ------------------------------------------- #
     config: ConfigRef | None = None
     project: ProjectBlock | None = None
-    batch: BatchBlock | None = None
     hardware: HardwareBlock | None = None
     control: ControlBlock | None = None
     # -- root-only, bounded child tracking ------------------------------------------------------ #
@@ -639,20 +626,16 @@ class RuntimeRecord:
 #: and mandatory for them.
 REQUIRED_BLOCKS: dict[Activity, tuple[str, ...]] = {
     Activity.PIPELINE: ("config", "project"),
-    Activity.BATCH: ("config", "batch"),
     Activity.HARDWARE_SETUP: ("config", "hardware"),
     Activity.CALIBRATION_PIPELINE: ("parent_run_id", "project"),
-    Activity.BATCH_ITEM_PIPELINE: ("parent_run_id", "project"),
 }
 
-#: Blocks that must be ABSENT. A ``batch`` root with a single ``project`` block would contradict
+#: Blocks that must be ABSENT. A ``hardware_setup`` root with a ``project`` block would contradict
 #: invariant 6, and the GUI would show one species as though it were the whole run.
 FORBIDDEN_BLOCKS: dict[Activity, tuple[str, ...]] = {
-    Activity.BATCH: ("project",),
-    Activity.HARDWARE_SETUP: ("project", "batch"),
-    Activity.PIPELINE: ("batch", "hardware"),
-    Activity.CALIBRATION_PIPELINE: ("batch", "current_child", "last_child"),
-    Activity.BATCH_ITEM_PIPELINE: ("batch", "hardware", "current_child", "last_child"),
+    Activity.HARDWARE_SETUP: ("project",),
+    Activity.PIPELINE: ("hardware",),
+    Activity.CALIBRATION_PIPELINE: ("current_child", "last_child"),
 }
 
 
@@ -767,13 +750,6 @@ class ProjectDict(TypedDict, total=False):
     archive_error: str | None
 
 
-class BatchDict(TypedDict, total=False):
-    total: int
-    completed: int
-    failed: int
-    current_run_name: str | None
-
-
 class HardwareDict(TypedDict):
     destination_path: str
 
@@ -813,7 +789,6 @@ class RuntimeRecordDict(_RuntimeRecordRequired, total=False):
     returncode: int | None
     config: ConfigDict | None
     project: ProjectDict | None
-    batch: BatchDict | None
     hardware: HardwareDict | None
     control: ControlDict | None
     current_child: ChildSummaryDict | None
@@ -1005,10 +980,10 @@ __all__ = [
     "LeaseNotHeldError", "RecordCorruptError", "RecordError", "RecordSchemaError",
     "RuntimeBusyError", "RuntimeRegistryError", "WriterOwnershipError",
     # typed records
-    "BatchBlock", "ChildHandoff", "ChildSummary", "ConfigRef", "ControlBlock", "DeploymentInfo",
+    "ChildHandoff", "ChildSummary", "ConfigRef", "ControlBlock", "DeploymentInfo",
     "GrantRecord", "HardwareBlock", "ProjectBlock", "RuntimeRecord", "RuntimeSnapshot",
     # wire shapes
-    "ArchivePointerDict", "BatchDict", "ChildSummaryDict", "ConfigDict", "ControlDict",
+    "ArchivePointerDict", "ChildSummaryDict", "ConfigDict", "ControlDict",
     "DeploymentDict", "GrantRecordDict", "HandshakeMessage", "HardwareDict", "ProjectDict",
     "RuntimeRecordDict",
     # protocols and shared helpers

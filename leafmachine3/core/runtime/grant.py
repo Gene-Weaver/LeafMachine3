@@ -1,7 +1,7 @@
 """One-use capability grants for approved subactivities (plan section 2.2).
 
 A root activity holds the deployment lease. When it launches an *approved* subactivity --
-``calibration_pipeline`` under ``hardware_setup``, ``batch_item_pipeline`` under ``batch`` -- that
+``calibration_pipeline`` under ``hardware_setup`` -- that
 child inherits the lease reference itself rather than acquiring its own. Something has to decide
 which processes are entitled to that inheritance, and "the child passed a capability string" is
 meaningless unless the string is validated *against* something. It is validated against a grant

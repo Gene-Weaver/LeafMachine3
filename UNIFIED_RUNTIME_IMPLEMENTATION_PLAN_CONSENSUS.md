@@ -1,7 +1,7 @@
 # Unified LM3 runtime — consensus implementation plan
 
 Date: 2026-08-28
-Revision: 13 (amended after the Step 1/2 implementation closeout)
+Revision: 14 (amended after the Step 1/2 closeout and the batch-ownership reversal)
 Status: **implementation-ready; every protocol below is stated, not deferred**
 Supersedes: `UNIFIED_RUNTIME_IMPLEMENTATION_PLAN.md` (proposal)
 Inputs reconciled: the original proposal, a code-verified adversarial review
@@ -41,7 +41,7 @@ are corrected in **Appendix B**; the corrections change scope, so they are part 
 | A2 | `/v1/run/start` returns after `Popen`, so a busy child can never yield 409 | Explicit **launch handshake** over a status pipe; §2.4 |
 | A3 | Child-record storage left as an either/or | Exact file layout + **activity-specific schemas**; §3.2 |
 | A4 | Path unification missed setup/calibration; calibration bootstrap is reentrant | Resolver scope widened; **provisional profile** for the child; §2.2, §3.1 |
-| A5 | Steps 3 and 5 shipped separately would reintroduce the batch gap | Merged into **one shipping unit**, plus a hard cutover rule; §4 |
+| A5 | Steps 3 and 5 shipped separately would reintroduce the batch gap | Merged into one shipping unit; **superseded by revision 14**, which accepts the gap and removes the batch orchestrator (§2.3) |
 | A6 | Cluster `state_dir` contradicts `db_path = run_dir/<name>.sqlite` | Four explicit path roles + **periodic backup and SIGTERM checkpoint**; §2.10 |
 | A7 | A valid LM3 server for the *wrong deployment* was treated as "unrelated" | `/healthz` carries the deployment key; one auth flow chosen; §2.9 |
 | A8 | `tmp_path` is function-scoped; xdist workers would share a deployment | Isolation at conftest import; §4 Step 1 |
@@ -168,13 +168,19 @@ implementation exposed in the plan itself; two are policy the plan never stated.
 | L4 | Gate 13 (token redaction, `no-store`) was stated in §2.11 and §8 but **owned by no step**, so it was implemented nowhere | Assigned explicitly to Step 5b; §4 |
 | L5 | No stated policy on which platforms are qualified when, so Linux-only evidence risked being reported as cross-platform validation | Linux is the qualification target now; Windows/macOS are "implemented but not yet natively validated"; §1.1 |
 
+### Revision 14 amendment
+
+| # | Issue | Resolution |
+|---|---|---|
+| M1 | **The batch was made a lease-holding root activity to close an inter-species gap that does not cost what §2.3 assumed.** `run_global_greening.sh` is 226 lines that call LM3 once per species and skip the ones already complete. Making it a `batch` root pulled the grant/capability/inheritance machinery onto a convenience wrapper | The batch stays a shell script; each species takes an ordinary `pipeline` root lease. `batch` and `batch_item_pipeline` are removed; §2.3 records why |
+
 ### What changed from the original proposal
 
 | Area | Proposal | Consensus |
 |---|---|---|
 | Lease granularity | one flat lease per deployment | **root activity** lease + inherited **subactivity** lease reference |
 | Calibration | unaddressed (would deadlock) | inherited lease reference + capability + provisional profile |
-| Batch | lease released between species | **one batch-scoped root lease for the whole batch** |
+| Batch | lease released between species | **unchanged, deliberately**: each species takes an ordinary `pipeline` lease; a lost gap costs one re-runnable species (§2.3) |
 | `LM3_DEPLOYMENT_ID` | descriptive namespacing | **load-bearing**: keys registry dir, `/healthz`, Electron identity |
 | Concurrency | silently removed | preserved via explicitly named deployments |
 | Server Start | "wait for record or exit" (unimplementable as written) | explicit status-pipe handshake before responding |
@@ -192,8 +198,8 @@ implementation exposed in the plan itself; two are policy the plan never stated.
 Acceptance requirements, not aspirations. Each maps to a gate in §8.
 
 1. At most one **root activity** holds a given deployment's lease at a time. A root activity is a
-   `pipeline`, a `hardware_setup`, or a `batch`.
-2. A **subactivity** (`calibration_pipeline`, `batch_item_pipeline`) executes under its parent's
+   `pipeline` or a `hardware_setup`.
+2. A **subactivity** (`calibration_pipeline`) executes under its parent's
    root lease by **inheriting the parent's lease reference** — on POSIX the locked open file
    description, on Windows a handle to the lease event, because Windows file locks do not transfer
    to children at all (§2.2). It never acquires, replaces, or unlocks it. The deployment stays occupied for as long as the root *or any live subactivity*
@@ -205,8 +211,8 @@ Acceptance requirements, not aspirations. Each maps to a gate in §8.
 5. `GET /v1/runtime` and the GUI obtain active identity from the lease record, never from mutable
    YAML or a filesystem recency guess.
 6. An active record contains the exact config path used at launch, and — **where the activity has
-   one** — the effective project identity. `batch` and `hardware_setup` roots deliberately carry no
-   single project (§3.2).
+   one** — the effective project identity. A `hardware_setup` root deliberately carries no
+   project (§3.2).
 7. **In follow-active mode**, which is the default, status, logs, results, and postprocessing
    targets follow the active record's paths. An explicit `run=`/`db=` selector deliberately
    overrides this for that client request and visibly pauses follow-active.
@@ -335,8 +341,8 @@ Consequences to document:
 ### 2.2 Root activities and inherited subactivities
 
 ```
-root: pipeline | hardware_setup | batch
-  └── subactivity: calibration_pipeline | batch_item_pipeline
+root: pipeline | hardware_setup
+  └── subactivity: calibration_pipeline
 ```
 
 #### Lock lifetime — the mechanism, not just the rule
@@ -558,8 +564,8 @@ The UI therefore shows a tree and never mistakes `_lm3_calibration` for the user
 Hardware setup
 └── calibration pipeline
 
-Global Greening batch
-└── current species pipeline
+Global Greening (a shell loop; each species is an ordinary root)
+└── (no subactivity — see §2.3)
 ```
 
 #### Calibration must not bootstrap itself recursively
@@ -587,37 +593,56 @@ the CLI exit nonzero and put the GUI setup job into `error`. Silent fallback to 
 is acceptable only when calibration was not requested, or when the user explicitly selects an
 allow-fallback option.
 
-### 2.3 The batch holds one lease for its entire lifetime
+### 2.3 The batch is NOT a lease-holding root — reversed in revision 14
 
-The batch must not release the lease between species. Otherwise Start is enabled in every
-inter-species gap, and a GUI run that wins one gap makes the next species exit busy — which
-`run_global_greening.sh:207-210` records as a species failure and **continues past**, so every
-remaining species fails in seconds.
+Revisions 1-13 required a Python batch orchestrator holding one root lease for the whole batch, so
+that Start could never be enabled in an inter-species gap. **That is reversed.** The reasoning is
+recorded rather than deleted, because the reversal turns on a cost estimate that was never checked.
 
-Implement a Python batch orchestrator:
+**What the batch actually is.** `run_global_greening.sh` is 226 lines. For each species it reads
+`project_status` from that species' SQLite, skips the ones already complete, runs
+`python -m leafmachine3 --config … --input … --output …`, appends a row to a summary TSV, and
+continues past failures. It is sequential LM3 invocations plus a skip check — a convenience wrapper,
+not an execution engine.
 
-```
-lm3 batch  → acquires the root `batch` lease
-    ├── reads each species' project_status
-    ├── skips species already complete
-    ├── launches the current species as an inherited batch_item_pipeline child
-    ├── records success/failure per species
-    ├── continues after an ordinary species failure
-    └── releases the root lease only after the whole batch
-```
+**What the batch lease was buying.** Without it, no lease is held between species, so a GUI Start can
+win that gap and the next species exits 75. The consequence is one species skipped, recorded as a
+failure row in the summary, and picked up by the next run — because `species_state()` marks it
+incomplete and the script is idempotent by construction. That is visible and self-healing, not data
+loss.
 
-During an inter-species gap the batch lease is still held, GUI Start stays disabled, and the GUI
-shows "batch between items" plus the last species result.
+**What it was costing.** A `batch` root activity, a `batch_item_pipeline` subactivity, a batch record
+schema, an orchestrator to write and test, and the grant/capability/lease-inheritance machinery
+exercised on the convenience path — to prevent a failure mode that costs one re-run.
 
-The existing shell entry point may remain as a thin wrapper, but **its current behavior is a
-requirement, not a starting point**. It must keep: explicit species selection with typo rejection,
-`--status`, `--dry-run`, `--redo-complete`, `--skip-existing` as a no-op alias, DB-based completion
-detection (no stage `pending`, none `error`, highest `stage_order` is `done`), resume of incomplete
-species, continue-after-one-species-fails, the summary TSV, and per-species logs.
+**Decision.** The batch stays a shell script. Each species takes an ordinary `pipeline` root lease,
+exactly like any other run. Lease inheritance is therefore exercised by **calibration alone**, which
+genuinely requires it: a calibration child must run under its parent's lease because the parent is
+mid-`run_setup` and holds the deployment.
 
-A stable busy exit code exists as a named constant with a documented value (**75**). The API
-equivalent is HTTP 409. The orchestrator and any wrapper must distinguish busy from an ordinary
-pipeline failure.
+Two consequences to implement rather than assume:
+
+- **The batch must distinguish a busy exit from a real failure.** Exit 75 means "another root holds
+  the deployment", which is a retry, not a defect in that species. The summary TSV records it
+  distinctly so a human reading the run can tell "re-run this" from "this species is broken".
+- **The GUI shows the current species as an ordinary `pipeline` run**, with no batch tree and no
+  "between items" state. There is nothing to show between species because nothing is running.
+
+**The normative model, in full.** For each species the wrapper: (1) decides from that species' own
+SQLite whether it is already complete, (2) invokes ordinary `machine3`, which takes a normal
+`pipeline` root lease, (3) lets the GUI show that species as an ordinary active run, (4) waits for
+LM3 to exit and release the lease, (5) records the result in the summary TSV and moves on. LM3 owns
+the safety and state of one invocation; the wrapper owns sequencing, and nothing else.
+
+If a future batch genuinely needs gap-free exclusivity — a shared cluster where losing a species is
+expensive rather than annoying — the mechanism to reach for is a batch-scoped root lease exactly as
+revisions 1-13 described, and this section is the record of how it was specified.
+
+**Stop is no longer a batch operation, and that is the boundary.** The GUI observes and can stop the
+*currently running species*, because that is an ordinary run. Stopping the whole sequence means
+interrupting the wrapper — Ctrl-C, or cancelling its Slurm job. One consequence the wrapper must
+honor: if an individual species is stopped from the GUI, the wrapper must NOT advance as though it
+succeeded; it records failed/retryable, and the DB-driven skip check picks it up next time.
 
 ### 2.4 Launch handshake and the staging boundary
 
@@ -714,7 +739,6 @@ Default mode is follow-active.
 | Root activity | GUI behavior |
 |---|---|
 | `pipeline` | follow its project DB and logs |
-| `batch` | follow its current pipeline child; between items show the last result |
 | `hardware_setup` | show a tuning state in the Machine panel; **do not** switch project history to `_lm3_calibration` |
 | unknown/future | disable Start, refuse control, show a compatibility warning |
 
@@ -1224,11 +1248,11 @@ Storage layout, settled:
 | `active.json` | bounded **root** record, plus `current_child` and `last_child` **summaries** |
 | `children/<child_run_id>.json` | full child lifecycle record |
 | `last.json` | **roots only** |
-| batch manifest / SQLite | durable per-species history (not the registry) |
+| each run's own SQLite, plus the wrapper's summary TSV | durable per-run history (never the registry) |
 | `GET /v1/runtime` | merges the bounded active tree for presentation |
 
 A child summary is `{run_id, activity, state, started_at, run_name, run_dir}` — bounded so
-`active.json` cannot grow with batch length.
+`active.json` stays bounded however many children a root launches over its life.
 
 #### Writer ownership — one writer per file
 
@@ -1256,7 +1280,7 @@ Sequence:
 **Retention.** `children/` records and consumed grant files would otherwise accumulate forever. On
 root finalization, and again in any recovery transaction, the writer prunes them under these rules:
 preserve anything referenced by `active.json` or `last.json`; preserve durable batch history, which
-lives in the batch manifest/DB rather than the registry; and remove expired grants and unreferenced
+lives in each run's own DB and the wrapper's TSV rather than the registry; and remove expired grants and unreferenced
 child records beyond a documented retention limit (default: the last 50 children per deployment).
 
 **One documented exception: the recovery writer.** After a hard kill, the stale root record must be
@@ -1297,15 +1321,14 @@ recovery writer needs it.
 ```
 
 **Activity-specific requirements.** Revision 1 required `config` and `project` on every root, which
-does not fit setup or batch. Corrected:
+does not fit hardware setup. (It did not fit `batch` either; revision 14 removed that activity
+outright, §2.3.) Corrected:
 
 | Activity | Role | Required | Notes |
 |---|---|---|---|
 | `pipeline` | root | `config{path,sha256}`, `project{...}` | the ordinary case |
-| `batch` | root | `config` (template), `batch{total,completed,failed,current_run_name}` | **no single root `project`** |
 | `hardware_setup` | root | `config{path,sha256}`, `hardware{destination_path}` | config **required**; see §2.13 |
 | `calibration_pipeline` | child | `parent_run_id`, `project{...}` | `run_name` is `_lm3_calibration` |
-| `batch_item_pipeline` | child | `parent_run_id`, `project{...}` | one species |
 
 The `project` block, where required:
 
@@ -1343,8 +1366,10 @@ Rules:
   container boundary.
 - `config.sha256` fingerprints the bytes actually loaded.
 - Paths are absolute and resolved. `tmp_dir` is deliberately absent (§2.7).
-- `launcher` (`cli`, `python`, `server`, `legacy-job`, `batch`) is descriptive, never an
-  authorization decision.
+- `launcher` (`cli`, `python`, `server`, `legacy-job`) is descriptive, never an authorization
+  decision. Revision 14 removed `batch` from this enum too: a process started by the shell wrapper
+  is simply a CLI-launched pipeline, and LM3 has no reason to know that a project-specific shell
+  loop happens to be its parent.
 - `control` (`{mode, owner_instance_id}`) is capability metadata. A server may stop a run only
   under §2.5's five-way match.
 
@@ -1384,7 +1409,7 @@ The contract:
   on the interrupted path (`SIGTERM`, `KeyboardInterrupt`) alike.
 - `active.json` is **never removed while any approved child is alive**.
 - Server Stop targets the retained **root process group** (POSIX) or **job object** (Windows), so a
-  batch or calibration tree stops as one unit rather than orphaning its child.
+  calibration tree stops as one unit rather than orphaning its child.
 - If the root is hard-killed, the child keeps the lease and the **stale root record stays in place**
   — it is the only description of what is running.
 - Once that last child exits and the lease becomes acquirable, the next reader classifies the root
@@ -1397,7 +1422,7 @@ classifies the record as stale/abandoned under the cleanup lock, and must never 
 PID.
 
 Three distinct tests, because they fail differently: hard-killed parent with a surviving child;
-graceful `SIGTERM`/`KeyboardInterrupt` with a live child; and a server Stop of a batch or
+graceful `SIGTERM`/`KeyboardInterrupt` with a live child; and a server Stop of a
 calibration tree.
 
 ### 3.4 Immutable launch manifest
@@ -1576,7 +1601,7 @@ path-contract work, imports nothing new, and is unrelated to the runtime primiti
 delivers. Byte-identity was a proxy for "no runtime-v2 wiring"; the real property is stated directly
 above, so the proxy is retired rather than quietly violated.
 
-### Step 3 — Execution integration **and** batch ownership (one shipping unit)
+### Step 3 — Execution integration
 
 **Entry tasks, ordered.** Step 2 deliberately shipped primitives that are defined but not yet
 enforced. Each becomes wrong in a different way once Step 3 starts publishing records, so they are
@@ -1584,7 +1609,7 @@ listed here as explicit first work rather than left to be rediscovered during in
 
 1. **Enforce `STATE_TRANSITIONS` before the first writer exists.** It is defined in `_types.py` and
    consulted by nothing. Step 3 is what begins publishing `starting → running → terminal` from
-   `machine3()`, the batch and the handshake; if enforcement lands after the record builders, every
+   `machine3()`, hardware setup and the handshake; if enforcement lands after the record builders, every
    builder is written against an unenforced machine and inherits the gap. A root must not be able to
    publish `done` and then `running`.
 2. **One canonical `DeploymentInfo` builder.** Nothing today guarantees `DeploymentInfo.id` receives
@@ -1610,9 +1635,13 @@ still creates `build_dirs()`'s paths. Until `build_dirs(cfg).root == resolve_run
 holds independently of the process CWD, the record would name a directory the run never creates.
 The §3.5 contract must land, with its regression tests, before this step opens.
 
-Revision 1 split these. That was wrong: between them the shell batch would take and release a lease
-per species, which is exactly the window §2.3 exists to close. Ship together, or keep the whole
-integration behind an `LM3_RUNTIME_V2` flag that defaults off until the batch orchestrator lands.
+Revisions 1-13 merged this with batch ownership into one shipping unit, because splitting them left
+a window in which the shell batch took and released a lease per species. Revision 14 removed the
+batch orchestrator entirely (§2.3), so that window is now the accepted behavior and the merge has no
+purpose. Step 3 is execution integration alone.
+
+Keep the integration behind `LM3_RUNTIME_V2`, defaulting off, until its exit gate passes — the flag
+is now about landing safely rather than about waiting for the batch.
 
 - Wrap `machine3()` (the public function, not just `main()`), so direct Python callers inherit it.
 - Wrap standalone and GUI hardware setup as a root `hardware_setup` activity.
@@ -1631,15 +1660,15 @@ integration behind an `LM3_RUNTIME_V2` flag that defaults off until the batch or
 - Publish `starting` at acquisition; move to `running` when the DB and log paths exist; finalize on
   normal return, exception, and `KeyboardInterrupt`.
 - Reduce the server's private state to a `_ManagedChild` control handle only.
-- Add the batch orchestrator with a batch-scoped root lease and inherited item runs; port the
-  existing skip/resume behavior **exactly**.
-- Replace generated `_configs/<species>.yaml` with `--run-name` plus `run_manifest.json`. If YAML is
-  needed downstream, export it from the shared Python launch path, not shell `sed`.
+- Teach `run_global_greening.sh` to distinguish exit **75** (another root holds the deployment — a
+  retry) from a genuine species failure, and record the two differently in the summary TSV (§2.3).
+  The script otherwise stays as it is: it is a convenience wrapper, not an execution engine.
 
 Exit gate: a helper subprocess holding a root lease makes CLI, direct Python, server start, and
 legacy jobs all refuse a second **root** activity — while calibration under a parent lease still
-succeeds; a forced GUI Start during an inter-species gap is refused; a busy start returns 409 with
-the winner's identity.
+succeeds; a busy start returns 409 with the winner's identity; and a species launched by
+`run_global_greening.sh` against a busy deployment exits 75 and is recorded as retryable rather than
+failed.
 
 ### Step 4 — Registry-backed server and status
 
@@ -1736,7 +1765,9 @@ historical run selected in the UI". Use `runtime.active` and `view.selected`.
 
 - **Two simultaneous root starts:** one acquires; the other exits 75 before any execution-owned mutation.
 - **CLI vs GUI start race:** child lease acquisition decides; the losing API returns 409 with the winner's identity via the handshake.
-- **GUI start during a batch gap:** impossible — the batch holds its lease throughout.
+- **GUI start during an inter-species gap:** the GUI wins; the next species exits 75 and is
+  recorded as retryable. Re-running the batch picks it up, because the skip check is by DB state
+  (§2.3). Deliberately accepted rather than prevented.
 - **Root parent killed while a subactivity runs:** the inherited description keeps the deployment occupied until the child exits, and the stale root record stays in place as the only description of what is running; no second root may start. Once the child exits the root is classified `abandoned`.
 - **Root finalizes gracefully while a child is alive:** cannot happen — the root joins or terminates its children first, so the deployment is never occupied-but-unidentifiable.
 - **Root and child write records concurrently:** impossible by ownership (§3.2); the shared lock deliberately is not relied on to serialize writes.
@@ -1796,7 +1827,7 @@ implementation; `LM3_DEPLOYMENT_ID` unset ≡ `default`; workspace-pointer schem
 **API integration.** Handshake returns 200 on acquire and 409 on busy, with the winner's record; a
 child that floods stdout before its status line still completes the handshake; a busy start creates
 no execution-owned directory but may stage privately; hardware setup with no resolvable config
-fails with a precise message; server Stop of a batch tree stops the child too; **Stop during GUI
+fails with a precise message; server Stop of a calibration tree stops the child too; **Stop during GUI
 hardware setup kills the setup subprocess and leaves the server serving**; a handshake that times
 out after the child acquired the lease leaves no surviving run; a tunneled loopback browser session
 authenticates through the same-origin meta bootstrap and is served `Cache-Control: no-store`;
@@ -1823,7 +1854,7 @@ deployments each get a window; an unrelated port occupant errors; **a valid LM3 
 different deployment on the port errors distinctly**; an attached manual server is never killed on
 Close; an owned server is stopped only after identity verification; Close never calls
 `/v1/run/stop`; external runtime shows immediately; next-run settings stay visible and distinct;
-batch item transitions update by `run_id`; history selection and Follow-active behave independently.
+run transitions update by `run_id`; history selection and Follow-active behave independently.
 
 **Platform CI.** Lock adapter and Electron single-instance behavior on Linux, macOS, and Windows.
 
@@ -1831,8 +1862,8 @@ batch item transitions update by `run_id`; history selection and Follow-active b
 first / API observer second; crash GUI and server while the pipeline continues, then reopen; a
 second root start attempted from every entry point; hard-kill then abandoned classification then
 resume; **first-ever calibration with no hardware profile, launched from an arbitrary CWD**; a
-three-species mock batch on one template with `--run-name`; **graceful SIGTERM of a batch while a
-species child is running**; DB/output content matches the pre-refactor baseline; two Slurm job
+a three-species mock batch loop in which each species is an ordinary root, including one species
+launched against a busy deployment that exits 75 and is recorded as retryable (§2.3); DB/output content matches the pre-refactor baseline; two Slurm job
 namespaces for one user do not contend while two starts inside one namespace do; **node-local DB
 snapshot, simulated preemption, restore and resume**; **process killed midway through a backup and
 the previous archive generation still opens**; **a grace signal delivered during a stage longer than
@@ -1852,7 +1883,7 @@ The new runtime is not enabled by default until **all** of these pass:
 3. First-ever calibration with no profile does not re-enter setup inside the child.
 4. Killing a root parent while an inherited child runs keeps a second root blocked until the child exits, and the root record survives as the description of what is running.
 5. A root cannot finalize gracefully while an approved child is alive; `active.json` is never removed under a live child.
-6. Server Stop of a batch or calibration tree stops the child, not just the root.
+6. Server Stop of a calibration tree stops the child, not just the root.
 7. An executor worker never holds the lease reference — the POSIX lock descriptor or the Windows lease-event handle.
 8. A grant is single-use by rename and expires; a replayed or forged capability fails closed.
 9. A bogus inherited lease reference is rejected: on POSIX a descriptor that is not the real lock inode, on Windows a handle that `CompareObjectHandles` shows is not the canonical lease event.
@@ -1893,8 +1924,8 @@ The new runtime is not enabled by default until **all** of these pass:
 44. No resolved path falls back to the current working directory.
 45. Hardware setup without a resolvable config fails with a precise message, not an `AttributeError`.
 46. Pytest can neither observe nor block a real run, including under xdist.
-47. A three-species mock batch retains its lease across every gap; a forced GUI Start in a gap is refused.
-48. The batch preserves skip, resume, failure continuation, logs, and summary TSV.
+47. A three-species mock batch runs each species as an ordinary root; a species launched against a busy deployment exits 75 and is recorded as RETRYABLE, distinctly from a species failure.
+48. The batch script preserves skip, resume, failure continuation, logs, and summary TSV — unchanged by this refactor, and pinned so the shell wrapper cannot regress while everything around it moves.
 49. Postprocessing against the active run is refused; against a different completed run it works.
 50. A higher-version runtime record blocks Start without granting control.
 51. A killed lone owner releases the lock and is classified abandoned.
@@ -2043,7 +2074,7 @@ Recorded because each changes scope.
   `calibrate.DEFAULT_IMAGE_DIR` are bare relative paths and were outside the stated scope. The
   calibration child also re-enters setup because the profile is written only after calibration
   returns (`hardware_setup.py:176`); fixed with a provisional profile (§2.2, §3.1).
-- **A5 — Steps 3 and 5 must ship together**, else the batch gap returns for a release; plus a hard
+- **A5 — Steps 3 and 5 must ship together** (SUPERSEDED by revision 14, §2.3), else the batch gap returns for a release; plus a hard
   cutover rule for pre-registry runs (§4, §6).
 - **A6 — cluster storage contradicted the core model.** Four named path roles, periodic online
   backup, and grace-signal checkpointing (§2.10).

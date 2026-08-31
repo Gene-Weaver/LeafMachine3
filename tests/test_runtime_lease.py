@@ -779,7 +779,7 @@ def test_real_win32_surface_refuses_to_pretend_off_windows() -> None:
 # --------------------------------------------------------------------------------------------- #
 
 @posix_only
-@pytest.mark.parametrize("activity", [Activity.CALIBRATION_PIPELINE, Activity.BATCH_ITEM_PIPELINE])
+@pytest.mark.parametrize("activity", [Activity.CALIBRATION_PIPELINE])
 def test_a_subactivity_may_never_acquire_a_lease(deployment: Path, activity: Activity) -> None:
     """Invariant 2: a child INHERITS. Two leases would mean killing the parent frees one of them."""
     with pytest.raises(LeaseError, match="subactivity"):

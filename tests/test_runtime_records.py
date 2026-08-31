@@ -111,17 +111,19 @@ def root_record(tmp_path: Path, **overrides) -> T.RuntimeRecord:
 def child_record(tmp_path: Path, **overrides) -> T.RuntimeRecord:
     base = dict(
         run_id="22222222-2222-4222-8222-222222222222",
-        activity=T.Activity.BATCH_ITEM_PIPELINE,
+        activity=T.Activity.CALIBRATION_PIPELINE,
         activity_role=T.ActivityRole.CHILD,
         state=T.RunState.RUNNING,
-        launcher=T.Launcher.BATCH,
+        launcher=T.Launcher.PYTHON,
         pid=4322,
         process_started_at=1787932801.25,
         started_at=NOW,
         updated_at=NOW,
         deployment=T.DeploymentInfo(id="default"),
         parent_run_id="11111111-1111-4111-8111-111111111111",
-        project=in_place_project(tmp_path, "quercus_alba"),
+        # calibration_pipeline is the only subactivity left (plan revision 14), and its run_name is
+        # fixed by the schema -- so the default child project must be the calibration one.
+        project=in_place_project(tmp_path, T.CALIBRATION_RUN_NAME),
     )
     base.update(overrides)
     return T.RuntimeRecord(**base)
@@ -297,14 +299,9 @@ def test_a_well_formed_record_of_every_activity_validates(tmp_path: Path):
     calibration_project = in_place_project(tmp_path, T.CALIBRATION_RUN_NAME)
     cases = [
         root_record(tmp_path),
-        root_record(tmp_path, activity=T.Activity.BATCH, launcher=T.Launcher.BATCH, project=None,
-                    batch=T.BatchBlock(total=3, completed=1, failed=0,
-                                       current_run_name="acer_rubrum")),
         root_record(tmp_path, activity=T.Activity.HARDWARE_SETUP, project=None,
                     hardware=T.HardwareBlock(destination_path=str(tmp_path / "hardware.yaml"))),
-        child_record(tmp_path, activity=T.Activity.CALIBRATION_PIPELINE,
-                     project=calibration_project),
-        child_record(tmp_path),
+        child_record(tmp_path, project=calibration_project),
     ]
     for record in cases:
         R.validate_record(record)
@@ -315,19 +312,6 @@ def test_pipeline_requires_config_and_project(tmp_path: Path, dropped: str):
     record = root_record(tmp_path, **{dropped: None})
     with pytest.raises(T.RecordSchemaError, match=dropped):
         R.validate_record(record)
-
-
-def test_batch_requires_config_and_batch_and_has_no_single_root_project(tmp_path: Path):
-    batch = T.BatchBlock(total=3, completed=0, failed=0, current_run_name=None)
-    with pytest.raises(T.RecordSchemaError, match="batch"):
-        R.validate_record(root_record(tmp_path, activity=T.Activity.BATCH, project=None))
-    with pytest.raises(T.RecordSchemaError, match="config"):
-        R.validate_record(root_record(tmp_path, activity=T.Activity.BATCH, project=None,
-                                      config=None, batch=batch))
-    # invariant 6: a batch root carrying one species' project would let the GUI show that species
-    # as though it were the whole run.
-    with pytest.raises(T.RecordSchemaError, match="project"):
-        R.validate_record(root_record(tmp_path, activity=T.Activity.BATCH, batch=batch))
 
 
 def test_hardware_setup_requires_config_and_hardware_and_forbids_project(tmp_path: Path):
@@ -343,7 +327,7 @@ def test_hardware_setup_requires_config_and_hardware_and_forbids_project(tmp_pat
 
 
 @pytest.mark.parametrize("activity",
-                         [T.Activity.CALIBRATION_PIPELINE, T.Activity.BATCH_ITEM_PIPELINE])
+                         [T.Activity.CALIBRATION_PIPELINE])
 def test_a_child_requires_parent_run_id_and_a_project(tmp_path: Path, activity: T.Activity):
     project = in_place_project(
         tmp_path, T.CALIBRATION_RUN_NAME if activity is T.Activity.CALIBRATION_PIPELINE else "q"
@@ -393,13 +377,6 @@ def test_a_terminal_record_must_say_when_it_finished(tmp_path: Path):
     with pytest.raises(T.RecordSchemaError, match="finished_at"):
         R.validate_record(root_record(tmp_path, state=T.RunState.RUNNING, finished_at=LATER))
     R.validate_record(root_record(tmp_path, state=T.RunState.DONE, finished_at=LATER))
-
-
-def test_batch_counters_must_be_coherent(tmp_path: Path):
-    record = root_record(tmp_path, activity=T.Activity.BATCH, project=None,
-                         batch=T.BatchBlock(total=2, completed=2, failed=1))
-    with pytest.raises(T.RecordSchemaError, match="exceeds"):
-        R.validate_record(record)
 
 
 # --- secrets -----------------------------------------------------------------------------------#
@@ -473,16 +450,21 @@ def test_sanitize_shrinks_a_record_that_the_per_field_bounds_alone_cannot_bound(
     R.validate_record(cleaned)
 
 
-def test_the_active_record_stays_bounded_however_long_the_batch_is(tmp_path: Path):
-    # active.json carries child SUMMARIES, never child records: six keys each, two of them.
+def test_the_active_record_stays_bounded_however_many_children_a_root_launches(tmp_path: Path):
+    """active.json carries child SUMMARIES, never child records: six keys each, two of them.
+
+    The bound is what lets a root launch children indefinitely without its record growing. It was
+    written for the batch; plan revision 14 removed that activity, but a long-lived
+    ``hardware_setup`` re-running calibration has exactly the same shape, so the property still
+    matters and is still worth pinning.
+    """
     store = R.RecordStore(deployment_dir(tmp_path), run_id="11111111-1111-4111-8111-111111111111")
-    record = root_record(tmp_path, activity=T.Activity.BATCH, project=None,
-                         batch=T.BatchBlock(total=5000, completed=4999, failed=0,
-                                            current_run_name="zzz"))
+    record = root_record(tmp_path, activity=T.Activity.HARDWARE_SETUP, project=None,
+                         hardware=T.HardwareBlock(destination_path=str(tmp_path / "hw.yaml")))
     store.write_active(record)
     for index in range(200):
         child = child_record(tmp_path, run_id=f"child-{index}",
-                             project=in_place_project(tmp_path, f"species_{index}"))
+                             project=in_place_project(tmp_path, f"child_run_{index}"))
         store.set_current_child(summary_of(child))
         store.promote_current_child()
     assert store.active_path.stat().st_size < T.MAX_RECORD_BYTES

@@ -42,7 +42,8 @@ DEPLOYMENT = "default"
 PARENT = "11111111-1111-4111-8111-111111111111"
 CHILD = "22222222-2222-4222-8222-222222222222"
 OTHER_CHILD = "33333333-3333-4333-8333-333333333333"
-PURPOSE = Activity.BATCH_ITEM_PIPELINE
+# The only subactivity left after plan revision 14 removed the batch (see section 2.3).
+PURPOSE = Activity.CALIBRATION_PIPELINE
 
 
 # --------------------------------------------------------------------------------------------- #
@@ -215,7 +216,7 @@ def test_grant_dict_roundtrip_preserves_every_field():
         "child_run_id": CHILD,
         "parent_run_id": PARENT,
         "deployment_id": DEPLOYMENT,
-        "purpose": "batch_item_pipeline",
+        "purpose": "calibration_pipeline",
         "capability_sha256": "a" * 64,
         "issued_at": 1787932800.25,
         "expires_at": 1787932860.25,
@@ -245,7 +246,7 @@ def test_grant_dict_roundtrip_preserves_every_field():
 def test_grant_from_dict_fails_closed_on_every_fault(mutation):
     payload = {
         "schema_version": SCHEMA_VERSION, "child_run_id": CHILD, "parent_run_id": PARENT,
-        "deployment_id": DEPLOYMENT, "purpose": "batch_item_pipeline",
+        "deployment_id": DEPLOYMENT, "purpose": "calibration_pipeline",
         "capability_sha256": "a" * 64, "issued_at": 1787932800.25, "expires_at": 1787932860.25,
         "consumed": False,
     }
@@ -285,7 +286,7 @@ def test_issue_grant_returns_the_raw_value_and_writes_only_its_digest(deployment
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
-@pytest.mark.parametrize("purpose", [Activity.PIPELINE, Activity.BATCH, Activity.HARDWARE_SETUP])
+@pytest.mark.parametrize("purpose", [Activity.PIPELINE, Activity.HARDWARE_SETUP])
 def test_issue_grant_refuses_a_root_activity(deployment_dir, purpose):
     # Only CHILD_ACTIVITIES may run under a parent's inherited lease (section 2.2).
     with pytest.raises(GrantInvalidError):
@@ -340,9 +341,11 @@ def test_validate_grant_accepts_the_matching_child():
         pytest.param({"capability": "0" * 64}, id="wrong-sha"),
         pytest.param({"deployment_id": "other-deadbeef"}, id="wrong-deployment"),
         pytest.param({"parent_run_id": OTHER_CHILD}, id="wrong-parent"),
-        pytest.param({"purpose": Activity.CALIBRATION_PIPELINE}, id="wrong-purpose"),
+        # With the batch gone there is no OTHER subactivity to be wrong, so a wrong purpose is
+        # necessarily a ROOT activity claiming to be a child. Both roots are covered.
         pytest.param({"child_run_id": OTHER_CHILD}, id="wrong-child"),
-        pytest.param({"purpose": Activity.PIPELINE}, id="root-purpose"),
+        pytest.param({"purpose": Activity.PIPELINE}, id="root-purpose-pipeline"),
+        pytest.param({"purpose": Activity.HARDWARE_SETUP}, id="root-purpose-hardware-setup"),
     ],
 )
 def test_validate_grant_rejects_forgeries(kwargs):
@@ -568,7 +571,7 @@ def test_redeem_rejects_an_expired_grant_without_renaming_it(deployment_dir):
         pytest.param({"capability": "f" * 64}, id="forged-capability"),
         pytest.param({"deployment_id": "other-deadbeef"}, id="wrong-deployment"),
         pytest.param({"parent_run_id": OTHER_CHILD}, id="wrong-parent"),
-        pytest.param({"purpose": Activity.CALIBRATION_PIPELINE}, id="wrong-purpose"),
+        pytest.param({"purpose": Activity.HARDWARE_SETUP}, id="root-purpose"),
     ],
 )
 def test_redeem_forgeries_fail_closed_and_leave_the_grant_claimable(deployment_dir, override):

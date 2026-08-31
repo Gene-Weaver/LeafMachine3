@@ -3,7 +3,7 @@
 Plan sections 2.2 (the mechanism), 3.1 (where the lock file lives) and 3.3 (when it is acquired,
 and what a reader may conclude when it is free). Invariants 1-3 are the acceptance test:
 
-1. at most one ROOT activity (``pipeline`` / ``hardware_setup`` / ``batch``) per deployment;
+1. at most one ROOT activity (``pipeline`` / ``hardware_setup``) per deployment;
 2. an approved SUBACTIVITY runs under its parent's lease by INHERITING the lease reference, so the
    deployment stays occupied for as long as the root *or any live subactivity* holds it -- killing
    the parent does not free the lease;
@@ -914,7 +914,7 @@ def acquire_root_lease(
     Three things it refuses or reports, all of which are ordering bugs that would otherwise show up
     as a mysterious second run:
 
-    * a CHILD activity may never acquire. ``calibration_pipeline`` and ``batch_item_pipeline``
+    * a CHILD activity may never acquire. ``calibration_pipeline``
       INHERIT their parent's reference (invariant 2); acquiring would mean the parent's lease and
       the child's lease are two different things, and killing the parent would free one of them.
     * a process that inherited a lease reference may never acquire a second one. The environment

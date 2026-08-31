@@ -104,8 +104,6 @@ from ._types import (
     ArchivePointerDict,
     ArchivePointerError,
     ArchiveStatus,
-    BatchBlock,
-    BatchDict,
     CheckpointTrigger,
     ChildHandoff,
     ChildSummary,
@@ -298,9 +296,9 @@ __all__ = [
     "GrantExpiredError", "GrantAlreadyConsumedError", "ArchivePointerError",
     # -- typed records ------------------------------------------------------------------------- #
     "RuntimeRecord", "RuntimeSnapshot", "DeploymentInfo", "ConfigRef", "ProjectBlock",
-    "BatchBlock", "HardwareBlock", "ControlBlock", "ChildSummary", "ChildHandoff", "GrantRecord",
+    "HardwareBlock", "ControlBlock", "ChildSummary", "ChildHandoff", "GrantRecord",
     # -- wire shapes --------------------------------------------------------------------------- #
-    "RuntimeRecordDict", "DeploymentDict", "ConfigDict", "ProjectDict", "BatchDict",
+    "RuntimeRecordDict", "DeploymentDict", "ConfigDict", "ProjectDict",
     "HardwareDict", "ControlDict", "ChildSummaryDict", "GrantRecordDict", "ArchivePointerDict",
     "HandshakeMessage",
     # -- protocols and shared helpers ---------------------------------------------------------- #
