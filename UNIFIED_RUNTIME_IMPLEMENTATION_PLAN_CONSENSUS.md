@@ -1,7 +1,7 @@
 # Unified LM3 runtime — consensus implementation plan
 
 Date: 2026-08-28
-Revision: 14 (amended after the Step 1/2 closeout and the batch-ownership reversal)
+Revision: 15 (amended after the batch-ownership reversal and the control-authority simplification)
 Status: **implementation-ready; every protocol below is stated, not deferred**
 Supersedes: `UNIFIED_RUNTIME_IMPLEMENTATION_PLAN.md` (proposal)
 Inputs reconciled: the original proposal, a code-verified adversarial review
@@ -167,6 +167,12 @@ implementation exposed in the plan itself; two are policy the plan never stated.
 | L3 | `examples/*.yaml` silently depend on being launched from the repository root | Migrated to settings-relative values that preserve their effective locations, with a test; §3.5 |
 | L4 | Gate 13 (token redaction, `no-store`) was stated in §2.11 and §8 but **owned by no step**, so it was implemented nowhere | Assigned explicitly to Step 5b; §4 |
 | L5 | No stated policy on which platforms are qualified when, so Linux-only evidence risked being reported as cross-platform validation | Linux is the qualification target now; Windows/macOS are "implemented but not yet natively validated"; §1.1 |
+
+### Revision 15 amendment
+
+| # | Issue | Resolution |
+|---|---|---|
+| N1 | **§2.5's five-way `can_stop` match added two checks that were redundant and one that was vacuous.** A server holding a `Popen` is the child's parent, so PID reuse cannot occur; and creation time comes from `process_start_time()`, which returns `0.0` without the optional `psutil` — the normal state on Windows and macOS — so the comparison degrades to "always matches" there | Control authority is **handle ownership alone**: a retained live child handle for this `run_id`, launched by this `instance_id`. Matches the rule §2.11 already used for Electron. The `process_start_time` entry task is withdrawn; §2.5 |
 
 ### Revision 14 amendment
 
@@ -715,17 +721,42 @@ Invariant 14 is stated in exactly those terms so it is testable.
 
 ### 2.5 Control authority is separate from observation
 
-Observation comes from the registry. Control requires provenance. To signal a run, a server must
-hold **all** of:
+Observation comes from the registry. Control requires provenance. **A server may signal a run only
+if it launched that run and still holds the handle**:
 
-- a retained live child handle (`Popen`);
-- matching server `instance_id`;
-- matching runtime `run_id`;
-- matching PID;
-- matching process creation time.
+- a **retained live child handle** (`Popen` on POSIX, the job object on Windows) —
+- for the runtime `run_id` the record names, launched by this server `instance_id`.
 
-A restarted server observes but cannot signal; it reports `can_stop: false` with a reason. This is
-not "adoption" and must not be called that.
+Anything else is **observer-only**: `can_stop: false`, with a reason the UI shows. A restarted
+server observes and cannot signal. This is not "adoption" and must not be called that.
+
+**Never reconstruct control authority from a PID in a JSON file.** That is the whole rule, and the
+handle is what enforces it.
+
+#### Why this replaced a five-way match — revision 15
+
+Revisions 1-14 required the handle *plus* a matching PID *plus* a matching process creation time.
+Those two extra checks were redundant and actively hazardous:
+
+- **Redundant.** A process holding a `Popen` is the child's PARENT. The OS cannot recycle that PID
+  until the child is reaped, and `proc.poll()` already answers "is it still alive". PID substitution
+  cannot occur while the handle is held, so comparing the PID defends a case that does not exist.
+  The checks would only matter for signaling a process the server did **not** launch — which this
+  section forbids outright.
+- **Hazardous.** Creation time comes from `records.process_start_time()`, which returns `0.0` when
+  the optional `psutil` is absent — the normal state on Windows and macOS. A match test then reads
+  `0.0 == 0.0` as agreement and silently degrades to "always matches" on two of three platforms. A
+  check that looks rigorous and is vacuous is worse than no check, because it is trusted.
+- **Inconsistent.** §2.11 already states this simpler rule for Electron→server ownership: "Electron
+  shuts down only a server represented by its retained child handle with a matching instance ID and
+  deployment key." Two ownership rules for one question is how they drift apart.
+
+`process_started_at` **stays in the record** (§3.2) as descriptive provenance — it is genuinely
+useful in diagnostics. It simply stops being a control input.
+
+What this policy costs, stated plainly: after a server restart, a still-running run is observable
+but not stoppable from the GUI. Stop it from the terminal that owns it, or by killing it. The
+previous design did not actually offer more — it refused cross-restart control too.
 
 `/healthz` identifies service, protocol compatibility, **and deployment key**. Its `pid` field must
 be **removed or explicitly demoted to diagnostic-only**, because `app.py:532-538` currently
@@ -1371,7 +1402,7 @@ Rules:
   is simply a CLI-launched pipeline, and LM3 has no reason to know that a project-specific shell
   loop happens to be its parent.
 - `control` (`{mode, owner_instance_id}`) is capability metadata. A server may stop a run only
-  under §2.5's five-way match.
+  under §2.5's handle-ownership rule.
 
 ### 3.3 Lifecycle
 
@@ -1625,11 +1656,12 @@ listed here as explicit first work rather than left to be rediscovered during in
 ordinary pipeline execution neither opens a server port nor authorizes Stop from a registry record,
 so neither should block wrapping `machine3()`.
 
-- **`process_start_time()` returning `0.0` must mean UNKNOWN, never a match** → **Step 4**, with
-  `can_stop`. On Windows and macOS it returns `0.0` when the optional `psutil` is absent
-  (`records.py`), and §2.5's five-way match compares process creation time; if `0.0 == 0.0` counts
-  as agreement, PID reuse defeats the check and a server signals a process it does not own. It is a
-  control-authority bug, and control authority is Step 4's subject.
+- **`process_start_time()` returning `0.0` must mean UNKNOWN, never a match** → **withdrawn in
+  revision 15, not merely moved.** It was a real hazard only because §2.5 compared creation times;
+  now that control authority is handle ownership alone, nothing compares them and the `0.0` case
+  cannot mislead anything. `process_started_at` remains in the record as descriptive provenance.
+  Deleting the check is safer than keeping one that silently degrades to "always matches" wherever
+  `psutil` is absent.
 - **Wire `resolve_port()`** → **Step 5b**, with server and Electron startup. Gate 41 (a named
   non-default deployment without `LM3_PORT` fails at startup) is a startup decision, and 5b already
   owns `/healthz`, the deployment key and the connection descriptor.
@@ -1681,13 +1713,20 @@ failed.
 - Add `GET /v1/runtime` returning `{active, last, next_run_settings, server, diagnostics}` with the
   bounded activity tree.
 - Keep `GET /v1/run/active` as a compatibility projection with deprecation metadata.
-- `can_stop` derives only from the §2.5 five-way match.
+- `can_stop` derives only from §2.5: a retained live child handle for this `run_id`, launched by
+  this `instance_id`. No PID comparison, no creation-time comparison.
 - `POST /v1/run/stop` rejects observer-only runs with 409/403 and never synthesizes a process group
   from registry JSON.
 - Change `progress_api.resolve_run()` precedence to: explicit `db=`/`run=`; active runtime record;
   explicitly selected historical run; canonical next-run project for an idle prepared project;
   filesystem discovery last, labeled `source: discovered` and never able to authorize control.
 - Replace `_BOUND`, `_BOUND_STATE`, `bind_run()`, and `_from_job_source` with a registry reader.
+- **Delete the re-adoption machinery** that handle ownership (§2.5) makes dead: `_adopt()`
+  (`metrics_api.py`, ~45 lines), `_pid_alive()` and its `psutil` / `os.kill(pid, 0)` fallback
+  (~19 lines), and `_Run.persist()`'s `create_time` plus the on-disk state file whose only stated
+  purpose is "so a RESTARTED server can re-adopt a still-running LM3". A restarted server is an
+  observer; there is nothing for it to re-adopt. Reduce the server's private state to the
+  `_ManagedChild` control handle §4 Step 3 already calls for.
 - Use `run_id` in snapshot cache keys; follow the active `run_id` for logs; on completion follow
   `last.json` rather than the most recently modified unrelated run.
 - Remove the duplicate progress-router `GET /v1/runs`, keeping the `results_api` route, and delete
@@ -1757,7 +1796,7 @@ Add `GET /v1/runtime` — canonical runtime, bounded activity tree, last-run, ne
 diagnostics.
 
 Keep temporarily: `GET /v1/run/active` (compatibility projection, deprecation header);
-`POST /v1/run/start` (handshake-backed, 409 on busy); `POST /v1/run/stop` (strict `can_stop`).
+`POST /v1/run/start` (handshake-backed, 409 on busy); `POST /v1/run/stop` (strict `can_stop`: handle ownership only).
 
 Consolidate: one `GET /v1/runs` owned by `results_api`; one settings resolver for all settings
 routes; one project-reference shape shared by runtime, progress, results, and postprocessing.
@@ -1825,7 +1864,8 @@ blocked by a live child**; grant claim-by-rename (single winner, replay fails cl
 re-check, and forgery rejection; inherited-descriptor identity (`fstat` inode match, non-blocking
 re-assert, rejection of an independently opened handle) on POSIX **and** Windows; writer-ownership
 concurrency; recovery-writer cleanup after a hard kill; `--run-name` precedence over YAML; manifest hash and effective-config correctness;
-runtime→`RunRef` mapping; `can_stop` five-way match and PID-reuse rejection; unknown
+runtime→`RunRef` mapping; `can_stop` handle-ownership match, and a run this server did not
+launch reporting `can_stop: false` with a reason; unknown
 `schema_version` reader behavior; `connection.private.json` created 0600 from first write, rotated across a restart, and not deleted
 by a predecessor's late cleanup; deployment-key ASCII-slug determinism against the JavaScript
 implementation; `LM3_DEPLOYMENT_ID` unset ≡ `default`; workspace-pointer schema and atomic update.
@@ -2002,7 +2042,7 @@ Every reference checked against the tree on 2026-08-28.
 | tmp can fall back during creation | `dirs.py:67-76` |
 | `build_dirs` docstring is stale | `dirs.py:39-41` vs code at `dirs.py:46-54` |
 | `bind_hardware` does not rewrite `tmp_dir` | `config.py:447-456` |
-| PID-reuse guard already exists | `metrics_api.py:440-450`, called at `:478` |
+| PID-reuse guard already exists | `metrics_api.py:440-450`, called at `:478` — **no longer load-bearing**: revision 15 makes control authority handle ownership alone, and `_pid_alive`/`_adopt` are deleted in Step 4 |
 | Adoption derives a process group from a recorded PID | `metrics_api.py:494`, signaled at `:804` |
 | Server private run state | `metrics_api.py:427-429`, `_adopt()` at `:459` |
 | Run spawned in its own session | `metrics_api.py:751` |
@@ -2056,7 +2096,9 @@ Recorded because each changes scope.
   API calls against an attached server usually work. It breaks when embedding is refused
   (`app.py:654-657`) and for Electron's own out-of-band `POST /v1/shutdown`, which uses its invented
   token and then escalates to PID signaling.
-- **C5 — the PID-reuse guard already exists.** `_pid_alive` (`metrics_api.py:440-450`) compares
+- **C5 — the PID-reuse guard already exists** (SUPERSEDED by revision 15: control authority is
+  handle ownership, so nothing compares PIDs and `_pid_alive` is deleted). `_pid_alive`
+  (`metrics_api.py:440-450`) compares
   process creation time. The genuine defect is granting stop authority to a server that did not
   spawn the process, then signaling a process group derived from that PID (`:494`, `:804`).
 - **C6 — CVE-2026-34776 was missed.** Adding `requestSingleInstanceLock()` on the then-installed Electron 33.4.11 on
