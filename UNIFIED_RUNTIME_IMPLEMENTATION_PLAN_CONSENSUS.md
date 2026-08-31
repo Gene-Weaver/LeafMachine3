@@ -1621,14 +1621,20 @@ listed here as explicit first work rather than left to be rediscovered during in
    inject arguments into the same `Popen` / `CreateProcess` call. Supplied independently, the second
    silently discards the first's handle and the child starts without a lease it believes it has.
    One helper composes them, and it is the only thing allowed to.
-4. **`process_start_time()` returning `0.0` must mean UNKNOWN, never a match.** On Windows and macOS
-   it returns `0.0` when the optional `psutil` is absent (`records.py`). §2.5's five-way `can_stop`
-   match compares process creation time; if `0.0 == 0.0` counts as agreement, PID reuse defeats the
-   check and a server signals a process it does not own. Model it as unknown and refuse control.
-5. **Wire `resolve_port()`** — it is implemented and unit-tested with no production caller, so gate
-   41 (a named non-default deployment without `LM3_PORT` fails at startup) cannot currently fire.
-   Owned by Step 5b's server startup, but named here because Step 3 is where named deployments start
-   being used in anger.
+**Two tasks moved out of this list.** They were listed here in revision 13 and do not belong:
+ordinary pipeline execution neither opens a server port nor authorizes Stop from a registry record,
+so neither should block wrapping `machine3()`.
+
+- **`process_start_time()` returning `0.0` must mean UNKNOWN, never a match** → **Step 4**, with
+  `can_stop`. On Windows and macOS it returns `0.0` when the optional `psutil` is absent
+  (`records.py`), and §2.5's five-way match compares process creation time; if `0.0 == 0.0` counts
+  as agreement, PID reuse defeats the check and a server signals a process it does not own. It is a
+  control-authority bug, and control authority is Step 4's subject.
+- **Wire `resolve_port()`** → **Step 5b**, with server and Electron startup. Gate 41 (a named
+  non-default deployment without `LM3_PORT` fails at startup) is a startup decision, and 5b already
+  owns `/healthz`, the deployment key and the connection descriptor.
+
+Either may be implemented early; neither gates Step 3.
 
 **Entry prerequisite (§3.5).** Step 3 wires the runtime record's paths in while `machine3()`
 still creates `build_dirs()`'s paths. Until `build_dirs(cfg).root == resolve_run_paths(cfg).run_dir`

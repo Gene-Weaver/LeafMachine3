@@ -45,6 +45,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Sequence
 
+from leafmachine3.core import paths
+
 from ._types import (
     ACTIVE_RECORD_FILENAME,
     ACTIVITY_ROLE,
@@ -84,6 +86,8 @@ from ._types import (
     RecordCorruptError,
     RecordError,
     RecordSchemaError,
+    STATE_TRANSITIONS,
+    StateTransitionError,
     RunState,
     RuntimeRecord,
     RuntimeRecordDict,
@@ -505,6 +509,43 @@ def _reject_secret_keys(payload: Any, *, path: str = "") -> None:
     elif isinstance(payload, (list, tuple)):
         for index, value in enumerate(payload):
             _reject_secret_keys(value, path=f"{path}[{index}]")
+
+
+def build_deployment_info(
+    env: Mapping[str, str] | None = None,
+    *,
+    deployment_key: str | None = None,
+    container_id: str | None = None,
+) -> DeploymentInfo:
+    """THE constructor for :class:`DeploymentInfo`. Build it here or not at all.
+
+    ``id`` is the **canonical** deployment key -- ``ascii_slug(raw)[:32] + "-" + sha256(raw)[:8]``
+    -- never the raw ``LM3_DEPLOYMENT_ID``. Nothing previously guaranteed that: every call site
+    passed whatever string it had, and two sites that disagreed would key two registry directories
+    for one deployment, which is the exact failure the canonical key exists to prevent. Giving the
+    value one origin is cheaper than auditing every future caller.
+
+    Scheduler context is descriptive only. Per section 3.2 these fields NEVER authorize signaling
+    across a host or container boundary; they are here so a record can say where it ran.
+    """
+    resolved = deployment_key or paths.deployment_key(env)
+    job_id = paths._scheduler_job_id(env)
+    scheduler = "slurm" if _env(env, "SLURM_JOB_ID") or _env(env, "SLURM_JOBID") else (
+        "pbs" if _env(env, "PBS_JOBID") else ("lsf" if _env(env, "LSB_JOBID") else None))
+    return DeploymentInfo(
+        id=resolved,
+        scheduler=scheduler if job_id else None,
+        job_id=job_id,
+        step_id=_env(env, "SLURM_STEP_ID"),
+        node=paths.read_node_name(env),
+        container_id=container_id,
+    )
+
+
+def _env(env: Mapping[str, str] | None, name: str) -> str | None:
+    value = (env if env is not None else os.environ).get(name)
+    value = (value or "").strip()
+    return value or None
 
 
 def _deployment_from_dict(payload: Mapping[str, Any]) -> DeploymentInfo:
@@ -1473,6 +1514,9 @@ class RecordStore:
         self.active_path = self.deployment_dir / ACTIVE_RECORD_FILENAME
         self.last_path = self.deployment_dir / LAST_RECORD_FILENAME
         self.children_dir = self.deployment_dir / CHILDREN_DIRNAME
+        #: The state this store last published, so ``_check_transition`` can hold successive writes
+        #: to STATE_TRANSITIONS without re-reading the file on every write.
+        self._published_state: RunState | None = None
 
     # -- internals ------------------------------------------------------------------------------ #
 
@@ -1513,6 +1557,55 @@ class RecordStore:
 
     # -- writers -------------------------------------------------------------------------------- #
 
+    def child_record_path(self, child_run_id: str) -> Path:
+        """``children/<run_id>.json`` -- the only file a child ever writes."""
+        return self.children_dir / f"{child_run_id}.json"
+
+    def _check_transition(self, record: RuntimeRecord, *, where: str) -> None:
+        """Refuse a state its predecessor may not move to (plan section 3.3, ``STATE_TRANSITIONS``).
+
+        The predecessor is what THIS store last published, falling back to what is on disk -- so a
+        process that reattaches to its own run is still held to the machine, not just one that kept
+        the object alive.
+
+        Two deliberate permissions:
+
+        * re-publishing the SAME state is always allowed. Records are rewritten to move
+          ``updated_at``, a child summary or progress along, and those are updates rather than
+          transitions. ``STATE_TRANSITIONS`` lists where a state may GO, so it never contains
+          itself.
+        * the FIRST publication is unconstrained. Whether a run must open in ``starting`` is a
+          property of the execution path (section 3.3 says publish ``starting`` at acquisition), not
+          of the store, and enforcing it here would only mean every caller had to be rewritten
+          before the machine could be turned on at all.
+        """
+        previous = self._published_state
+        if previous is None:
+            previous = self._state_on_disk()
+        if previous is None or record.state is previous:
+            self._published_state = record.state
+            return
+        allowed = STATE_TRANSITIONS.get(previous, frozenset())
+        if record.state not in allowed:
+            permitted = ", ".join(sorted(s.value for s in allowed)) or "nothing: it is terminal"
+            raise StateTransitionError(
+                f"{where}: {previous.value!r} may not move to {record.state.value!r} "
+                f"(permitted: {permitted})"
+            )
+        self._published_state = record.state
+
+    def _state_on_disk(self) -> RunState | None:
+        """The state this run last published, read back from its own file. None if there is none."""
+        path = (self.active_path if self.role is ActivityRole.ROOT
+                else self.child_record_path(self.run_id))
+        try:
+            record = self._read_record(path)
+        except (RecordError, IncompatibleSchemaError, FileNotFoundError, OSError):
+            return None
+        if record is None or record.run_id != self.run_id:
+            return None
+        return record.state
+
     def write_active(self, record: RuntimeRecord) -> None:
         """Publish the root record. Root only, and only this store's own ``run_id``."""
         self._require_root("active.json")
@@ -1525,6 +1618,7 @@ class RecordStore:
                 f"active.json holds root records; {record.activity.value} is a subactivity and "
                 f"writes children/{record.run_id}.json instead"
             )
+        self._check_transition(record, where="active.json")
         atomic_write_json(self.active_path, self._prepare(record))
 
     def write_child(self, record: RuntimeRecord) -> None:
@@ -1543,6 +1637,7 @@ class RecordStore:
                 f"a child writes only its own record: this store is run {self.run_id}, the record "
                 f"is run {record.run_id}"
             )
+        self._check_transition(record, where=f"children/{record.run_id}.json")
         if record.activity_role is not ActivityRole.CHILD:
             raise WriterOwnershipError(
                 f"children/ holds child records; {record.activity.value} is a root activity"
@@ -1593,6 +1688,7 @@ class RecordStore:
             raise WriterOwnershipError(
                 f"this store finalizes run {self.run_id}; refusing a record for {record.run_id}"
             )
+        self._check_transition(record, where="last.json")
         alive = self._alive_children(record, live_children)
         if alive:
             raise RecordError(

@@ -1157,3 +1157,80 @@ def test_process_start_time_is_positive_for_this_process_and_zero_for_a_dead_one
     assert R.process_start_time() > 0
     assert R.process_start_time(os.getpid()) == R.process_start_time()
     assert R.process_start_time(999_999_999) == 0.0
+
+
+# --------------------------------------------------------------------------------------------- #
+# Step 3 entry task 1: STATE_TRANSITIONS is ENFORCED, not decorative
+# --------------------------------------------------------------------------------------------- #
+# The table described the lifecycle from the day it was written and was consulted by nothing, so a
+# root could publish `done` and then `running` and every reader downstream would believe the second.
+# Enforcement lands before the writers exist, rather than after they have all been written against
+# an unenforced machine.
+
+def test_a_root_cannot_publish_running_after_a_terminal_state(tmp_path: Path):
+    store = R.RecordStore(deployment_dir(tmp_path), run_id="11111111-1111-4111-8111-111111111111")
+    store.write_active(root_record(tmp_path, state=T.RunState.STARTING))
+    store.write_active(root_record(tmp_path, state=T.RunState.RUNNING))
+    store.write_active(root_record(tmp_path, state=T.RunState.DONE, finished_at=LATER))
+
+    with pytest.raises(T.StateTransitionError, match="may not move to"):
+        store.write_active(root_record(tmp_path, state=T.RunState.RUNNING))
+
+
+def test_a_root_cannot_go_backwards_from_running_to_starting(tmp_path: Path):
+    store = R.RecordStore(deployment_dir(tmp_path), run_id="11111111-1111-4111-8111-111111111111")
+    store.write_active(root_record(tmp_path, state=T.RunState.RUNNING))
+    with pytest.raises(T.StateTransitionError):
+        store.write_active(root_record(tmp_path, state=T.RunState.STARTING))
+
+
+@pytest.mark.parametrize("terminal", sorted(T.TERMINAL_STATES, key=lambda s: s.value))
+def test_every_legal_lifecycle_is_accepted(tmp_path: Path, terminal: "T.RunState"):
+    """starting -> running -> each terminal state, and starting -> terminal directly."""
+    store = R.RecordStore(deployment_dir(tmp_path), run_id="11111111-1111-4111-8111-111111111111")
+    store.write_active(root_record(tmp_path, state=T.RunState.STARTING))
+    store.write_active(root_record(tmp_path, state=T.RunState.RUNNING))
+    store.write_active(root_record(tmp_path, state=terminal, finished_at=LATER))
+
+    direct = R.RecordStore(deployment_dir(tmp_path / "second"),
+                           run_id="11111111-1111-4111-8111-111111111111")
+    direct.write_active(root_record(tmp_path, state=T.RunState.STARTING))
+    direct.write_active(root_record(tmp_path, state=terminal, finished_at=LATER))
+
+
+def test_republishing_the_same_state_is_an_update_not_a_transition(tmp_path: Path):
+    """Records are rewritten to move updated_at and child summaries along; that is not a move."""
+    store = R.RecordStore(deployment_dir(tmp_path), run_id="11111111-1111-4111-8111-111111111111")
+    store.write_active(root_record(tmp_path, state=T.RunState.RUNNING))
+    store.write_active(root_record(tmp_path, state=T.RunState.RUNNING, updated_at=LATER))
+    store.write_active(root_record(tmp_path, state=T.RunState.DONE, finished_at=LATER))
+    store.write_active(root_record(tmp_path, state=T.RunState.DONE, finished_at=LATER, updated_at=LATER))
+
+
+def test_the_predecessor_is_read_from_disk_when_the_store_is_new(tmp_path: Path):
+    """A process reattaching to its own run is held to the machine, not just one that kept the
+    object alive -- otherwise a crash-and-restart could publish anything it liked."""
+    root = deployment_dir(tmp_path)
+    first = R.RecordStore(root, run_id="11111111-1111-4111-8111-111111111111")
+    first.write_active(root_record(tmp_path, state=T.RunState.DONE, finished_at=LATER))
+
+    reattached = R.RecordStore(root, run_id="11111111-1111-4111-8111-111111111111")
+    with pytest.raises(T.StateTransitionError):
+        reattached.write_active(root_record(tmp_path, state=T.RunState.RUNNING))
+
+
+def test_a_child_is_held_to_the_same_machine(tmp_path: Path):
+    store = R.RecordStore(deployment_dir(tmp_path), run_id="22222222-2222-4222-8222-222222222222",
+                          role=T.ActivityRole.CHILD)
+    store.write_child(child_record(tmp_path, state=T.RunState.RUNNING))
+    store.write_child(child_record(tmp_path, state=T.RunState.DONE, finished_at=LATER))
+    with pytest.raises(T.StateTransitionError):
+        store.write_child(child_record(tmp_path, state=T.RunState.RUNNING))
+
+
+def test_finalizing_from_a_terminal_state_into_a_different_one_is_refused(tmp_path: Path):
+    store = R.RecordStore(deployment_dir(tmp_path), run_id="11111111-1111-4111-8111-111111111111")
+    store.write_active(root_record(tmp_path, state=T.RunState.DONE, finished_at=LATER))
+    with pytest.raises(T.StateTransitionError):
+        store.finalize(root_record(tmp_path, state=T.RunState.ERROR, finished_at=LATER,
+                                   error="boom"))

@@ -137,6 +137,7 @@ from ._types import (
     RecordCorruptError,
     RecordError,
     RecordSchemaError,
+    StateTransitionError,
     RunState,
     RuntimeBusyError,
     RuntimeRecord,
@@ -158,6 +159,12 @@ from ._types import (
 # that owes it.
 
 _LAZY: dict[str, str] = {
+    "LaunchComposeError": "launch",
+    "ComposedLaunch": "launch",
+    "LaunchContribution": "launch",
+    "composed_launch": "launch",
+    "compose_launch": "launch",
+    "build_deployment_info": "records",
     # A) runtime/lease.py -- lease adapters and inheritance plumbing (sections 2.2, 3.1, 3.3)
     "RuntimeLease": "lease",
     "PosixLeaseAdapter": "lease",
@@ -292,10 +299,13 @@ __all__ = [
     # -- errors -------------------------------------------------------------------------------- #
     "RuntimeRegistryError", "RuntimeBusyError", "LeaseError", "LeaseNotHeldError",
     "LeaseInheritanceError", "RecordError", "RecordSchemaError", "RecordCorruptError",
+    "StateTransitionError",
     "IncompatibleSchemaError", "WriterOwnershipError", "GrantError", "GrantInvalidError",
     "GrantExpiredError", "GrantAlreadyConsumedError", "ArchivePointerError",
     # -- typed records ------------------------------------------------------------------------- #
-    "RuntimeRecord", "RuntimeSnapshot", "DeploymentInfo", "ConfigRef", "ProjectBlock",
+    "RuntimeRecord", "RuntimeSnapshot", "DeploymentInfo", "build_deployment_info",
+    "compose_launch", "composed_launch", "LaunchContribution", "ComposedLaunch",
+    "LaunchComposeError", "ConfigRef", "ProjectBlock",
     "HardwareBlock", "ControlBlock", "ChildSummary", "ChildHandoff", "GrantRecord",
     # -- wire shapes --------------------------------------------------------------------------- #
     "RuntimeRecordDict", "DeploymentDict", "ConfigDict", "ProjectDict",

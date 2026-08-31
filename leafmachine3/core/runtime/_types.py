@@ -446,6 +446,17 @@ class RecordSchemaError(RecordError):
     """A record is missing a required field, has a bad enum value, or violates a field bound."""
 
 
+class StateTransitionError(RecordError):
+    """A record was published in a state its predecessor may not move to (plan section 3.3).
+
+    ``STATE_TRANSITIONS`` described the lifecycle from the day it was written and was consulted by
+    nothing, so the machine was decorative: a root could publish ``done`` and then ``running``, and
+    every reader downstream would believe the second. Step 3 is what begins publishing states from
+    ``machine3()``, hardware setup and the launch handshake, so enforcement lands FIRST -- before
+    the writers exist, rather than after they have all been written against an unenforced machine.
+    """
+
+
 class RecordCorruptError(RecordError):
     """A record file is missing, truncated, or not parseable JSON."""
 
@@ -977,7 +988,7 @@ __all__ = [
     # errors
     "ArchivePointerError", "GrantAlreadyConsumedError", "GrantError", "GrantExpiredError",
     "GrantInvalidError", "IncompatibleSchemaError", "LeaseError", "LeaseInheritanceError",
-    "LeaseNotHeldError", "RecordCorruptError", "RecordError", "RecordSchemaError",
+    "LeaseNotHeldError", "RecordCorruptError", "RecordError", "RecordSchemaError", "StateTransitionError",
     "RuntimeBusyError", "RuntimeRegistryError", "WriterOwnershipError",
     # typed records
     "ChildHandoff", "ChildSummary", "ConfigRef", "ControlBlock", "DeploymentInfo",
