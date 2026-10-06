@@ -31,6 +31,7 @@
 import {
   api, el, append, clear, esc, debounce, fmtBytes, fmtTime,
 } from "../api.js";
+import { mountModelsPanel } from "../models.js";
 import { PHASES, MODULE_BY_KEY } from "../modules.js";
 
 /* Remembered across reloads: which section was open, which groups were
@@ -443,12 +444,17 @@ export function initSettings(root) {
 
   const subtabs = el("div.subtabs");
 
+  /* The models card is first: without models nothing below it can run. Full form (every action +
+     its state); the Live Status banner is the compact twin and only shows when attention is needed. */
+  const modelsHost = el("div");
+  mountModelsPanel(modelsHost, { compact: false });
+
   const header = el("div", {
     style: {
       position: "sticky", top: "0", zIndex: "6",
       background: "var(--bg)", paddingBottom: "2px", flex: "0 0 auto",
     },
-  }, toolbar);
+  }, modelsHost, toolbar);
 
   // The rail carries the navigation the accordion used to: sections, and the
   // groups inside the open one. Scrolling is for reading a group, not for

@@ -279,6 +279,16 @@ export const api = {
    */
   getSettingsMeta: () => get("/v1/settings/meta"),
 
+  /* -- models (Hugging Face installer) ----------------------------------- */
+  /** Per-action install state + the resolved models folder; `verify` re-hashes files. */
+  getModelsStatus: (verify = false) => get("/v1/models/status", { params: verify ? { verify: 1 } : undefined, timeout: 60000 }),
+  /** Start an install; {task_id}. Body: {actions?, formats?, force?}. */
+  installModels: (body = {}) => post("/v1/models/install", body),
+  /** Snapshot of an install task (state, events since `since`). */
+  getModelsInstall: (taskId, since = 0) => get(`/v1/models/install/${encodeURIComponent(taskId)}`, { params: { since } }),
+  /** Live progress events for an install task; ends with a "done" event. */
+  streamModelsInstall: (taskId, handlers) => sse(`/v1/models/install/${encodeURIComponent(taskId)}/events`, { ...handlers, events: ["progress", "done", "ping"] }),
+
   /* -- machine performance ----------------------------------------------- */
   /** One-shot sample: CPU, RAM, GPU, VRAM, disk. */
   getMetrics: () => get("/v1/metrics", { timeout: 8000 }),

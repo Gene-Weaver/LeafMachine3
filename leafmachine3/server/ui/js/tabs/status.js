@@ -30,6 +30,7 @@ import {
   api, el, clear, esc,
   fmtNum, fmtDuration, fmtTime, fmtMB, fmtPath,
 } from "../api.js";
+import { mountModelsPanel } from "../models.js";
 
 
 /* ================================================================ constants */
@@ -404,6 +405,12 @@ export function initStatus(root) {
   root.appendChild(pane);
 
   ui.scroll = scroll;
+
+  /* First thing in the first window: a banner with the install button, shown only while a required
+     model is missing or a newer one is pinned (it hides itself otherwise). */
+  const modelsBanner = el("div", { style: { padding: "8px 8px 0" } });
+  scroll.appendChild(modelsBanner);
+  mountModelsPanel(modelsBanner, { compact: true });
 
   ui.consoleHost = el("div.split-pane.st-conspane");   // detached until the Console tab mounts it
   buildTop(scroll, ui);

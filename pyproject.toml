@@ -29,6 +29,8 @@ dependencies = [
     "scipy>=1.11",
     "psutil>=5.9",
     "shapely>=2.0",
+    # Model installer: fetches the pinned default models from the Hugging Face Hub (lm3 models install).
+    "huggingface_hub>=0.25",
 ]
 
 [project.optional-dependencies]
@@ -91,6 +93,7 @@ exclude = ["leafmachine3_backup*", "leafmachine3.egg-info*"]
 # browser UI is not optional: it is the entire interface for the loopback and SSH-tunnelled cluster
 # deployments, so an installed LM3 without it serves 404 at "/".
 leafmachine3 = [
+    "modelhub/models.lock.yaml",   # the pinned default-model registry read by `lm3 models`
     "core/schema.sql",
     "server/ui/*",
     "server/ui/css/*",

@@ -57,6 +57,30 @@ Poetry ≥ 2.0 installs the same PEP 621 project + extras directly:
 poetry install --extras "gpu"     # or "cpu" / "macos"
 ```
 
+## Models
+
+The runtime needs the exported default models, which are **not in the repository**. They are
+published on the Hugging Face Hub (one repo per model, pinned by commit in
+`leafmachine3/modelhub/models.lock.yaml`) and installed with one command:
+
+```bash
+uv run install_models.py              # or: .venv_LM3/bin/python install_models.py
+# equivalent:  lm3 models install     (lm3 models status / verify to inspect)
+```
+
+It checks `models/` beside `LM3_settings.yaml` first: files that already match the pinned
+version are left alone, missing or outdated ones are downloaded, hash-checked, and swapped in. Any
+file it replaces is kept as `<name>.backup` until the whole module is in place, and restored if a
+download or check fails (or if LM3 crashes mid-update), so an update never leaves the folder
+broken. The GUI has the same button under **Settings > Models from Hugging Face**, and shows it on
+the first window whenever a model is missing or a newer one is pinned.
+
+While the model repos are private you must be logged in (`hf auth login`, or `HF_TOKEN`).
+
+**Docker / HPC.** Set `LM3_MODELS_DIR` to a persistent, mounted folder and prefetch on a node with
+network access: `lm3 models install --dest "$LM3_MODELS_DIR" --yes`. Compute jobs then run with
+the same `LM3_MODELS_DIR` and never touch the network; `lm3 models verify` confirms the folder.
+
 ## Run
 
 ```bash

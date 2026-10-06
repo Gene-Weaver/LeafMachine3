@@ -861,13 +861,13 @@ def create_app(jobs: JobManager | None = None) -> Any:
     # module scope so a base install without the ``server`` extra still imports app.py cleanly.
     _auth = [Depends(require_token)]
     from leafmachine3.server import (            # noqa: WPS433 - lazy by design
-        metrics_api, postprocess_api, progress_api, results_api, settings_api,
+        metrics_api, models_api, postprocess_api, progress_api, results_api, settings_api,
     )
     # ORDER MATTERS: results_api and progress_api both define GET /v1/runs. results_api's listing is
     # the richer one (it indexes every run folder and assigns the stable `id` that all its other
     # /v1/runs/{id}/... routes key off), so it must be registered FIRST or the Results tab receives
     # entries with no id and can never select a run.
-    for _mod in (settings_api, results_api, progress_api, postprocess_api, metrics_api):
+    for _mod in (settings_api, results_api, progress_api, postprocess_api, metrics_api, models_api):
         try:                                     # every router module exposes router(dependencies=)
             app.include_router(_mod.router(dependencies=_auth))
         except Exception as exc:                 # one broken router must not sink the whole app

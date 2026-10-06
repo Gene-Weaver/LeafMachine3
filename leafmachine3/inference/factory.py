@@ -42,7 +42,7 @@ def _model_path(cfg: Any, stage_cfg: Any) -> str:
     raw = _get(_get(stage_cfg, "model", None), "path", None)
     if raw is None:
         raise ValueError("stage config is missing model.path")
-    return cfg.resolve_path(raw)
+    return cfg.resolve_model_path(raw)
 
 
 def load_mp_conversion_factor(cfg: Any, device: Any = None):
@@ -60,7 +60,7 @@ def load_mp_conversion_factor(cfg: Any, device: Any = None):
     try:
         stage_cfg = cfg.stage("mp_conversion_factor")
         raw = _get(_get(stage_cfg, "model", None), "path", None) or "models/mp_conversion_factor/model.json"
-        return load_model(cfg.resolve_path(raw))
+        return load_model(cfg.resolve_model_path(raw))
     except Exception:  # noqa: BLE001
         return MpConversionFactorModel()
 
@@ -144,7 +144,7 @@ def load_ruler_ensemble(cfg: Any, device: Any):
     from leafmachine3.inference.ruler_ensemble import RulerEnsemble
 
     stage_cfg = cfg.stage("ruler_classifier")
-    models_dir = cfg.resolve_path(_get(stage_cfg, "models_dir", "models/ruler_classifier"))
+    models_dir = cfg.resolve_model_path(_get(stage_cfg, "models_dir", "models/ruler_classifier"))
     # squarify is mandatory (training-time preprocessing); only its shape is tunable
     sq = _get(stage_cfg, "squarify", None) or {}
     _sq = (lambda k, d: _get(sq, k, d)) if sq else (lambda k, d: d)

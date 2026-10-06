@@ -440,6 +440,23 @@ class Config:
         # back as a clean absolute path, without following symlinks or requiring the file to exist.
         return os.path.normpath(str(base / path))
 
+    def resolve_model_path(self, p: str | os.PathLike[str]) -> str:
+        """Like :meth:`resolve_path`, but a relative ``models/...`` path re-roots onto ``$LM3_MODELS_DIR``.
+
+        The settings YAML keeps saying ``models/archival_detector/model.onnx`` everywhere; a packaged
+        app, a Docker image or a cluster job points ``LM3_MODELS_DIR`` at wherever ``lm3 models
+        install`` put the files, and a source checkout leaves it unset so the path resolves beside
+        the settings file as before. Every model/``models_dir`` load goes through here.
+        """
+        path = Path(str(p)).expanduser()
+        if path.is_absolute():
+            return str(path)
+        root = os.environ.get("LM3_MODELS_DIR")
+        parts = path.parts
+        if root and parts and parts[0] == "models":
+            return os.path.normpath(str(Path(root).expanduser() / Path(*parts[1:])))
+        return self.resolve_path(p)
+
     def io_workers(self) -> int:
         """Resolve the ingest / CPU-stage worker count (``auto`` -> tuned or cpu_count-2)."""
         raw = self.compute.get("io_workers", "auto")
