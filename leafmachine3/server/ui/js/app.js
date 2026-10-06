@@ -11,6 +11,7 @@ import { initPerfMon } from "./perfmon.js";
 import { initStatus, initConsole, focusModule } from "./tabs/status.js";
 import { initSettings } from "./tabs/settings.js";
 import { initModelsTab } from "./tabs/models.js";
+import { refreshModelsStatus } from "./models.js";
 import { initResults } from "./tabs/results.js";
 import { initPostprocess } from "./tabs/postprocess.js";
 
@@ -134,6 +135,7 @@ function boot() {
     try { return localStorage.getItem("lm3.tab"); } catch (_) { return null; }
   })() || "status";
   show(initial);
+  refreshModelsStatus();          // colors the Models tab (and feeds its panels) from boot, whichever tab opens first
   watchConnection();
   gateResultsTab();
   setInterval(gateResultsTab, 20000);

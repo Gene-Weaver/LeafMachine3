@@ -2230,10 +2230,12 @@ export function initSettings(root) {
         el("h4", `${S.errors.length} error${S.errors.length === 1 ? "" : "s"} — LM3 will not save this`),
         el("ul", S.errors.map((e) => el("li", String(e))))));
     }
-    if (S.warnings.length) {
+    // Model-path warnings ("missing_model") are the Models tab's business; everything else stays here.
+    const warns = S.warnings.filter((w) => !(w && w.code === "missing_model"));
+    if (warns.length) {
       alerts.appendChild(el("div.card.warn",
-        el("h4", `${S.warnings.length} thing${S.warnings.length === 1 ? "" : "s"} to check`),
-        el("ul", S.warnings.map((w) => {
+        el("h4", `${warns.length} thing${warns.length === 1 ? "" : "s"} to check`),
+        el("ul", warns.map((w) => {
           const item = el("li");
           append(item, w.msg || String(w));
           if (w.path) {

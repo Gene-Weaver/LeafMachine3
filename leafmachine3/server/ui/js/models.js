@@ -21,14 +21,28 @@ const STATE_BADGE = { current: "ok", missing: "bad", outdated: "warn", pending: 
 /* a tiny shared store so several panels stay in step */
 const panels = new Set();
 let lastStatus = null;
+let modelWarnings = [];      // settings-file warnings about model paths (code "missing_model")
 let activeTask = null;       // {id, close} while an install streams
 
+/** Model-path warnings from the settings validator; shown on the Models tab, not under Settings. */
+export function isModelWarning(w) { return !!w && w.code === "missing_model"; }
+export function getModelWarnings() { return modelWarnings; }
+
+/** The Models tab label goes warning-orange while anything needs attention, plain otherwise. */
+function applyTabTone() {
+  const btn = document.querySelector('.tab[data-tab="models"]');
+  if (!btn) return;
+  const attention = needsAttention(lastStatus) || modelWarnings.length > 0 || !!(lastStatus && lastStatus.error);
+  btn.style.color = attention ? "var(--warn)" : "";
+  btn.title = attention ? "Models need attention" : "";
+}
+
 export async function refreshModelsStatus() {
-  try {
-    lastStatus = await api.getModelsStatus();
-  } catch (err) {
-    lastStatus = { error: err && err.message ? err.message : String(err) };
-  }
+  const [st, settings] = await Promise.allSettled([api.getModelsStatus(), api.getSettings()]);
+  lastStatus = st.status === "fulfilled" ? st.value : { error: st.reason && st.reason.message ? st.reason.message : String(st.reason) };
+  const warns = settings.status === "fulfilled" && Array.isArray(settings.value.warnings) ? settings.value.warnings : [];
+  modelWarnings = warns.filter(isModelWarning);
+  applyTabTone();
   for (const p of panels) p.render();
   return lastStatus;
 }
@@ -156,6 +170,10 @@ export function mountModelsPanel(host, { compact = false, fullWidth = false } = 
   title.append(el("strong", compact ? "Models" : "Models from Hugging Face"), text, btn);
   card.append(title, list, logBox);
   host.appendChild(card);
+  // Settings-file problems about model paths live here too (the "things to check" card), so the
+  // Settings tab is not the place a user hunts for a models problem.
+  const warnCard = el("div.card.warn", { style: { margin: "0 0 8px", display: "none", ...(fullWidth ? { maxWidth: "none" } : {}) } });
+  if (!compact) host.appendChild(warnCard);
 
   const panel = {
     render() {
@@ -195,6 +213,17 @@ export function mountModelsPanel(host, { compact = false, fullWidth = false } = 
           "ONNX runtime models pinned by this LM3 release. Missing or outdated models are downloaded, hash-checked, "
           + "and swapped in with a .backup of anything replaced; a failure restores the previous files. "
           + "Command line: lm3 models install  (or: uv run install_models.py)."));
+        clear(warnCard);
+        const n = modelWarnings.length;
+        warnCard.style.display = n ? "" : "none";
+        if (n) {
+          warnCard.append(
+            el("h4", `${n} thing${n === 1 ? "" : "s"} to check`),
+            el("p.hint", { style: { margin: "0 0 8px" } },
+              "From the settings file: these model paths do not point at a file. Installing fixes a missing default; "
+              + "a path that is wrong (or the wrong format) is edited under Settings."),
+            el("ul", modelWarnings.map((w) => el("li", w.msg || String(w), w.path ? el("span.mono", { style: { marginLeft: "6px", color: "var(--acc2)" } }, w.path) : null))));
+        }
       }
     },
     log(msg, kind = "") {
