@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Sequence, Any, Optional
 
 import cv2
 import numpy as np
@@ -118,13 +118,14 @@ class YoloSegmenter:
         device: Optional[str] = None,
         max_det: Optional[int] = None,
         min_area_px: int = 64,
+        providers: Optional[Sequence] = None,
     ) -> None:
-        from ultralytics import YOLO
+        from leafmachine3.inference import ultra_replacements as ultra_rep
 
         self.model_path = str(model_path)
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"segmenter model artifact not found: {self.model_path}")
-        self.model = YOLO(self.model_path, task="segment")
+        self.model = ultra_rep.YOLO(self.model_path, task="segment", providers=providers)
         self.imgsz = imgsz
         self.conf = float(conf)
         self.iou = float(iou)
@@ -163,9 +164,9 @@ class YoloSegmenter:
         boxes = getattr(result, "boxes", None)
         if masks is None or boxes is None or getattr(masks, "data", None) is None or len(boxes) == 0:
             return []
-        data = masks.data.cpu().numpy()                 # [n, mh, mw] raster instance masks
-        confs = boxes.conf.cpu().numpy()
-        clss = boxes.cls.cpu().numpy().astype(int)
+        data = np.asarray(masks.data)                   # [n, h, w] raster instance masks (native res)
+        confs = np.asarray(boxes.conf)
+        clss = np.asarray(boxes.cls).astype(int)
         h, w = result.orig_shape                        # native crop size (retina_masks -> native)
         return build_instances(data, clss, confs, self.class_names, (h, w), self.min_area_px)
 

@@ -50,13 +50,14 @@ class YoloDetector:
         imgsz: Optional[int] = None,
         device: Optional[str] = None,
         max_det: Optional[int] = None,
+        providers: Optional[Sequence] = None,
     ) -> None:
-        from ultralytics import YOLO
+        from leafmachine3.inference import ultra_replacements as ultra_rep
 
         self.model_path = str(model_path)
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"detector model artifact not found: {self.model_path}")
-        self.model = YOLO(self.model_path, task="detect")
+        self.model = ultra_rep.YOLO(self.model_path, task="detect", providers=providers)
         self.class_names = self._resolve_class_names(class_names)
         self.conf = float(conf)
         self.iou = float(iou)
@@ -93,9 +94,9 @@ class YoloDetector:
         boxes = getattr(result, "boxes", None)
         if boxes is None or boxes.xyxy is None:
             return []
-        xyxy = boxes.xyxy.cpu().numpy()
-        confs = boxes.conf.cpu().numpy()
-        clss = boxes.cls.cpu().numpy().astype(int)
+        xyxy = np.asarray(boxes.xyxy)
+        confs = np.asarray(boxes.conf)
+        clss = np.asarray(boxes.cls).astype(int)
         out: list[Detection] = []
         for (x1, y1, x2, y2), c, k in zip(xyxy, confs, clss):
             out.append(

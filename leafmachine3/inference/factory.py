@@ -1,8 +1,7 @@
 """Inference factory — the single entry point stages use to obtain a backend.
 
 Each loader returns a **mock** backend when ``cfg.compute.mock`` is set, otherwise the
-**real** backend. Real backends lazy-import their heavy dependencies (Ultralytics /
-onnxruntime) so importing this module never requires them; only actually loading a real
+**real** backend. Real backends lazy-import their heavy dependency (onnxruntime) so importing this module never requires them; only actually loading a real
 model does.
 
 Return contracts
@@ -84,6 +83,7 @@ def load_detector(cfg: Any, stage_key: str, device: Any):
         iou=float(_get(stage_cfg, "iou", 0.45)),
         imgsz=_get(stage_cfg, "imgsz", None),
         device=device.torch_str,
+        providers=device.ort_providers(),
         max_det=_get(stage_cfg, "max_det", None),
     )
 
@@ -107,6 +107,7 @@ def load_segmenter(cfg: Any, device: Any):
         iou=float(_get(stage_cfg, "iou", 0.50)),
         retina_masks=bool(_get(stage_cfg, "retina_masks", True)),
         device=device.torch_str,
+        providers=device.ort_providers(),
         max_det=_get(stage_cfg, "max_det", None),
         min_area_px=min_area_px,
     )
@@ -172,5 +173,6 @@ def load_landmark_pose(cfg: Any, device: Any):
         iou=float(_get(stage_cfg, "iou", 0.45)),
         imgsz=_get(stage_cfg, "imgsz", 640),
         device=device.torch_str,
+        providers=device.ort_providers(),
         white_pad=float(_get(stage_cfg, "white_pad", 0.10)),
     )

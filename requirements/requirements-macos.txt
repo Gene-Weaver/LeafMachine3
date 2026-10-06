@@ -1,8 +1,6 @@
-# LeafMachine3 runtime — macOS / Apple Silicon GPU.
-# torch uses the Metal (MPS) backend and onnxruntime exposes the CoreML execution provider, both from
-# the standard macOS wheels (no CUDA, no special index). Set compute.devices: "auto" — the provider
-# ladder picks CoreMLExecutionProvider; ultralytics uses MPS when available.
-# Derived from the tested GPU combo — versions cross-platform except the torch build.
+# LeafMachine3 runtime — macOS / Apple Silicon.
+# The standard macOS onnxruntime wheel exposes the CoreML execution provider; with
+# compute.devices: "auto" the provider ladder picks CoreMLExecutionProvider. No torch, no ultralytics.
 #
 #   python3 -m venv .venv_LM3
 #   .venv_LM3/bin/pip install -U pip wheel setuptools
@@ -12,15 +10,15 @@ numpy==2.4.4
 opencv-python-headless==5.0.0.93
 pillow==12.2.0
 PyYAML==6.0.3
+scipy==1.17.1
+psutil==7.2.2
+shapely==2.1.2                     # ECT outline simplification (main pipeline, not just postprocessing)
 
 onnxruntime==1.20.1                # macOS wheel includes CoreMLExecutionProvider
-torch==2.6.0                       # macOS arm64 wheel = Metal/MPS backend
-torchvision==0.21.0
-ultralytics==8.4.107
 
 -e .
 
 # ECT stage (Euler Characteristic Transform per oriented leaf)
-ect
-h5py
-matplotlib
+ect==1.3.0
+h5py==3.16.0
+matplotlib==3.11.1

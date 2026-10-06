@@ -97,7 +97,8 @@ default) or the axis-aligned YOLO box (`yolo`).
 ## Install
 
 Pinned, reproducible (recommended) — see **[INSTALL.md](INSTALL.md)** for the full guide (extras,
-poetry, the torch-CUDA-build gotcha):
+poetry). The runtime needs **no torch and no ultralytics**: every model is an exported end2end ONNX
+graph driven by onnxruntime (`leafmachine3/inference/ultra_replacements.py`).
 
 ```bash
 python -m venv .venv_LM3 && .venv_LM3/bin/pip install -U pip wheel setuptools
@@ -106,9 +107,9 @@ python -m venv .venv_LM3 && .venv_LM3/bin/pip install -U pip wheel setuptools
 .venv_LM3/bin/pip install -r requirements/requirements-macos.txt   # macOS (MPS + CoreML)
 ```
 
-Or the flexible extras: `pip install -e ".[gpu,yolo]"` (`cpu`/`macos` variants too). ⚠️ pip's default
-`torch` is a CUDA-13 wheel (needs driver ≥ 580); on older drivers use the cu124 wheel pinned in the
-GPU requirements — see INSTALL.md.
+Or the flexible extras: `pip install -e ".[gpu]"` (`cpu`/`macos` variants too). The GPU extra pulls the
+CUDA 12 runtime libraries as `nvidia-*` wheels; the only system requirement is an NVIDIA driver
+≥ 525.60.13 (Linux) / 528.33 (Windows). `onnxruntime-gpu` must stay < 1.21 (1.28+ is a CUDA-13 build).
 
 Models are **not** committed. Place exported artifacts under `models/<stage>/` (or symlink the
 training-repo exports); paths are set in `LM3_settings.yaml`.

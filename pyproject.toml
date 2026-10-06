@@ -19,24 +19,35 @@ license = { text = "MIT" }
 authors = [{ name = "William Weaver", email = "willwe@umich.edu" }]
 keywords = ["herbarium", "computer-vision", "segmentation", "phenology", "botany"]
 
-# Runtime is EXPORTED models only — no torch/CUDA training stack required for CPU/DirectML/CoreML.
+# Runtime is EXPORTED models only. No torch, no ultralytics: the YOLO26 detector / segmenter / pose
+# exports are end2end ONNX graphs driven by onnxruntime through inference/ultra_replacements.py.
 dependencies = [
     "numpy>=1.24",
     "opencv-python-headless>=4.8",
     "pillow>=10.0",
     "pyyaml>=6.0",
+    "scipy>=1.11",
+    "psutil>=5.9",
+    "shapely>=2.0",
 ]
 
 [project.optional-dependencies]
 # GPU-first onnxruntime for NVIDIA boxes; swap for onnxruntime (CPU) / CoreML (macOS) per platform.
-# onnxruntime-gpu is capped below 1.21: 1.28+ is a CUDA-13 build (needs driver >= 580); the pinned
-# requirements/ files use the CUDA-12 combo. The torch CUDA wheel must come from the PyTorch index —
-# see requirements/requirements-gpu.txt and INSTALL.md (ultralytics pulls torch transitively).
-gpu = ["onnxruntime-gpu>=1.19,<1.21", "pynvml>=11.5"]
+# onnxruntime-gpu is capped below 1.21: 1.28+ is a CUDA-13 build (needs driver >= 580). The CUDA 12
+# runtime libraries its CUDA provider dlopens ship as nvidia-* wheels (exact pins in
+# requirements/requirements-gpu.txt); nothing else on the system is required beyond the driver.
+gpu = [
+    "onnxruntime-gpu>=1.19,<1.21",
+    "pynvml>=11.5",
+    "nvidia-cuda-runtime-cu12==12.4.*",
+    "nvidia-cuda-nvrtc-cu12==12.4.*",
+    "nvidia-cublas-cu12==12.4.*",
+    "nvidia-cudnn-cu12==9.1.*",
+    "nvidia-cufft-cu12==11.2.*",
+    "nvidia-curand-cu12==10.3.*",
+]
 cpu = ["onnxruntime>=1.19"]
-macos = ["onnxruntime>=1.19"]   # macOS wheel exposes CoreMLExecutionProvider; torch uses MPS
-# Ultralytics AutoBackend drives the YOLO26 detector/segmenter/pose exports (.onnx and .pt).
-yolo = ["ultralytics>=8.3"]
+macos = ["onnxruntime>=1.19"]   # macOS wheel exposes CoreMLExecutionProvider
 server = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9", "sse-starlette>=2.0"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 # Everything CI needs to RUN the suite and the gates. `dev` was not enough: fastapi's base
