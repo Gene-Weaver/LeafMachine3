@@ -32,7 +32,9 @@ export function getModelWarnings() { return modelWarnings; }
 function applyTabTone() {
   const btn = document.querySelector('.tab[data-tab="models"]');
   if (!btn) return;
-  const attention = needsAttention(lastStatus) || modelWarnings.length > 0 || !!(lastStatus && lastStatus.error);
+  const s = lastStatus && lastStatus.summary;
+  const unpublished = !!(s && ((s.unavailable && s.unavailable.length) || s.tab_attention));
+  const attention = needsAttention(lastStatus) || unpublished || modelWarnings.length > 0 || !!(lastStatus && lastStatus.error);
   btn.style.color = attention ? "var(--warn)" : "";
   btn.title = attention ? "Models need attention" : "";
 }
@@ -117,6 +119,7 @@ async function startInstall() {
   const st = lastStatus && !lastStatus.error ? lastStatus : await refreshModelsStatus();
   if (!(await confirmInstall(st))) return null;
   let res;
+  let poll = 0;
   try {
     res = await api.installModels({});
   } catch (err) {
@@ -142,11 +145,27 @@ async function startInstall() {
         finish();
       }
     },
-    onError: () => { /* EventSource retries; the done frame or a snapshot poll ends it */ },
+    // If the stream cannot be read (auth, proxy, a dropped connection) fall back to polling the
+    // task snapshot, so the button can never sit on "Installing…" after the install has ended.
+    onError: () => startPolling(),
   });
   activeTask = { id: res.task_id, close };
   for (const p of panels) p.render();
+  function startPolling() {
+    if (poll) return;
+    poll = setInterval(async () => {
+      try {
+        const snap = await api.getModelsInstall(res.task_id, 0);
+        if (snap.state !== "running") {
+          const ok = snap.state === "done";
+          for (const p of panels) p.log(ok ? "all models are installed and verified" : `install ${snap.state}: ${snap.error || ""}`, ok ? "ok" : "bad");
+          finish();
+        }
+      } catch { /* server busy or restarting: keep trying */ }
+    }, 1000);
+  }
   async function finish() {
+    if (poll) { clearInterval(poll); poll = 0; }
     if (activeTask) { try { activeTask.close(); } catch { /* noop */ } }
     activeTask = null;
     await refreshModelsStatus();
@@ -193,7 +212,9 @@ export function mountModelsPanel(host, { compact = false, fullWidth = false } = 
       text.textContent = attention
         ? (s.missing.length ? `${s.missing.length} required model${s.missing.length > 1 ? "s are" : " is"} missing` : `${s.outdated.length} model${s.outdated.length > 1 ? "s have" : " has"} a newer version`)
           + ` — folder: ${st.root}`
-        : `all default models installed — folder: ${st.root}`;
+        : (s.unavailable && s.unavailable.length
+            ? `${s.unavailable.length} model${s.unavailable.length > 1 ? "s are" : " is"} not published yet (${s.unavailable.join(", ")}) — folder: ${st.root}`
+            : `all default models installed — folder: ${st.root}`);
       if (!compact) {
         clear(list);
         const tbl = el("table.tbl", { style: { width: "100%", fontSize: "12.5px" } },

@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from leafmachine3.modelhub import installer
 from leafmachine3.server import models_api
 
-from tests._contract_helpers import bearer, isolate_server_paths, reset_server_module_state
+from tests._contract_helpers import TEST_TOKEN, bearer, isolate_server_paths, reset_server_module_state
 
 
 @pytest.fixture
@@ -99,3 +99,17 @@ def test_events_stream_ends_with_done(client: TestClient):
 
 def test_routes_require_the_token(client: TestClient):
     assert client.get("/v1/models/status").status_code in (401, 403)
+
+
+def test_events_stream_accepts_the_query_token_because_eventsource_cannot_send_headers(client: TestClient):
+    """Regression: with a header-only guard the browser's EventSource got 401, never saw "done",
+    and the install button stayed on "Installing..." forever."""
+    headers = _auth(client)
+    task_id = client.post("/v1/models/install", json={}, headers=headers).json()["task_id"]
+    _wait(client, headers, task_id)
+    with client.stream("GET", f"/v1/models/install/{task_id}/events", params={"token": TEST_TOKEN}) as resp:
+        assert resp.status_code == 200
+        text = "".join(resp.iter_text())
+    assert "event: done" in text
+    assert client.get(f"/v1/models/install/{task_id}/events").status_code == 401
+    assert client.get(f"/v1/models/install/{task_id}/events", params={"token": "wrong"}).status_code == 401

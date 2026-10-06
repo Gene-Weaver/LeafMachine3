@@ -269,6 +269,7 @@ def status(root: Path | None = None, *, lock: Lock | None = None, formats: Seque
     states = [a.state for a in out.values() if a.required]
     missing = [k for k, a in out.items() if a.required and a.state == STATE_MISSING]
     outdated = [k for k, a in out.items() if a.required and a.state == STATE_OUTDATED]
+    unavailable = [k for k, a in out.items() if a.required and a.state == STATE_UNAVAILABLE]
     if missing:
         label = "Install Models from Hugging Face"
     elif outdated:
@@ -278,7 +279,11 @@ def status(root: Path | None = None, *, lock: Lock | None = None, formats: Seque
     return {
         "root": str(root), "lock_path": lock.path, "lm3_version": lock.lm3_version, "formats": list(formats),
         "actions": {k: asdict(v) for k, v in out.items()},
-        "summary": {"missing": missing, "outdated": outdated, "needs_attention": bool(missing or outdated),
+        "summary": {"missing": missing, "outdated": outdated, "unavailable": unavailable,
+                    # needs_attention = something the install button can fix; tab_attention also counts
+                    # a required model that is not published yet and has no local copy.
+                    "needs_attention": bool(missing or outdated),
+                    "tab_attention": bool(missing or outdated or unavailable),
                     "all_present": not missing and all(s != STATE_UNAVAILABLE for s in states),
                     "button_label": label},
         "repaired": repaired,

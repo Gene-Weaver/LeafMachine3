@@ -80,6 +80,7 @@ def test_fresh_root_is_missing_and_install_fills_it(world):
     assert st["actions"]["ens"]["state"] == "missing"
     assert st["actions"]["ph"]["state"] == "unavailable"
     assert st["summary"]["button_label"] == "Install Models from Hugging Face"
+    assert st["summary"]["unavailable"] == ["ph"] and st["summary"]["tab_attention"] is True
 
     events: list[dict] = []
     st = installer.install(world.root, lock=world.lock, downloader=world.downloader, progress=events.append)
@@ -90,7 +91,8 @@ def test_fresh_root_is_missing_and_install_fills_it(world):
     assert st["actions"]["ens"]["state"] == "current"
     assert st["actions"]["ph"]["state"] == "unavailable"      # placeholder is never fetched
     assert any(e["type"] == "skip" and e["action"] == "ph" for e in events)
-    assert st["summary"]["needs_attention"] is False
+    assert st["summary"]["needs_attention"] is False      # nothing the install button can fix...
+    assert st["summary"]["tab_attention"] is True         # ...but an unpublished required model still flags the tab
     rec = json.loads((world.root / "installed.json").read_text())
     assert rec["actions"]["det"]["revisions"] == {"org/det": "rev2"}
     assert not list(world.root.rglob("*.backup"))

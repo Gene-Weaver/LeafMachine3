@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import secrets
 import threading
 import time
 import uuid
@@ -119,12 +121,38 @@ def sse_frames(task: _Task, *, poll_s: float = SSE_POLL_S, max_seconds: float = 
 
 
 def router(dependencies: Optional[list[Any]] = None):
-    from fastapi import APIRouter, HTTPException  # noqa: PLC0415
+    from fastapi import APIRouter, Depends, Header, HTTPException, Query  # noqa: PLC0415
     from fastapi.responses import StreamingResponse  # noqa: PLC0415
 
-    api = APIRouter(prefix="/v1/models", tags=["models"], dependencies=dependencies or [])
+    # Guards are applied PER ROUTE, not to the router: the SSE route cannot use the header-only
+    # guard (EventSource is unable to set an Authorization header), so it accepts ``?token=`` as
+    # well and checks it against the same secret -- the pattern progress_api / postprocess_api use.
+    # With a router-level guard the stream answered 401, the browser never saw "done", and the
+    # install button sat on "Installing..." forever.
+    deps = list(dependencies or [])
+    api = APIRouter(prefix="/v1/models", tags=["models"])
 
-    @api.get("/status")
+    async def stream_token(
+        token: Optional[str] = Query(default=None, description="Bearer secret, for EventSource"),
+        authorization: str = Header(default=""),
+    ) -> None:
+        if not deps:
+            return
+        try:                                    # the same secret app.py mints/uses for every route
+            from leafmachine3.server.app import _server_token  # noqa: PLC0415
+
+            expected = _server_token() or ""
+        except Exception:  # noqa: BLE001 - router mounted standalone
+            expected = os.environ.get("LM3_SERVER_TOKEN") or ""
+        if not expected:            # fail closed: no secret configured means nobody gets the stream
+            raise HTTPException(status_code=401, detail="this LM3 server has no token configured; the stream is refused")
+        if token and secrets.compare_digest(str(token), expected):
+            return
+        if authorization and secrets.compare_digest(authorization, f"Bearer {expected}"):
+            return
+        raise HTTPException(status_code=401, detail="invalid or missing token")
+
+    @api.get("/status", dependencies=deps)
     def get_status(verify: bool = False) -> dict[str, Any]:
         from leafmachine3.modelhub import installer  # noqa: PLC0415
 
@@ -133,20 +161,20 @@ def router(dependencies: Optional[list[Any]] = None):
         except Exception as exc:  # noqa: BLE001 - a broken lock/folder must surface as JSON, not a 500 page
             raise HTTPException(status_code=500, detail=f"models status failed: {exc}") from exc
 
-    @api.post("/install")
+    @api.post("/install", dependencies=deps)
     def post_install(body: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         task = start_install(body or {})
         return {"task_id": task.id, "state": task.state, "already_running": task.body is not (body or {}) and task.state == "running"
                 and len(task.events) > 0}
 
-    @api.get("/install/{task_id}")
+    @api.get("/install/{task_id}", dependencies=deps)
     def get_install(task_id: str, since: int = 0) -> dict[str, Any]:
         task = _tasks.get(task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="unknown install task")
         return task.snapshot(since=since)
 
-    @api.get("/install/{task_id}/events", response_class=StreamingResponse)
+    @api.get("/install/{task_id}/events", dependencies=[Depends(stream_token)], response_class=StreamingResponse)
     def get_install_events(task_id: str) -> Any:
         task = _tasks.get(task_id)
         if task is None:
