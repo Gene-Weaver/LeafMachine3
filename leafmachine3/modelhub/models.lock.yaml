@@ -2,7 +2,7 @@
 schema_version: 1
 lm3_version: 3.0.0
 hub_namespace: phyloforfun
-generated_at: '2026-10-06T19:15:12+00:00'
+generated_at: '2026-10-06T20:43:35+00:00'
 default_formats:
 - onnx
 actions:
@@ -130,6 +130,19 @@ actions:
         sha256: 0eae35356756039c00d27b58deda925b9a789fd70b6c996d724a7062d1d774a5
         bytes: 1998
         optional: true
+  mp_conversion_factor:
+    required: true
+    units:
+    - repo_id: phyloforfun/lm3_mp_conversion_factor__sqrt_fit
+      revision: 3b03c05c6c140f724e65561d825970264c14f97d
+      model_key: sqrt_fit
+      files:
+      - src: json/model.json
+        dest: mp_conversion_factor/model.json
+        format: meta
+        sha256: 2b5f01bc812bdfbd17538342282492c07ecccc2da0c297126e9323dece9c3fd8
+        bytes: 513
+        optional: false
   ruler_classifier:
     required: true
     units:
@@ -218,16 +231,3 @@ actions:
         format: onnx
         sha256: 170750836d22700e8c61f2b106f9ace645d2ca8c9a3d0656ea660120f2f5d3f6
         bytes: 265719233
-  mp_conversion_factor:
-    required: true
-    placeholder: true
-    units:
-    - repo_id: phyloforfun/lm3_mp_conversion_factor__sqrt_fit
-      revision: null
-      model_key: null
-      files:
-      - src: model.json
-        dest: mp_conversion_factor/model.json
-        format: meta
-        sha256: 2b5f01bc812bdfbd17538342282492c07ecccc2da0c297126e9323dece9c3fd8
-        bytes: 513
