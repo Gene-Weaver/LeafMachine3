@@ -146,8 +146,8 @@ async function startInstall() {
  * button, hidden entirely when everything is current. The full form (Settings) always shows and
  * lists every action with its state.
  */
-export function mountModelsPanel(host, { compact = false } = {}) {
-  const card = el(`div.card${compact ? ".warn" : ""}`, { style: { margin: "0 0 8px" } });
+export function mountModelsPanel(host, { compact = false, fullWidth = false } = {}) {
+  const card = el(`div.card${compact ? ".warn" : ""}`, { style: { margin: "0 0 8px", ...(fullWidth ? { maxWidth: "none" } : {}) } });
   const title = el("div", { style: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" } });
   const btn = el("button.btn.sm.primary", { type: "button" }, "Install Models from Hugging Face");
   const text = el("span", { style: { flex: "1 1 240px", fontSize: "13px" } });

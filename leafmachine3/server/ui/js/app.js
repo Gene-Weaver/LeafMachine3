@@ -10,6 +10,7 @@ import { initTopBar } from "./topbar.js";
 import { initPerfMon } from "./perfmon.js";
 import { initStatus, initConsole, focusModule } from "./tabs/status.js";
 import { initSettings } from "./tabs/settings.js";
+import { initModelsTab } from "./tabs/models.js";
 import { initResults } from "./tabs/results.js";
 import { initPostprocess } from "./tabs/postprocess.js";
 
@@ -17,6 +18,7 @@ const TABS = {
   status: { pane: "pane-status", init: initStatus },
   console: { pane: "pane-console", init: initConsole },
   settings: { pane: "pane-settings", init: initSettings },
+  models: { pane: "pane-models", init: initModelsTab },
   results: { pane: "pane-results", init: initResults },
   postprocess: { pane: "pane-postprocess", init: initPostprocess },
 };
