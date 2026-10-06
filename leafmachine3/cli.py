@@ -41,6 +41,15 @@ def _models() -> Callable[[list[str]], int]:
 _COMMANDS["models"] = ("install / check the default models from the Hugging Face Hub", _models)
 
 
+def _doctor() -> Callable[[list[str]], int]:
+    from leafmachine3.doctor import main as doctor_main  # noqa: PLC0415 - lazy by design
+
+    return doctor_main
+
+
+_COMMANDS["doctor"] = ("check that this install will run (Python, packages, GPU driver, accelerator)", _doctor)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lm3",
