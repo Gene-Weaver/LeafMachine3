@@ -2,7 +2,7 @@
 schema_version: 1
 lm3_version: 3.0.0
 hub_namespace: phyloforfun
-generated_at: '2026-10-06T20:43:35+00:00'
+generated_at: '2026-10-06T21:01:25+00:00'
 default_formats:
 - onnx
 actions:
@@ -130,6 +130,37 @@ actions:
         sha256: 0eae35356756039c00d27b58deda925b9a789fd70b6c996d724a7062d1d774a5
         bytes: 1998
         optional: true
+  specimen_segmenter:
+    required: true
+    units:
+    - repo_id: phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024
+      revision: 88590ba1424f561b06de74c48692262403074e41
+      model_key: unetpp_effb7_1024
+      files:
+      - src: onnx/model.onnx
+        dest: specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx
+        format: onnx
+        sha256: 170750836d22700e8c61f2b106f9ace645d2ca8c9a3d0656ea660120f2f5d3f6
+        bytes: 265719233
+        optional: false
+      - src: torchscript/model.torchscript.pt
+        dest: specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.torchscript.pt
+        format: torchscript
+        sha256: 716b172500e3ba736c968497f38546346887068460ec2ca1aa5f3e3cd302c5ce
+        bytes: 275962164
+        optional: false
+      - src: pytorch/best.pt
+        dest: specimen_segmenter/best.pt
+        format: pytorch
+        sha256: 3264ba901e173485ea45ae247c67f3042fbdf5ab14f41624bdd9e3f769d87c42
+        bytes: 548646686
+        optional: false
+      - src: training_metadata.json
+        dest: specimen_segmenter/training_metadata.json
+        format: meta
+        sha256: 69466f9587cbf2679dae53f7553e9e9ba420e9b783e585fcc188358d6e148049
+        bytes: 4958
+        optional: true
   mp_conversion_factor:
     required: true
     units:
@@ -218,16 +249,3 @@ actions:
         sha256: 7eb88033f1cce3ac5e6bd3ff8213de0fd56019635670ebc43ffacc4d8d7e8db1
         bytes: 556
         optional: false
-  specimen_segmenter:
-    required: true
-    placeholder: true
-    units:
-    - repo_id: phyloforfun/lm3_specimen_segmenter__unet_control_1024
-      revision: null
-      model_key: null
-      files:
-      - src: onnx/model.onnx
-        dest: specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx
-        format: onnx
-        sha256: 170750836d22700e8c61f2b106f9ace645d2ca8c9a3d0656ea660120f2f5d3f6
-        bytes: 265719233
