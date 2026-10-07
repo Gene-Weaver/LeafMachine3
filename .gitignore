@@ -116,3 +116,6 @@ tests/test_global_greening_wrapper.py
 /examples/bilateral_test.yaml
 /examples/collage_test.yaml
 /examples/test_*.yaml
+
+# Previous README, kept locally for reference while the rewrite settles.
+/README.md.bak
