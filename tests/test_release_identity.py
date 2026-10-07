@@ -70,3 +70,15 @@ def test_lock_and_contract_are_current():
     lock = subprocess.run(["uv", "lock", "--check"], cwd=ROOT, capture_output=True, text=True)
     assert lock.returncode == 0, lock.stderr
     assert write_env_contract.main(["--check"]) == 0
+
+
+def test_readme_setup_section_names_the_pinned_versions():
+    """README's "Setup with Verification Steps" restates the uv and Python pins; keep them in step."""
+    import re
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    uv_urls = re.findall(r"astral\.sh/uv/([0-9.]+)/install", readme)
+    assert uv_urls and set(uv_urls) == {ENV["UV_VERSION"]}
+    assert re.findall(r"uv --version\s+# must print ([0-9.]+)", readme) == [ENV["UV_VERSION"]]
+    pythons = set(re.findall(r"Python (3\.\d+\.\d+)", readme))
+    assert pythons <= {ENV["PYTHON_VERSION"]}, f"README names {pythons}, versions.env pins {ENV['PYTHON_VERSION']}"

@@ -94,7 +94,104 @@ default) or the axis-aligned YOLO box (`yolo`).
   automatically by **LM3_Setup** on first run; rerun with `lm3-setup --force`.
 - **project SQLite DB** (`project_status`) — progress / resume.
 
+## Setup with Verification Steps
+
+Use this for a fresh setup, or to repair a setup that stopped working. Each step checks itself, so
+stop at the first one that does not end the way its comment says. The environment comes from
+`uv.lock`, so every install gets exactly the package versions this release was tested with.
+
+### 1. Install uv (once per machine)
+
+```bash
+# Linux or macOS
+curl -LsSf https://astral.sh/uv/0.12.23/install.sh | sh                        # installs the pinned uv
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/0.12.23/install.ps1 | iex"
+```
+
+Open a new terminal, then:
+
+```bash
+uv --version                       # must print 0.12.23
+```
+
+### 2. Get the code
+
+```bash
+git clone https://github.com/Gene-Weaver/LeafMachine3.git   # fresh setup
+cd LeafMachine3
+```
+
+Already have a checkout? Update it instead:
+
+```bash
+git checkout -- LM3_settings.yaml  # restores the shipped default settings (copy your edits to LM3_settings.local.yaml first)
+git pull --ff-only                 # brings the code and the lock up to date
+```
+
+### 3. Build the environment
+
+```bash
+uv sync --frozen --extra gpu       # NVIDIA GPU on Linux or Windows; downloads Python 3.11.17 and the locked packages
+# uv sync --frozen --extra cpu     # no GPU
+# uv sync --frozen --extra macos   # Apple Silicon Mac
+uv run lm3 doctor                  # must end with "Result: READY"; otherwise it prints the command that fixes the problem
+```
+
+### 4. Install the models
+
+```bash
+uv run hf auth login               # only while the model repositories are private: paste a token with access
+uv run lm3 models install --yes    # downloads the pinned default models (about 1.7 GB) into models/
+uv run lm3 doctor --models         # check 7 should report that every ONNX model runs entirely on the GPU
+```
+
+### 5. Run the example
+
+```bash
+uv run machine3 --config LM3_settings.yaml   # processes examples/images into runs/demo/; should print no WARNING lines
+```
+
+The first run on a new machine tunes a hardware profile before it starts, which adds a few minutes.
+
+### 6. Open the GUI
+
+```bash
+uv run lm3 serve                   # then open http://127.0.0.1:8765; Ctrl+C stops the server
+```
+
+### Optional: confirm a rebuild did not change results
+
+Keep `runs/demo/` from before the rebuild, then run the example again under a new name and compare:
+
+```bash
+uv run machine3 --config LM3_settings.yaml --run-name demo_check
+uv run python tools/verification/compare_run_databases.py runs/demo/demo.sqlite runs/demo_check/demo_check.sqlite
+                                   # every table prints OK and the exit status is 0 when results are identical
+```
+
+### Repairing a broken setup
+
+`machine3` and `lm3 serve` run the first four doctor checks at startup and refuse to start (exit
+code 78) when one fails, so a damaged environment shows up immediately.
+
+```bash
+uv run lm3 doctor                              # names the first problem and prints the command that fixes it
+uv sync --frozen --extra gpu --reinstall       # if unsure: reinstalls every package from the lock
+uv run lm3 models verify                       # re-hashes every installed model against the lock
+uv run lm3 models install --force --yes        # re-downloads the models if verify reports a mismatch
+```
+
+If none of that helps, delete the `.venv` folder and repeat step 3.
+
 ## Install
+
+> The uv route in [Setup with Verification Steps](#setup-with-verification-steps) is the supported one. A
+> pip-built environment does not match `uv.lock`, so `machine3` and `lm3 serve` refuse to start in it
+> (exit 78) unless `LM3_STARTUP_GATE=0` is set. The pip instructions below are kept for reference.
 
 Pinned, reproducible (recommended) — see **[INSTALL.md](INSTALL.md)** for the full guide (extras,
 poetry). The runtime needs **no torch and no ultralytics**: every model is an exported end2end ONNX
