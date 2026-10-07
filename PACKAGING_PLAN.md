@@ -13,8 +13,8 @@
   section 13. The training stacks stay in their own environments per `DEPLOYMENT_PLAN.md` section 5.
 - **Implementation state (2026-10-07):** Phases A and B are DONE on branch `packaging-uv-doctor`,
   which also carries the consolidated runtime / GUI / Electron / data-export work and the specimen
-  model keys. Not merged to `master`. One item waits on a decision: publishing the opset-18 YOLO
-  exports to the Hub (section 14). Phase C (INSTALL.md, deleting requirements/, uv-based CI) is next.
+  model keys. Not merged to `master`. The patched ONNX exports are published and pinned (section
+  14). Phase C (INSTALL.md, deleting requirements/, uv-based CI) is next.
 - **Goal:** zero wiggle room. A user who follows the instructions for their platform gets the exact
   environment the release was tested with, or an explicit failure during installation that names the
   cause. Nothing resolves, upgrades, or falls back on its own.
@@ -691,14 +691,20 @@ Running the documented install from a fresh clone, and a dev <-> production swit
   content hashes (cached), over every file a stage loads, naming each difference; legacy entries
   migrate in place. The leaf segmenter's warning is genuine (profile tuned on the .pt): rerun
   `python -m leafmachine3.setup` on an idle GPU.
-- **onnxruntime "Memcpy nodes" per worker.** Cause: the four YOLO26 exports are opset 19 and
-  onnxruntime 1.20's CUDA provider has no opset-19 Resize kernel, so the upsampling layers ran on the
-  CPU. `tools/modelhub/fix_resize_opset.py` converts them to opset 18 (bitwise identical on CPU and
-  CUDA, all 14 run tables identical, 22-46% less GPU time per image). **Pending: publish the
-  converted files as new Hub revisions and re-pin the lock (needs Will's go-ahead).** LM3's sessions
-  now log at ERROR; `lm3 doctor --models` names any remaining CPU fallback. Not changed: the DINOv2
-  ruler member's 12 per-layer scale scalars (folding them is not bitwise identical under TF32 and
-  saves ~0.1 ms/crop).
+- **onnxruntime "Memcpy nodes" per worker.** Two causes, both fixed at the source and patched on
+  the Hub (2026-10-07; each repo's `manifest.json` has a `patches` record, cards unchanged):
+  - YOLO26 exports were opset 19, and onnxruntime 1.20's CUDA provider has no opset-19 Resize kernel,
+    so every upsampling layer ran on the CPU. Patched with `tools/modelhub/fix_resize_opset.py`
+    (bitwise identical on CPU and CUDA) in archival x/n, plant x/n, landmark, leaf segmenter and the
+    YOLO26x-seg specimen alternate. Exporters now pass `opset=18` and refuse a higher opset
+    (`LM3_ONNX_OPSET` / `assert_onnx_opset` in each training project).
+  - The DINOv2 ruler member's SDPA export computed the attention scale from tensor shapes in all 12
+    layers. Re-exported with eager attention (1.4e-5 from the trained model; same argmax); the
+    exporter now does this itself and rejects a shape-derived Sqrt.
+  - The lock pins the patched revisions. With them, `lm3 doctor --models` reports every ONNX model
+    entirely on the GPU, the pipeline matches the previous models in all 14 tables, and a default run
+    took 56 s instead of 67 s. LM3's sessions log at ERROR; `LM3_ORT_LOG_SEVERITY` re-enables
+    placement logs for debugging.
 - **Retired settings** warned once per specimen; now once per run from machine3
   (`core.config.RETIRED_SETTINGS`). The shipped `LM3_settings.yaml` is the clean template and lists
   every live setting.
