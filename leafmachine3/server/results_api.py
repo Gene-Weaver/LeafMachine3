@@ -1327,7 +1327,11 @@ def _render_thumb(src: Path, dst: Path, width: int) -> None:
 
 def _render_thumb_pil(src: Path, dst: Path, width: int) -> bool:
     try:
-        from PIL import Image, ImageOps
+        from PIL import ImageOps
+
+        from leafmachine3.core.imaging import configure_pillow
+
+        Image = configure_pillow()
     except Exception:                                        # noqa: BLE001 - optional dependency
         return False
     try:

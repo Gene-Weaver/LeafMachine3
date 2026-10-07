@@ -18,6 +18,31 @@ except Exception:  # pragma: no cover - cv2 always present at runtime
 
 
 # ---- image IO ------------------------------------------------------------------
+#: The largest image, in pixels, LM3 will decode with Pillow: 1 gigapixel (e.g. 25,000 x 40,000).
+#:
+#: Pillow's own default (MAX_IMAGE_PIXELS = 89,478,485) is a defense for web servers decoding
+#: untrusted uploads: it WARNS above that and raises DecompressionBombError above twice that
+#: (178,956,970 px). Herbarium scans are routinely 100-200 MP, so with the default every sheet above
+#: 89 MP printed a warning and every sheet above 179 MP raised -- which ingest caught as a decode
+#: failure and quarantined as "corrupt", silently dropping the specimen from the run. The guard is
+#: kept, not disabled: a crafted file claiming 10+ gigapixels is still refused.
+MAX_IMAGE_PIXELS = 1_000_000_000
+
+
+def configure_pillow():
+    """Raise Pillow's decompression-bomb limit to :data:`MAX_IMAGE_PIXELS`; return ``PIL.Image``.
+
+    Every module that decodes ORIGINAL images with Pillow imports Image through this, so the limit is
+    defined once. Never lowers a limit someone set higher (or disabled) on purpose.
+    """
+    from PIL import Image  # noqa: PLC0415 - Pillow is only needed by the callers that decode originals
+
+    current = Image.MAX_IMAGE_PIXELS
+    if current is not None and current < MAX_IMAGE_PIXELS:
+        Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+    return Image
+
+
 def read_image(path):
     """Read an image as a BGR ``np.ndarray`` (raises if unreadable)."""
     img = cv2.imread(str(path), cv2.IMREAD_COLOR)

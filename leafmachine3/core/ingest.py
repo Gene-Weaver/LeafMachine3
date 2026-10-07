@@ -26,10 +26,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image
-
 from leafmachine3.core.dirs import build_dirs
+from leafmachine3.core.imaging import MAX_IMAGE_PIXELS, configure_pillow
 from leafmachine3.core.records import SpecimenRecord
+
+#: PIL.Image with LM3's decompression-bomb limit (core/imaging.py): herbarium sheets are huge.
+Image = configure_pillow()
 
 log = logging.getLogger(__name__)
 
@@ -118,6 +120,10 @@ class ImageIngestor:
 
         try:
             meta = self._probe(original)                # verify() then read w/h/mode/format
+        except Image.DecompressionBombError as exc:     # larger than 2 x MAX_IMAGE_PIXELS
+            self._quarantine(original, "too_large",
+                             f"{exc} (LM3 decodes up to {MAX_IMAGE_PIXELS:,} px; see core/imaging.py)")
+            return
         except Exception:
             self._quarantine(original, "corrupt")
             return
@@ -228,12 +234,12 @@ class ImageIngestor:
                 return True
         return False
 
-    def _quarantine(self, original: Path, reason: str) -> None:
+    def _quarantine(self, original: Path, reason: str, detail: str = "") -> None:
         """Record a non-decodable input under ``INVALID/`` WITHOUT touching the original."""
         self.invalid.mkdir(parents=True, exist_ok=True)
         marker = self.invalid / f"{original.stem}_{self._short_hash(original)}.{reason}.txt"
-        marker.write_text(f"{reason}\t{original}\n", encoding="utf-8")
-        log.warning("ingest | quarantined (%s): %s", reason, original)
+        marker.write_text(f"{reason}\t{original}" + (f"\t{detail}" if detail else "") + "\n", encoding="utf-8")
+        log.warning("ingest | quarantined (%s): %s%s", reason, original, f" -- {detail}" if detail else "")
 
     def _clean_working_set(self) -> None:
         """Remove working-set symlinks and normalized ``_tmp`` copies (restart)."""
