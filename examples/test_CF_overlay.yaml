@@ -82,7 +82,7 @@ modules:
   ruler_cf: {enabled: true, anchor_tol: 0.25, min_frame_cm: null}
   leaf_segmenter:
     enabled: true
-    model: {path: ../models/leaf_segmenter/model.pt, format: pytorch}
+    model: {path: ../models/leaf_segmenter/model.onnx, format: onnx}
     include_partial: false
     imgsz: 1024
     conf: 0.3
