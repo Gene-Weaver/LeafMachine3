@@ -79,6 +79,10 @@ _ISOLATED_ENV: tuple[str, ...] = (
     "XDG_DATA_HOME",
     "XDG_RUNTIME_DIR",
     "MPLCONFIGDIR",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
     _SANDBOX_ENV,
     _ORIGINAL_ENV_VAR,
 )
@@ -172,6 +176,15 @@ def _isolate_runtime_environment() -> tuple[Path, bool, dict[str, str | None]]:
     # so a test exercising the non-checkout branch would otherwise write RUN OUTPUT into the
     # developer's real data directory.
     os.environ["XDG_DATA_HOME"] = str(sandbox / "data")
+    # XDG variables are ignored by the native Windows/macOS path resolvers.
+    # Give those resolvers temporary native roots too, before test modules import LM3.
+    if sys.platform == "darwin":
+        test_home = sandbox / "home"
+        test_home.mkdir(exist_ok=True)
+        os.environ["HOME"] = str(test_home)
+    elif sys.platform == "win32":
+        os.environ["APPDATA"] = str(sandbox / "config")
+        os.environ["LOCALAPPDATA"] = str(sandbox / "state")
     os.environ["XDG_RUNTIME_DIR"] = str(sandbox / "xdg-runtime")
     os.environ["LM3_SERVER_JOBS"] = str(sandbox / "jobs")
     # Pointed at sandbox paths that do NOT exist rather than left unset: these two files are the

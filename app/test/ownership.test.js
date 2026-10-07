@@ -126,6 +126,24 @@ test("an activated virtual environment is usable by a packaged app", () => {
   assert.strictEqual(spec.source, "VIRTUAL_ENV");
 });
 
+test("a checkout launch finds the environment created by uv sync", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-uv-checkout-"));
+  const python = executable(path.join(root, ".venv", "bin", "python3"));
+  const spec = main.resolveBackendLaunch({ env: { PATH: "" }, root, platform: "linux" });
+  assert.strictEqual(spec.command, python);
+  assert.strictEqual(spec.cwd, root);
+});
+
+test("a packaged Windows shell can use an explicit checkout's uv environment", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-win-uv-checkout-"));
+  const python = executable(path.join(root, ".venv", "Scripts", "python.exe"));
+  const spec = main.resolveBackendLaunch({
+    env: { LM3_ROOT: root, PATH: "" }, root, packaged: true, platform: "win32",
+  });
+  assert.strictEqual(spec.command, python);
+  assert.strictEqual(spec.cwd, root);
+});
+
 test("a packaged app finds the installed lm3 console command on PATH without probing it", () => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-console-bin-"));
   const command = executable(path.join(bin, "lm3"));

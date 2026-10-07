@@ -40,7 +40,14 @@ def test_the_sandbox_exists_and_is_not_the_checkout_or_the_home_directory():
     sandbox = C.LM3_PYTEST_SANDBOX
     assert sandbox.is_dir()
     assert not _under(sandbox, _REPO_ROOT)
-    assert not _under(sandbox, Path.home())
+    # Windows' normal temporary directory lives inside the user's home (AppData/Local/Temp).
+    # That is safe; only using the home itself as the sandbox would be destructive.
+    assert sandbox.resolve() != Path.home().resolve()
+
+
+@pytest.mark.parametrize("resolver", [P.user_config_dir, P.user_state_dir, P.user_cache_dir, P.user_data_dir])
+def test_native_user_directories_are_also_isolated(resolver):
+    assert _under(resolver(), C.LM3_PYTEST_SANDBOX)
 
 
 @pytest.mark.parametrize(

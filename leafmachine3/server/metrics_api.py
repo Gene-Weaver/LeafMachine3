@@ -2185,7 +2185,7 @@ def start_run(config_path: Optional[str] = None, input_dir: Optional[str] = None
             run.log_fh = fh
             run.pid = proc.pid
             try:
-                run.pgid = os.getpgid(proc.pid)
+                run.pgid = os.getpgid(proc.pid) if hasattr(os, "getpgid") else None
             except OSError:
                 run.pgid = proc.pid
             # No ``psutil`` creation-time probe any more: it existed only to guard a PID read back

@@ -165,7 +165,8 @@ def test_atomic_write_publishes_the_payload_user_only_and_leaves_no_temp_file(tm
     R.atomic_write_json(target, {"schema_version": 1, "run_id": "x"})
 
     assert json.loads(target.read_text()) == {"schema_version": 1, "run_id": "x"}
-    assert (target.stat().st_mode & 0o777) == 0o600
+    if os.name == "posix":
+        assert (target.stat().st_mode & 0o777) == 0o600
     assert [p.name for p in target.parent.iterdir()] == ["active.json"]
 
 
@@ -438,7 +439,7 @@ def test_validate_rejects_an_unbounded_field_and_sanitize_truncates_it(tmp_path:
 def test_sanitize_shrinks_a_record_that_the_per_field_bounds_alone_cannot_bound(tmp_path: Path):
     # 64 input dirs at 4096 characters each is 256 KiB -- four times MAX_RECORD_BYTES -- so the
     # per-field caps are satisfied while the record is not.
-    fat = tuple(f"/{'d' * 4000}/{index}" for index in range(T.MAX_INPUT_DIRS))
+    fat = tuple(str(Path(tmp_path.anchor) / ("d" * 4000) / str(index)) for index in range(T.MAX_INPUT_DIRS))
     project = dataclasses.replace(in_place_project(tmp_path), input_dirs=fat)
     record = root_record(tmp_path, project=project)
     with pytest.raises(T.RecordSchemaError, match="bounded description"):
@@ -503,6 +504,9 @@ def test_a_staged_run_before_its_first_snapshot_is_pending_not_a_failure(tmp_pat
     ],
 )
 def test_every_illegal_staged_pairing_is_rejected(tmp_path: Path, kwargs, match: str):
+    kwargs = dict(kwargs)
+    if kwargs.get("archived"):
+        kwargs["archived"] = str(tmp_path / "persistent" / "a.sqlite")
     with pytest.raises(T.RecordSchemaError, match=match):
         R.validate_record(root_record(tmp_path, project=staged_project(tmp_path, **kwargs)))
 

@@ -46,11 +46,23 @@ def test_predict_cf_degenerate_returns_none() -> None:
     assert m.predict_cf(None, None) is None
 
 
-def test_load_model_json() -> None:
-    m = load_model(str(_MODEL_DIR / "model.json"))
+def test_load_model_json(tmp_path: Path) -> None:
+    # Model artifacts are downloaded separately and are absent from a clean checkout.
+    path = tmp_path / "model.json"
+    path.write_text(json.dumps({"slope": 2.5, "intercept": 17.0}), encoding="utf-8")
+    m = load_model(path)
     assert m.source == "model.json"
-    assert abs(m.slope - _FALLBACK_SLOPE) < 1e-6
-    assert abs(m.intercept - _FALLBACK_INTERCEPT) < 1e-6
+    assert m.slope == 2.5
+    assert m.intercept == 17.0
+
+
+def test_load_sqrt_model_json(tmp_path: Path) -> None:
+    path = tmp_path / "model.json"
+    path.write_text(json.dumps({"model": "sqrt", "k": 23.5}), encoding="utf-8")
+    m = load_model(path)
+    assert m.source == "model.json"
+    assert m.form == "sqrt" and m.frame == "working"
+    assert m.predict_cf(2000, 2000) == 47.0
 
 
 def test_load_model_missing_falls_back() -> None:

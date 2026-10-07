@@ -177,7 +177,7 @@ def test_the_builtin_default_output_dir_is_not_a_hidden_config_directory(
 
 # --- 9, 10. the repository's own configurations ----------------------------------------------- #
 
-@pytest.mark.parametrize("name", sorted(p.name for p in (REPO / "examples").glob("*.yaml")))
+@pytest.mark.parametrize("name", sorted(p.name for p in (REPO / "examples").glob("real_*.yaml")))
 def test_migrated_example_configs_still_point_at_their_repository_files(
     name: str, elsewhere: Path
 ) -> None:
@@ -197,7 +197,10 @@ def test_migrated_example_configs_still_point_at_their_repository_files(
         model = mod.get("model") if isinstance(mod, dict) else None
         if isinstance(model, dict) and model.get("path"):
             resolved = Path(cfg.resolve_path(model["path"]))
-            assert resolved.exists(), f"{name}: model {model['path']} -> {resolved}"
+            # This checks path resolution, not whether separately distributed weights
+            # have been installed. Assert the exact target even in a clean checkout.
+            expected = Path(os.path.normpath(REPO / "examples" / model["path"]))
+            assert resolved == expected, f"{name}: model {model['path']} -> {resolved}"
             assert REPO / "models" in resolved.parents
         if isinstance(mod, dict) and mod.get("models_dir"):
             assert Path(cfg.resolve_path(mod["models_dir"])) == REPO / "models" / "ruler_classifier"

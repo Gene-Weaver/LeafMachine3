@@ -51,6 +51,8 @@ def isolated_deployment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
     monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local" / "state"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(home / ".cache"))
+    monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
     monkeypatch.setenv("LM3_DEPLOYMENT_ID", "test-setup-paths")
     for name in _PATH_ENV:
         monkeypatch.delenv(name, raising=False)
@@ -97,7 +99,7 @@ def test_the_profile_lives_in_the_deployment_config_dir_and_is_machine_keyed(
     assert path.parent == paths.deployment_config_dir()
     # ``lm3/<canonical key>`` where the canonical key is the slug plus a hash of the raw id, so a
     # deployment name that is not filesystem-safe still gets a stable, collision-free directory.
-    assert path.parent.parent == isolated_deployment / "lm3"
+    assert path.parent.parent == paths.user_config_dir() / "lm3"
     assert path.parent.name.startswith("test-setup-paths-")
     assert path.name.startswith("hardware_settings.") and path.suffix == ".yaml"
     # The machine key is what stops one networked <user-config>, shared by a whole cluster

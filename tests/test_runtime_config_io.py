@@ -90,7 +90,7 @@ def test_to_dict_sorts_keys_and_normalizes_unjsonable_values(tmp_path: Path) -> 
 
     assert list(dumped) == sorted(dumped)                       # the dict itself is canonical
     assert list(dumped["aaa"]) == ["a", "z"]
-    assert dumped["aaa"]["z"] == "/abs/path"                    # Path normalized, trailing slash gone
+    assert dumped["aaa"]["z"] == str(Path("/abs/path"))          # native separators, trailing slash gone
     assert dumped["aaa"]["a"] == "2026-08-28"                   # a YAML date survives as a string
     json.dumps(dumped)                                          # and the whole tree is JSON-safe
 

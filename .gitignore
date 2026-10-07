@@ -119,3 +119,6 @@ tests/test_global_greening_wrapper.py
 
 # Previous README, kept locally for reference while the rewrite settles.
 /README.md.bak
+
+# Local desktop/CI investigation notes.
+/docs/desktop-ci-status.md

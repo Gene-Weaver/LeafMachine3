@@ -118,7 +118,12 @@ function resolveBackendLaunch({ env = process.env, root = path.resolve(__dirname
   addPrefix(env.CONDA_PREFIX, "CONDA_PREFIX");
   // In a source checkout this is the normal path. In a package it is considered only when
   // LM3_ROOT was explicitly supplied; <install>/resources is known not to contain the venv.
-  if (!packaged || String(env.LM3_ROOT || "").trim()) addPrefix(root, "LM3_ROOT checkout");
+  if (!packaged || String(env.LM3_ROOT || "").trim()) {
+    // uv sync creates .venv inside the checkout, not bin/python at its root.
+    for (const directory of [".venv", ".venv_LM3_noultra", ".venv_LM3"]) {
+      addPrefix(path.join(root, directory), "LM3_ROOT checkout");
+    }
+  }
 
   const seen = new Set();
   for (const [prefix, source] of prefixes) {

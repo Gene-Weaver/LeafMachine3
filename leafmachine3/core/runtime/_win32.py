@@ -112,6 +112,44 @@ class Win32ApiSurface:
             self._kernelbase = self._kernel32
         self._sid: str | None = None
         self._security_attributes: Any = None
+        self._configure_signatures()
+
+    def _configure_signatures(self) -> None:
+        """Declare pointer-sized arguments and results before any native call.
+
+        ctypes otherwise treats Python integers and return values as C ints. In
+        particular a 64-bit SID pointer cannot be passed to ConvertSidToStringSidW
+        without truncation/overflow, preventing every real Windows lease acquisition.
+        """
+        from ctypes import wintypes                                  # noqa: PLC0415 - Windows-only import
+
+        pointer = ctypes.c_void_p
+        handle_pointer = ctypes.POINTER(wintypes.HANDLE)
+        dword_pointer = ctypes.POINTER(wintypes.DWORD)
+        signatures = (
+            (self._kernel32, "GetCurrentProcess", [], wintypes.HANDLE),
+            (self._kernel32, "CreateEventW", [pointer, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR], wintypes.HANDLE),
+            (self._kernel32, "OpenEventW", [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR], wintypes.HANDLE),
+            (self._kernel32, "CloseHandle", [wintypes.HANDLE], wintypes.BOOL),
+            (self._kernel32, "DuplicateHandle", [wintypes.HANDLE, wintypes.HANDLE, wintypes.HANDLE,
+                                               handle_pointer, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.BOOL),
+            (self._kernel32, "SetHandleInformation", [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD], wintypes.BOOL),
+            (self._kernel32, "LocalFree", [pointer], pointer),
+            (self._advapi32, "OpenProcessToken", [wintypes.HANDLE, wintypes.DWORD, handle_pointer], wintypes.BOOL),
+            (self._advapi32, "GetTokenInformation", [wintypes.HANDLE, ctypes.c_int, pointer,
+                                                    wintypes.DWORD, dword_pointer], wintypes.BOOL),
+            (self._advapi32, "ConvertSidToStringSidW", [pointer, ctypes.POINTER(wintypes.LPWSTR)], wintypes.BOOL),
+            (self._advapi32, "ConvertStringSecurityDescriptorToSecurityDescriptorW",
+             [wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(pointer), dword_pointer], wintypes.BOOL),
+        )
+        for library, name, arguments, result in signatures:
+            function = getattr(library, name)
+            function.argtypes = arguments
+            function.restype = result
+        compare = getattr(self._kernelbase, "CompareObjectHandles", None)
+        if compare is not None:
+            compare.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+            compare.restype = wintypes.BOOL
 
     # -- error plumbing ------------------------------------------------------------------------ #
 

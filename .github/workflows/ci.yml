@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -13,6 +17,9 @@ jobs:
         python-version: ["3.11"]   # the one interpreter requires-python allows (tools/release/versions.env)
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -72,10 +79,7 @@ jobs:
   # No `-p no:recording` here: that flag exists only for developer interpreters where
   # pytest-recording and pytest-vcr collide, and `.[cpu,dev]` installs neither.
   #
-  # NOT YET DEMONSTRATED: this checkout has no git remote, so NOTHING under .github/workflows/ has
-  # ever executed -- neither this job nor the `test` job above. An unexecuted workflow is not
-  # evidence (plan §1.1 rule 3). Step 2 may not claim its "all three platforms" exit gate, nor §8
-  # gate 27, on the strength of this file; only on a green run after the branch reaches an upstream.
+  # These runners provide the native evidence; Linux fakes alone do not qualify a release.
   platform-primitives:
     strategy:
       fail-fast: false
@@ -138,3 +142,35 @@ jobs:
           # "verified against the Windows adapter itself, not inferred from the POSIX result".
           grep -q "3 passed" win32-real-surface.log
           ! grep -qi "skipped" win32-real-surface.log
+
+  desktop:
+    name: Desktop shell (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Server discovery, deployment identity, and ownership tests
+        run: npm test
+      - name: Package the native shell (unsigned CI build)
+        run: npm run pack -- -c.mac.hardenedRuntime=false -c.mac.notarize=false
+      - name: Save native package for smoke testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-shell-${{ matrix.os }}-${{ github.sha }}
+          path: app/dist/
+          retention-days: 7
+          if-no-files-found: error

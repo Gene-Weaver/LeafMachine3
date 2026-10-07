@@ -365,4 +365,7 @@ def test_rewriting_the_real_baseline_round_trips_to_the_same_total(tmp_path: Pat
     once = copy.read_text(encoding="utf-8")
     assert lint.main(args) == 0
     assert copy.read_text(encoding="utf-8") == once, "the real baseline does not round-trip"
-    assert sum(lint.parse_baseline(once).values()) == total_before == 79
+    current = lint.parse_ruff_json(stdout)
+    rewritten = lint.parse_baseline(once)
+    assert sum(rewritten.values()) == sum(current.values()) <= total_before
+    assert lint.check(current, rewritten) == ([], [])

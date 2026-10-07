@@ -4,8 +4,7 @@
 machine learning and computer vision tools that locates, isolates, and measures the plant and
 archival components of a digitized specimen: every leaf is segmented, landmarked, oriented, and
 measured; every ruler is read for a pixel-to-metric conversion factor; every label, barcode, and
-color card is cropped for downstream work. One run turns a folder of images into annotated review
-overlays, per-leaf cutouts, and a one-row-per-leaf CSV.
+color card is cropped for downstream work. Each run produces annotated overlays, per-leaf cutouts, and a CSV with one row per leaf.
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
@@ -142,6 +141,7 @@ uv run lm3 models install --yes
 ### Verify
 
 ```bash
+uv --version                               # must print 0.12.23
 uv run lm3 doctor                            # must end with "Result: READY"
 uv run machine3 --config LM3_settings.yaml   # processes examples/images into runs/demo/
 uv run lm3 serve                             # GUI at http://127.0.0.1:8765  (Ctrl+C stops it)

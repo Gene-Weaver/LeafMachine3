@@ -55,6 +55,10 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # tmp_path, never in the developer's ~/.config/lm3.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
     # The deprecation warnings are memoized per process (that IS the "warn once" mechanism), so the
     # memo has to be dropped between tests or the second test to use a given environment sees none.
     server_app._LEGACY_CACHE.clear()

@@ -283,7 +283,8 @@ def test_issue_grant_returns_the_raw_value_and_writes_only_its_digest(deployment
     assert grant.capability_sha256 in text
     # 0600: the grant is in the user's runtime directory, and section 3.2's rule about secrets
     # applies to everything the registry writes.
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize("purpose", [Activity.PIPELINE, Activity.HARDWARE_SETUP])
