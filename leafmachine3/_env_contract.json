@@ -216,11 +216,6 @@
     "marker": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
    },
    {
-    "name": "nvidia-nvjitlink-cu12",
-    "version": "12.4.127",
-    "marker": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
-   },
-   {
     "name": "onnxruntime-gpu",
     "version": "1.20.2",
     "marker": "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"

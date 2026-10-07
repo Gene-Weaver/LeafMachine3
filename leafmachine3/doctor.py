@@ -11,7 +11,7 @@ at the first failure, because a later check's result is meaningless on top of an
  1    interpreter            Python is the release's 3.11 and runs inside a virtual environment
  2    hardware variant       exactly one onnxruntime distribution is installed (gpu|cpu|macos)
  3    environment contract   every package in ``_env_contract.json`` for that variant is installed
-                             at exactly the locked version
+                             at exactly the locked version AND every file it installed still exists
  4    platform               this OS / CPU architecture is supported for that variant
  5    NVIDIA driver          (gpu) NVML sees a GPU and the driver meets the CUDA 12.4 minimum
  6    accelerator            a real ONNX Runtime session binds the accelerator AND runs, in a child
@@ -79,20 +79,51 @@ class Env:
     installed: dict[str, str]                # normalized dist name -> version
     environ: Mapping[str, str]
     contract: dict
+    #: normalized dist name -> files its RECORD lists that are no longer on disk
+    missing_files: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
     def current(cls) -> "Env":
         installed: dict[str, str] = {}
+        missing: dict[str, list[str]] = {}
         for d in metadata.distributions():
             name = d.metadata.get("Name")
-            if name:
-                installed.setdefault(_norm(name), d.version)
+            if name and _norm(name) not in installed:
+                installed[_norm(name)] = d.version
+                gone = missing_record_files(d)
+                if gone:
+                    missing[_norm(name)] = gone
         return cls(
             python_version=platform.python_version(), executable=sys.executable, prefix=sys.prefix,
             base_prefix=getattr(sys, "base_prefix", sys.prefix), sys_platform=sys.platform,
             machine=platform.machine(), installed=installed, environ=dict(os.environ),
-            contract=load_contract(),
+            contract=load_contract(), missing_files=missing,
         )
+
+
+#: Files a package may list yet legitimately lose. ``nvidia/__init__.py`` is the namespace marker that
+#: several nvidia-* wheels each claim; uninstalling any one deletes it for all. LM3 finds the CUDA
+#: libraries through ``nvidia.__path__`` (core/cuda_libs.py), so its absence is harmless.
+HARMLESS_MISSING = frozenset({"nvidia/__init__.py"})
+
+
+def missing_record_files(dist: metadata.Distribution) -> list[str]:
+    """Files ``dist`` installed (per its RECORD) that are gone.
+
+    Two packages that install into the same directory corrupt each other on uninstall: removing one
+    deletes files the other still needs, while the survivor's metadata still claims a clean install.
+    Seen on 2026-10-07 with opencv-python / opencv-python-headless (cv2/ deleted) and the nvidia-*
+    namespace. Version metadata cannot see this; only the files can. Stat only, no hashing (~10k
+    files, well under a second).
+    """
+    gone = []
+    for f in dist.files or ():
+        rel = str(f).replace("\\", "/")
+        if rel.startswith("../") or "__pycache__/" in rel or rel.endswith(".pyc") or rel in HARMLESS_MISSING:
+            continue
+        if not Path(dist.locate_file(f)).exists():
+            gone.append(rel)
+    return gone
 
 
 def load_contract() -> dict:
@@ -213,7 +244,16 @@ def check_contract(env: Env, variant: str) -> Check:
                      "; ".join(parts) + (f"; and {more} more" if more > 0 else "")
                      + " -- this is not the environment this release was tested with",
                      SYNC_HINT.format(extra=variant))
-    return Check(3, "environment contract", OK, f"{len(rows)} packages at their locked versions")
+    damaged = {r["name"]: env.missing_files[r["name"]] for r in rows if env.missing_files.get(r["name"])}
+    if damaged:
+        desc = "; ".join(f"{name} is missing {len(files)} of its files (e.g. {files[0]})"
+                         for name, files in list(damaged.items())[:3])
+        more = len(damaged) - 3
+        return Check(3, "environment contract", FAIL,
+                     desc + (f"; and {more} more packages" if more > 0 else "")
+                     + " -- another package's uninstall deleted them; the version metadata still looks right",
+                     f"uv sync --frozen --extra {variant} " + " ".join(f"--reinstall-package {n}" for n in damaged))
+    return Check(3, "environment contract", OK, f"{len(rows)} packages at their locked versions, files intact")
 
 
 def check_platform(env: Env, variant: str) -> Check:

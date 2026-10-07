@@ -304,3 +304,39 @@ def test_probe_main_routes_cuda_through_machine3s_loader_step(monkeypatch):
     doctor_probe.main()
     # the re-exec must relaunch the MODULE, not the file as a bare script
     assert calls == [["-m", "leafmachine3.doctor_probe", "CUDAExecutionProvider"]]
+
+
+# -------------------------------------------------------------------------------------------------- check 3: files
+
+def test_files_deleted_by_another_uninstall_fail_with_a_targeted_reinstall():
+    """2026-10-07: removing the dev group deleted cv2/ under opencv-python-headless (shared directory)."""
+    env = make_env(missing_files={"numpy": ["numpy/_core/_multiarray_umath.so", "numpy/__init__.py"]})
+    c = next(c for c in run(env).checks if c.num == 3)
+    assert c.status == FAIL and "numpy is missing 2 of its files" in c.detail
+    assert c.fix == "uv sync --frozen --extra gpu --reinstall-package numpy"
+
+
+def test_missing_files_of_packages_outside_the_contract_are_ignored():
+    env = make_env(missing_files={"some-dev-tool": ["x.py"]})
+    assert next(c for c in run(env).checks if c.num == 3).status == OK
+
+
+def test_missing_record_files_on_a_real_dist_info(tmp_path):
+    from importlib import metadata
+
+    site = tmp_path / "site-packages"
+    info = site / "fake_pkg-1.0.dist-info"
+    (site / "fake_pkg").mkdir(parents=True)
+    (site / "nvidia").mkdir()
+    info.mkdir()
+    (site / "fake_pkg" / "kept.py").write_text("")
+    (info / "METADATA").write_text("Metadata-Version: 2.1\nName: fake-pkg\nVersion: 1.0\n")
+    (info / "RECORD").write_text(
+        "fake_pkg/kept.py,,\n"
+        "fake_pkg/deleted.so,,\n"
+        "fake_pkg/__pycache__/kept.cpython-311.pyc,,\n"   # compiled files come and go: ignored
+        "nvidia/__init__.py,,\n"                          # the shared namespace marker: harmless
+        "../../../bin/fake,,\n"                           # scripts outside site-packages: ignored
+        "fake_pkg-1.0.dist-info/RECORD,,\n")
+    dist = metadata.PathDistribution(info)
+    assert doctor.missing_record_files(dist) == ["fake_pkg/deleted.so"]

@@ -27,6 +27,9 @@ conflicts = [[
     { package = "leafmachine3", extra = "macos" },
 ]]
 
+[manifest]
+overrides = [{ name = "opencv-python", marker = "sys_platform == 'never'" }]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.5"
@@ -454,7 +457,6 @@ test = [
 [package.dev-dependencies]
 full = [
     { name = "onnx", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
-    { name = "opencv-python", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
     { name = "torch", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
     { name = "torchvision", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
     { name = "ultralytics", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
@@ -502,7 +504,6 @@ provides-extras = ["gpu", "cpu", "macos", "server", "dev", "test"]
 [package.metadata.requires-dev]
 full = [
     { name = "onnx", marker = "sys_platform == 'linux'", specifier = "==1.22.0" },
-    { name = "opencv-python", marker = "sys_platform == 'linux'", specifier = "==5.0.0.93" },
     { name = "torch", marker = "sys_platform == 'linux'", specifier = "==2.6.0", index = "https://download.pytorch.org/whl/cu124", conflict = { package = "leafmachine3", group = "full" } },
     { name = "torchvision", marker = "sys_platform == 'linux'", specifier = "==0.21.0", index = "https://download.pytorch.org/whl/cu124", conflict = { package = "leafmachine3", group = "full" } },
     { name = "ultralytics", marker = "sys_platform == 'linux'", specifier = "==8.4.107" },
@@ -696,9 +697,6 @@ wheels = [
 name = "nvidia-cufft-cu12"
 version = "11.2.1.3"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform == 'linux' or (sys_platform == 'win32' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos')" },
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/94/3266821f65b92b3138631e9c8e7fe1fb513804ac934485a8d05776e1dd43/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl", hash = "sha256:f083fc24912aa410be21fa16d157fed2055dab1cc4b6934a0e03cba69eb242b9", size = 211459117, upload-time = "2024-04-03T20:57:40.402Z" },
     { url = "https://files.pythonhosted.org/packages/f6/ee/3f3f8e9874f0be5bbba8fb4b62b3de050156d159f8b6edc42d6f1074113b/nvidia_cufft_cu12-11.2.1.3-py3-none-win_amd64.whl", hash = "sha256:d802f4954291101186078ccbe22fc285a902136f974d369540fd4a5333d1440b", size = 210576476, upload-time = "2024-04-03T21:04:06.422Z" },
@@ -837,21 +835,6 @@ dependencies = [
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5e/53/9341b875b0ed29953485b43713e94b335a449c3770fed67dddb3c9b84af0/onnxruntime_gpu-1.20.2-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:85057c7006457bee14fc2a57417b7e4f396f10d9c1b08b11aae08ac2b825eeda", size = 291518407, upload-time = "2025-03-07T05:46:22.943Z" },
     { url = "https://files.pythonhosted.org/packages/0b/7a/0999993ceae7bf191d5d63a4e1b2208596763d8e586aa7dc5cc091f960c0/onnxruntime_gpu-1.20.2-cp311-cp311-win_amd64.whl", hash = "sha256:d0eafd873e4336949c89e6c7429a68e7e1d0233d9cb363e9780ca76c3c6f865c", size = 279697437, upload-time = "2025-03-07T05:39:38.418Z" },
-]
-
-[[package]]
-name = "opencv-python"
-version = "5.0.0.93"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/79/4c/a438d23e09ce2033c09f7b784ad2fbdb0adf529e434101ed28f142226f98/opencv_python-5.0.0.93.tar.gz", hash = "sha256:66aac3e5b5faa48d4025816592f3af19e4bfc2c68dec067bae2dbb4ca10aa9e2", size = 81802749, upload-time = "2026-07-02T06:59:53.815Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/75/76f6ade78f6102c61034f828e2a22616708df2c9504bc8d6af9dd8f73dc5/opencv_python-5.0.0.93-cp37-abi3-macosx_13_0_arm64.whl", hash = "sha256:198a75138241810206a17c829dbcc40a7cb1841cda538ca86cbbfc6c7d95f898", size = 48322443, upload-time = "2026-07-02T05:50:25.466Z" },
-    { url = "https://files.pythonhosted.org/packages/95/54/eb47866b94f2b5b42dde17644b78055ef1ee05aae59962c7290e55270803/opencv_python-5.0.0.93-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:f8b6d0a212253dd26ad338c812f1f23ca118fdf05a9c8c6b9444f161aa8c5881", size = 71064711, upload-time = "2026-07-02T06:54:13.148Z" },
-    { url = "https://files.pythonhosted.org/packages/cf/4c/c73f828fdbcd37eaf21d08fa852544a3ca7c2dbb3ea76873d64f2ea413d1/opencv_python-5.0.0.93-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:c8de2dec111122a02e8beb28e16c31904992dfd6186560b142a92c71403c1039", size = 73783032, upload-time = "2026-07-02T06:55:03.415Z" },
-    { url = "https://files.pythonhosted.org/packages/21/f0/9fa6e85cb10c8eb36a0222d27e50fe381b86ce49a55446bf39f491727564/opencv_python-5.0.0.93-cp37-abi3-win_amd64.whl", hash = "sha256:f90ba04b8f73bc5c3814037699739f0156f597338a98f05956c684e7c3ca10d2", size = 44000345, upload-time = "2026-07-02T05:49:54.971Z" },
 ]
 
 [[package]]
@@ -1325,7 +1308,6 @@ dependencies = [
     { name = "matplotlib", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
     { name = "numpy", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
     { name = "nvidia-ml-py", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
-    { name = "opencv-python", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
     { name = "pillow", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
     { name = "polars", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },
     { name = "psutil", marker = "sys_platform == 'linux' or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-gpu') or (extra == 'extra-12-leafmachine3-cpu' and extra == 'extra-12-leafmachine3-macos') or (extra == 'extra-12-leafmachine3-gpu' and extra == 'extra-12-leafmachine3-macos')" },

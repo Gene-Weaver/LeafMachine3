@@ -91,10 +91,11 @@ test = [
 # Dockerfile, wheelhouse or user-facing CI leg installs it. It is what the ultralytics-parity tests,
 # tools/verification/ab_ultralytics_vs_ultra_rep.py and the experiments need:
 #     uv sync --frozen --extra gpu --group full
-# opencv-python is pinned to the SAME version as opencv-python-headless: both install the `cv2`
-# package directory, so a different version here would silently change resize/decode numerics in
-# the dev environment relative to production. Linux only (the lab box); the PyTorch cu124 index has
-# no macOS wheels.
+# ultralytics depends on opencv-python, which installs the SAME `cv2/` directory as production's
+# opencv-python-headless. With both present, removing the group (going back to production) deletes
+# cv2 out from under the headless package -- found on 2026-10-07. [tool.uv] override-dependencies
+# removes opencv-python from the resolution entirely, so ultralytics uses the headless cv2 and dev and
+# production run one OpenCV build. Linux only (the lab box); the PyTorch cu124 index has no macOS wheels.
 # NEVER run ultralytics on a CPU device in this environment: its ONNX backend `pip install`s the CPU
 # onnxruntime over onnxruntime-gpu (check_requirements). See PACKAGING_PLAN.md section 13.
 [dependency-groups]
@@ -102,7 +103,6 @@ full = [
     "torch==2.6.0; sys_platform == 'linux'",
     "torchvision==0.21.0; sys_platform == 'linux'",
     "ultralytics==8.4.107; sys_platform == 'linux'",
-    "opencv-python==5.0.0.93; sys_platform == 'linux'",
     "onnx==1.22.0; sys_platform == 'linux'",
 ]
 
@@ -123,6 +123,9 @@ required-environments = [
     "sys_platform == 'win32' and platform_machine == 'AMD64'",
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
+# opencv-python (ultralytics' dependency) is never installed: it shares the cv2/ directory with
+# opencv-python-headless, and uninstalling either deletes the other's files. See [dependency-groups].
+override-dependencies = ["opencv-python; sys_platform == 'never'"]
 conflicts = [
     [{ extra = "gpu" }, { extra = "cpu" }],
     [{ extra = "gpu" }, { extra = "macos" }],
