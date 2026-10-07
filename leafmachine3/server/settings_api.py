@@ -585,6 +585,23 @@ def _collect_warnings(cfg: Any, values: dict, settings_file: Path | None = None)
                          f"Ruler classifier models folder not found: {cfg.resolve_model_path(mdir)}")
         except Exception:  # noqa: BLE001
             pass
+        # The specimen segmenter is named by model.key; a missing key or a retired imgsz is a
+        # warning here (an unknown key is a hard error from Config.validate()).
+        try:
+            if cfg.is_enabled("specimen_segmenter"):
+                from leafmachine3.inference.specimen_models import (  # noqa: PLC0415
+                    UnknownSpecimenModel, resolve_specimen_model,
+                )
+                try:
+                    _spec, notes = resolve_specimen_model(cfg.stage("specimen_segmenter"))
+                    for note in notes:
+                        path = ("modules.specimen_segmenter.imgsz" if "imgsz" in note.split(" is ")[0]
+                                else "modules.specimen_segmenter.model.key")
+                        warn("specimen_model", path, note)
+                except UnknownSpecimenModel:
+                    pass                      # reported as an error by Config.validate()
+        except Exception:  # noqa: BLE001
+            pass
 
         # A typo'd module key is silently ignored by the merge -- the real module keeps running
         # with its default settings, which is the most confusing failure mode there is.

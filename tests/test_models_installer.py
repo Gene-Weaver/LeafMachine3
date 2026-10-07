@@ -49,6 +49,9 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                    "files": [{"src": "model.json", "dest": "ph/model.json", "format": "meta", "sha256": None, "bytes": None}]}]},
         },
     }
+    hub[("org/alt", "onnx/model.onnx")] = b"ALT-ONNX"
+    lock["alternates"] = {"seg": {"alt_key": {"settings": {"imgsz": 640}, "units": [{"repo_id": "org/alt", "revision": "r9", "model_key": "alt_key",
+                          "files": [f("org/alt", "onnx/model.onnx", "seg/alt_key/model.onnx", "onnx")]}]}}}
     lock_path = tmp_path / "lock.yaml"
     lock_path.write_text(yaml.safe_dump(lock))
     root = tmp_path / "models"
@@ -244,3 +247,41 @@ def test_cli_status_and_install(world, monkeypatch, capsys):
     assert cli.main(["--dest", str(world.root), "--lock", str(world.lock_path), "install", "--yes"]) == 0
     assert cli.main(["--dest", str(world.root), "--lock", str(world.lock_path), "verify"]) == 0
     assert "Models are up to date" in capsys.readouterr().out
+
+
+def test_alternates_install_on_request_only_and_never_count_as_missing(world):
+    installer.install(world.root, lock=world.lock, downloader=world.downloader)
+    assert not (world.root / "seg/alt_key/model.onnx").exists()           # defaults only
+    st = installer.status(world.root, lock=world.lock)
+    assert st["alternates"] == {} and st["summary"]["needs_attention"] is False
+    n = len(world.calls)
+    st = installer.install(world.root, lock=world.lock, downloader=world.downloader, models=[("seg", "alt_key")])
+    assert (world.root / "seg/alt_key/model.onnx").read_bytes() == b"ALT-ONNX"
+    assert len(world.calls) == n + 1                                         # defaults untouched
+    assert st["alternates"]["seg__alt_key"]["state"] == "current"
+    assert st["summary"]["needs_attention"] is False
+    installer.install(world.root, lock=world.lock, downloader=world.downloader, models=[("seg", "alt_key")])
+    assert len(world.calls) == n + 1                                         # current -> no re-download
+
+
+def test_unknown_alternate_is_a_clear_error(world):
+    with pytest.raises(KeyError, match="seg=alt_key"):
+        installer.install(world.root, lock=world.lock, downloader=world.downloader, models=[("seg", "nope")])
+
+
+def test_crash_during_an_alternate_update_is_repaired(world):
+    installer.install(world.root, lock=world.lock, downloader=world.downloader, models=[("seg", "alt_key")])
+    p = world.root / "seg/alt_key/model.onnx"
+    os.replace(p, p.with_name("model.onnx.backup"))
+    st = installer.status(world.root, lock=world.lock)
+    assert {"file": "seg/alt_key/model.onnx", "action": "restored_backup"} in st["repaired"]
+    assert p.read_bytes() == b"ALT-ONNX"
+
+
+def test_cli_installs_an_alternate_and_prints_the_settings_lines(world, monkeypatch, capsys):
+    from leafmachine3.modelhub import cli
+    monkeypatch.setattr(installer, "_download", world.downloader)
+    monkeypatch.setattr(cli, "KEYED_STAGES", {"seg"})
+    assert cli.main(["--dest", str(world.root), "--lock", str(world.lock_path), "install", "--model", "seg=alt_key"]) == 0
+    out = capsys.readouterr().out
+    assert 'key: "alt_key"' in out and "seg/alt_key/model.onnx" in out and "imgsz: 640" in out

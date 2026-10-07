@@ -262,7 +262,9 @@ def builtin_defaults() -> dict[str, Any]:
             "mp_conversion_factor": {"enabled": True},
             "archival_detector": {"enabled": True},
             "plant_detector": {"enabled": True},
-            "specimen_segmenter": {"enabled": True},
+            # The model is chosen by NAME; the default names the UNet++ (see inference/specimen_models.py).
+            "specimen_segmenter": {"enabled": True, "model": {"key": "unetpp_effb7_1024"},
+                                   "yolo": {"conf": 0.25, "iou": 0.5, "max_det": 300}},
             "phenology_detector": {"enabled": True},
             "ruler_classifier": {"enabled": True},
             "ruler_cf": {"enabled": True},   # lattice conversion-factor method
@@ -626,6 +628,17 @@ class Config:
             if self.is_enabled("ruler_classifier"):
                 if not self.stage("ruler_classifier").get("models_dir"):
                     errors.append("modules.ruler_classifier is enabled but has no models_dir")
+
+        # The specimen segmenter is chosen by NAME (model.key); an unknown name cannot run in any
+        # mode. A missing key is not an error -- it resolves to the UNet++ default with a warning.
+        if self.is_enabled("specimen_segmenter"):
+            from leafmachine3.inference.specimen_models import (  # noqa: PLC0415 - lazy, avoids a cycle
+                UnknownSpecimenModel, resolve_specimen_model,
+            )
+            try:
+                resolve_specimen_model(self.stage("specimen_segmenter"))
+            except UnknownSpecimenModel as exc:
+                errors.append(str(exc))
 
         restart = self.restart
         if isinstance(restart, list):

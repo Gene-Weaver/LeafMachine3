@@ -122,12 +122,17 @@ modules:
 
   specimen_segmenter:
     enabled: true
-    # UNet++ (efficientnet-b7) whole-sheet plant-vs-background segmenter, run via onnxruntime.
-    # Swap `path` to the selfheal export to switch models (both are exported side by side).
-    model: { path: "models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", format: "onnx" }
-    imgsz: 1024                       # model input (letterboxed square); must match the export
-    conf: 0.5                         # sigmoid threshold for the binary mask
-    paperclean: true                  # follow-up HSV paper-removal step (locked settings); final = UNet -> paperclean
+    # Whole-sheet plant-vs-background segmenter, run via onnxruntime. `key` NAMES the model and so
+    # decides how each sheet is prepared for it (resize, padding, normalization: each model gets the
+    # input it was trained on). `path` must be that model's file. Keys (= Hugging Face repo suffixes):
+    #   unetpp_effb7_1024       UNet++ EfficientNet-B7, 1024 letterbox      (default)
+    #   birefnet_hr_swinl_1024  BiRefNet Swin-L, 1024 stretch               lm3 models install --model specimen_segmenter=birefnet_hr_swinl_1024
+    #   yolo26x_seg_1280        YOLO26x-seg, 1280 letterbox, instance union lm3 models install --model specimen_segmenter=yolo26x_seg_1280
+    # Each model runs at its training size; there is no imgsz setting.
+    model: { key: "unetpp_effb7_1024", path: "models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", format: "onnx" }
+    conf: 0.5                         # pixel threshold for the binary mask (UNet++, BiRefNet)
+    yolo: { conf: 0.25, iou: 0.5, max_det: 300 }   # YOLO26x-seg only: instance confidence / overlap / cap
+    paperclean: true                  # follow-up HSV paper-removal step (locked settings); final = model -> paperclean
 
   phenology_detector:
     enabled: true

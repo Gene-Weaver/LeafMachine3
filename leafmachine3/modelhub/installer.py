@@ -112,7 +112,7 @@ def repair(root: Path, lock: Lock | None = None) -> list[dict[str, str]]:
     if not root.is_dir():
         return []
     lock = lock or load_lock()
-    expected = {f.dest: f.sha256 for a in lock.actions.values() for _u, f in a.files(_all_formats(lock))}
+    expected = {f.dest: f.sha256 for a in lock.all_actions() for _u, f in a.files(_all_formats(lock))}
     done: list[dict[str, str]] = []
     for backup in sorted(root.rglob(f"*{BACKUP_SUFFIX}")):
         if not backup.is_file():
@@ -138,7 +138,7 @@ def repair(root: Path, lock: Lock | None = None) -> list[dict[str, str]]:
 
 
 def _all_formats(lock: Lock) -> set[str]:
-    return {f.format for a in lock.actions.values() for u in a.units for f in u.files}
+    return {f.format for a in lock.all_actions() for u in a.units for f in u.files}
 
 
 # --------------------------------------------------------------------------- #
@@ -198,6 +198,56 @@ def _record_matches(rec: dict[str, Any] | None, unit: Unit, f: LockFile, p: Path
     return True
 
 
+def _action_status(root: Path, action: Action, rec: dict[str, Any] | None, formats: Sequence[str],
+                   verify_hashes: bool) -> tuple[ActionStatus, dict[str, Any] | None, bool]:
+    """One action's status; returns ``(status, record_entry, record_changed)``."""
+    files: list[FileStatus] = []
+    any_missing = any_stale = dirty = False
+    for unit, f in action.files(formats):
+        p = root / f.dest
+        present = p.is_file()
+        fs = FileStatus(dest=f.dest, format=f.format, present=present, bytes=p.stat().st_size if present else None,
+                        expected_bytes=f.bytes, sha_ok=None, optional=f.optional)
+        if not present:
+            any_missing = any_missing or not f.optional
+            files.append(fs)
+            continue
+        if action.placeholder:
+            fs.sha_ok = (sha256_of(p) == f.sha256) if (verify_hashes and f.sha256) else None
+        elif _record_matches(rec, unit, f, p) and not verify_hashes:
+            fs.sha_ok = True
+        else:
+            ok = sha256_of(p) == f.sha256
+            fs.sha_ok = ok
+            if ok and not _record_matches(rec, unit, f, p):
+                # adopt a hand-placed (or re-stat'd) file that is byte-identical to the pinned one
+                rec = rec or {"revisions": {}, "files": {}}
+                rec.setdefault("revisions", {})[unit.repo_id] = unit.revision
+                rec.setdefault("files", {})[f.dest] = {"sha256": f.sha256, "bytes": f.bytes, "src": f.src,
+                                                       "repo_id": unit.repo_id, "stat": _stat_sig(p)}
+                rec["installed_at"] = rec.get("installed_at") or time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                dirty = True
+            if not ok:
+                any_stale = True
+        files.append(fs)
+    if action.placeholder:
+        state = STATE_UNAVAILABLE if any_missing else STATE_PENDING
+        detail = "not published on the Hub yet" + ("" if any_missing else "; using the local copy")
+    elif any_missing:
+        state = STATE_MISSING
+        detail = f"{sum(1 for x in files if not x.present and not x.optional)} of {sum(1 for x in files if not x.optional)} files missing"
+    elif any_stale:
+        state, detail = STATE_OUTDATED, "the lock pins a newer revision"
+    else:
+        state, detail = STATE_CURRENT, ""
+    st = ActionStatus(
+        action=action.key, state=state, required=action.required, placeholder=action.placeholder,
+        repos=[u.repo_id for u in action.units],
+        installed_revision={u.repo_id: ((rec or {}).get("revisions") or {}).get(u.repo_id) for u in action.units},
+        lock_revision={u.repo_id: u.revision for u in action.units}, files=files, detail=detail)
+    return st, rec, dirty
+
+
 def status(root: Path | None = None, *, lock: Lock | None = None, formats: Sequence[str] | None = None,
            verify_hashes: bool = False) -> dict[str, Any]:
     """Per-action state plus a summary the GUI/CLI switch on.
@@ -216,51 +266,21 @@ def status(root: Path | None = None, *, lock: Lock | None = None, formats: Seque
     record_dirty = False
 
     for key, action in lock.actions.items():
-        rec = rec_actions.get(key)
-        files: list[FileStatus] = []
-        any_missing = any_stale = False
-        for unit, f in action.files(formats):
-            p = root / f.dest
-            present = p.is_file()
-            fs = FileStatus(dest=f.dest, format=f.format, present=present, bytes=p.stat().st_size if present else None,
-                            expected_bytes=f.bytes, sha_ok=None, optional=f.optional)
-            if not present:
-                any_missing = any_missing or not f.optional
-                files.append(fs)
-                continue
-            elif action.placeholder:
-                fs.sha_ok = (sha256_of(p) == f.sha256) if (verify_hashes and f.sha256) else None
-            elif _record_matches(rec, unit, f, p) and not verify_hashes:
-                fs.sha_ok = True
-            else:
-                ok = sha256_of(p) == f.sha256
-                fs.sha_ok = ok
-                if ok and not _record_matches(rec, unit, f, p):
-                    # adopt a hand-placed (or re-stat'd) file that is byte-identical to the pinned one
-                    rec = rec or {"revisions": {}, "files": {}}
-                    rec.setdefault("revisions", {})[unit.repo_id] = unit.revision
-                    rec.setdefault("files", {})[f.dest] = {"sha256": f.sha256, "bytes": f.bytes, "src": f.src,
-                                                           "repo_id": unit.repo_id, "stat": _stat_sig(p)}
-                    rec["installed_at"] = rec.get("installed_at") or time.strftime("%Y-%m-%dT%H:%M:%S%z")
-                    rec_actions[key] = rec
-                    record_dirty = True
-                if not ok:
-                    any_stale = True
-            files.append(fs)
-        if action.placeholder:
-            state = STATE_UNAVAILABLE if any_missing else STATE_PENDING
-            detail = "not published on the Hub yet" + ("" if any_missing else "; using the local copy")
-        elif any_missing:
-            state, detail = STATE_MISSING, f"{sum(1 for x in files if not x.present and not x.optional)} of {sum(1 for x in files if not x.optional)} files missing"
-        elif any_stale:
-            state, detail = STATE_OUTDATED, "the lock pins a newer revision"
-        else:
-            state, detail = STATE_CURRENT, ""
-        out[key] = ActionStatus(
-            action=key, state=state, required=action.required, placeholder=action.placeholder,
-            repos=[u.repo_id for u in action.units],
-            installed_revision={u.repo_id: ((rec or {}).get("revisions") or {}).get(u.repo_id) for u in action.units},
-            lock_revision={u.repo_id: u.revision for u in action.units}, files=files, detail=detail)
+        st, rec, dirty = _action_status(root, action, rec_actions.get(key), formats, verify_hashes)
+        out[key] = st
+        if dirty:
+            rec_actions[key] = rec
+            record_dirty = True
+    # alternates: reported only once something of theirs is on disk; never part of the summary
+    alt_out: dict[str, ActionStatus] = {}
+    for action in (a for ks in lock.alternates.values() for a in ks.values()):
+        if not any((root / f.dest).is_file() for _u, f in action.files(formats)):
+            continue
+        st, rec, dirty = _action_status(root, action, rec_actions.get(action.key), formats, verify_hashes)
+        alt_out[action.key] = st
+        if dirty:
+            rec_actions[action.key] = rec
+            record_dirty = True
 
     if record_dirty:
         record["actions"] = rec_actions
@@ -279,6 +299,7 @@ def status(root: Path | None = None, *, lock: Lock | None = None, formats: Seque
     return {
         "root": str(root), "lock_path": lock.path, "lm3_version": lock.lm3_version, "formats": list(formats),
         "actions": {k: asdict(v) for k, v in out.items()},
+        "alternates": {k: asdict(v) for k, v in alt_out.items()},
         "summary": {"missing": missing, "outdated": outdated, "unavailable": unavailable,
                     # needs_attention = something the install button can fix; tab_attention also counts
                     # a required model that is not published yet and has no local copy.
@@ -325,11 +346,14 @@ def _emit(progress: Optional[Progress], **ev: Any) -> None:
 
 def install(root: Path | None = None, *, lock: Lock | None = None, actions: Iterable[str] | None = None,
             formats: Sequence[str] | None = None, force: bool = False,
-            progress: Optional[Progress] = None, downloader: Callable[..., Path] | None = None) -> dict[str, Any]:
+            progress: Optional[Progress] = None, downloader: Callable[..., Path] | None = None,
+            models: Iterable[tuple[str, str]] | None = None) -> dict[str, Any]:
     """Bring ``root`` up to the lock. Returns the post-install :func:`status`.
 
     ``force`` re-downloads actions that are already current. ``downloader`` replaces the Hub fetch
-    (tests). Placeholder actions are always skipped with a ``skip`` event.
+    (tests). Placeholder actions are always skipped with a ``skip`` event. ``models`` installs
+    alternates instead, as ``(stage, model_key)`` pairs (e.g. ``("specimen_segmenter",
+    "yolo26x_seg_1280")``); when it is given, the defaults are left alone unless ``actions`` also is.
     """
     lock = lock or load_lock()
     root = Path(root) if root is not None else models_root()
@@ -338,8 +362,16 @@ def install(root: Path | None = None, *, lock: Lock | None = None, actions: Iter
     root.mkdir(parents=True, exist_ok=True)
 
     before = status(root, lock=lock, formats=formats)
-    wanted = list(actions) if actions else list(lock.actions)
+    models = list(models or [])
+    wanted = list(actions) if actions else ([] if models else list(lock.actions))
     todo: list[Action] = []
+    for stage, model_key in models:
+        alt = lock.alternate(stage, model_key)
+        st = (before.get("alternates") or {}).get(alt.key, {}).get("state")
+        if st == STATE_CURRENT and not force:
+            _emit(progress, type="skip", action=alt.key, reason="current")
+            continue
+        todo.append(alt)
     for key in wanted:
         action = lock.action(key)
         st = before["actions"][key]["state"]
