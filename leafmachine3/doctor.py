@@ -374,7 +374,24 @@ def _accelerator_fix(variant: str) -> str:
 # --------------------------------------------------------------------------------------------------
 # Checks 7-8
 # --------------------------------------------------------------------------------------------------
-def check_models(settings: Optional[str] = None) -> Check:
+def cpu_fallback_ops(model_path: str, environ: Mapping[str, str], timeout: float = 180.0) -> list[str]:
+    """Ops in ``model_path`` that onnxruntime's CUDA provider has no kernel for (they run on the CPU).
+
+    A child creates the session through machine3's CUDA library-path step at verbose logging, and
+    this parses its "CUDA kernel not found in registries for Op type: X" lines. Shape arithmetic
+    onnxruntime keeps on the CPU on purpose never produces that line, so it is not reported.
+    """
+    try:
+        cp = subprocess.run([sys.executable, "-m", "leafmachine3.doctor_probe", "--placement", model_path],
+                            env=dict(environ), capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return ["(probe timed out)"]
+    return sorted(set(re.findall(r"CUDA kernel not found in registries for Op type: (\w+)", cp.stderr)))
+
+
+def check_models(settings: Optional[str] = None, variant: Optional[str] = None,
+                 environ: Optional[Mapping[str, str]] = None,
+                 fallback: Callable[[str, Mapping[str, str]], list[str]] = cpu_fallback_ops) -> Check:
     try:
         from leafmachine3.modelhub import installer
     except ImportError:
@@ -392,6 +409,20 @@ def check_models(settings: Optional[str] = None) -> Check:
     if s["unavailable"]:
         return Check(7, "models", WARN, f"not published yet and no local copy: {', '.join(s['unavailable'])}",
                      "these stages cannot run until the models are published")
+    if variant == "gpu":
+        onnx_files = [f["dest"] for a in st["actions"].values() for f in a["files"]
+                      if f.get("format") == "onnx" and f.get("present")]
+        on_cpu = {dest: ops for dest in onnx_files
+                  if (ops := fallback(str(Path(st["root"]) / dest), environ or os.environ))}
+        if on_cpu:
+            listed = "; ".join(f"{d} ({', '.join(o)})" for d, o in sorted(on_cpu.items()))
+            return Check(7, "models", WARN,
+                         f"{len(on_cpu)} model(s) run some ops on the CPU, copying data between GPU and host in "
+                         f"every forward pass: {listed}",
+                         "slower, not wrong. For opset-19 YOLO exports (Resize) the fix is an opset-18 "
+                         "re-export: tools/modelhub/fix_resize_opset.py, then `lm3 models install` once published")
+        return Check(7, "models", OK, f"all required models current in {st['root']}; "
+                     f"all {len(onnx_files)} ONNX models run entirely on the GPU")
     return Check(7, "models", OK, f"all required models current in {st['root']}")
 
 
@@ -438,7 +469,8 @@ def dev_note(env: Env) -> Optional[str]:
 def diagnose(env: Optional[Env] = None, *, quick: bool = False, models: bool = False,
              production: bool = False, settings: Optional[str] = None,
              nvml: Callable[[], tuple[str, list[str]]] = nvml_probe,
-             probe: Callable[[str, Mapping[str, str]], dict] = run_probe_subprocess) -> Report:
+             probe: Callable[[str, Mapping[str, str]], dict] = run_probe_subprocess,
+             models_fallback: Callable[[str, Mapping[str, str]], list[str]] = cpu_fallback_ops) -> Report:
     env = env or Env.current()
     rep = Report(lm3_version=env.contract.get("lm3_version", "?"), variant=None)
     stopped = False
@@ -466,8 +498,9 @@ def diagnose(env: Optional[Env] = None, *, quick: bool = False, models: bool = F
         add(check_driver(env, nvml))
     if not stopped:
         add(check_accelerator(env, variant, probe))
-    if not stopped and models:
-        add(check_models(settings))
+    if not stopped:
+        add(check_models(settings, variant, env.environ, models_fallback) if models
+            else Check(7, "models", SKIP, "not checked (add --models)"))
     if not stopped:
         add(check_write_access(settings))
     return _finish(rep, env, production)

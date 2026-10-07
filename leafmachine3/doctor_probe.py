@@ -61,9 +61,25 @@ def run_probe(provider: str) -> dict:
     return out
 
 
+def placement_session(model_path: str) -> None:
+    """Create a CUDA session for ``model_path`` at VERBOSE onnxruntime logging and return.
+
+    The parent (``lm3 doctor --models``) reads this process's stderr for onnxruntime's
+    "CUDA kernel not found in registries for Op type: X" lines: the ops that would run on the CPU.
+    """
+    import onnxruntime as ort
+
+    so = ort.SessionOptions()
+    so.log_severity_level = 0
+    so.log_verbosity_level = 0
+    ort.InferenceSession(model_path, so, providers=[("CUDAExecutionProvider", {"device_id": 0}),
+                                                   "CPUExecutionProvider"])
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    provider = args[0] if args else "CPUExecutionProvider"
+    placement = bool(args) and args[0] == "--placement"
+    provider = "CUDAExecutionProvider" if placement else (args[0] if args else "CPUExecutionProvider")
     if provider == "CUDAExecutionProvider" and sys.platform.startswith("linux"):
         # machine3's own loader-path step. It re-execs `sys.executable + sys.argv`, so make argv the
         # `-m` form first; otherwise the child would run this file as a bare script.
@@ -71,6 +87,10 @@ def main(argv: list[str] | None = None) -> int:
         from leafmachine3.machine3 import _exec_with_cuda_libpath
 
         _exec_with_cuda_libpath()
+    if placement:
+        placement_session(args[1])
+        print(json.dumps({"placement": args[1]}))
+        return 0
     print(json.dumps(run_probe(provider)))
     return 0
 

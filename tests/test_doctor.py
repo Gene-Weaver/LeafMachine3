@@ -13,7 +13,7 @@ import sys
 import pytest
 
 from leafmachine3 import doctor
-from leafmachine3.doctor import FAIL, OK, WARN, Env
+from leafmachine3.doctor import FAIL, OK, SKIP, WARN, Env
 
 CONTRACT = {
     "lm3_version": "3.0.0",
@@ -69,7 +69,7 @@ def statuses(rep):
 def test_a_correct_gpu_install_is_ready():
     rep = run(make_env())
     assert rep.ready and rep.variant == "gpu"
-    assert statuses(rep) == {1: OK, 2: OK, 3: OK, 4: OK, 5: OK, 6: OK, 8: OK}
+    assert statuses(rep) == {1: OK, 2: OK, 3: OK, 4: OK, 5: OK, 6: OK, 7: SKIP, 8: OK}
 
 
 def test_cpu_install_skips_the_driver_check_and_probes_the_cpu_provider():
@@ -340,3 +340,39 @@ def test_missing_record_files_on_a_real_dist_info(tmp_path):
         "fake_pkg-1.0.dist-info/RECORD,,\n")
     dist = metadata.PathDistribution(info)
     assert doctor.missing_record_files(dist) == ["fake_pkg/deleted.so"]
+
+
+# -------------------------------------------------------------------------------------------------- check 7: CPU fallbacks
+
+def _fake_status(monkeypatch, tmp_path):
+    from leafmachine3.modelhub import installer
+    status = {"root": str(tmp_path), "summary": {"missing": [], "outdated": [], "unavailable": []},
+              "actions": {"plant_detector": {"files": [{"dest": "plant_detector/model.onnx", "format": "onnx", "present": True},
+                                                       {"dest": "plant_detector/training_metadata.json", "format": "meta", "present": True}]},
+                          "leaf_segmenter": {"files": [{"dest": "leaf_segmenter/model.onnx", "format": "onnx", "present": True}]}}}
+    monkeypatch.setattr(installer, "status", lambda root=None, **kw: status)
+
+
+def test_models_check_names_every_model_with_a_cpu_fallback(monkeypatch, tmp_path):
+    """The opset-19 Resize case: slower, not wrong, so WARN with the model and the op."""
+    _fake_status(monkeypatch, tmp_path)
+    seen = []
+    def fallback(path, env):
+        seen.append(path)
+        return ["Resize"] if "plant_detector" in path else []
+    c = doctor.check_models(variant="gpu", environ={}, fallback=fallback)
+    assert c.status == WARN and "plant_detector/model.onnx (Resize)" in c.detail and "leaf_segmenter" not in c.detail
+    assert "fix_resize_opset.py" in c.fix
+    assert len(seen) == 2                                   # ONNX files only, not the metadata sidecar
+
+
+def test_models_check_ok_when_everything_runs_on_the_gpu(monkeypatch, tmp_path):
+    _fake_status(monkeypatch, tmp_path)
+    c = doctor.check_models(variant="gpu", environ={}, fallback=lambda p, e: [])
+    assert c.status == OK and "all 2 ONNX models run entirely on the GPU" in c.detail
+
+
+def test_models_check_does_not_probe_placement_without_a_gpu_variant(monkeypatch, tmp_path):
+    _fake_status(monkeypatch, tmp_path)
+    c = doctor.check_models(variant="cpu", environ={}, fallback=lambda p, e: pytest.fail("no CUDA placement on cpu"))
+    assert c.status == OK

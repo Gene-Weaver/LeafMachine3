@@ -149,8 +149,11 @@ class BinaryOnnxSpecimenSegmenter:
             if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"specimen segmenter model artifact not found: {self.model_path}")
             import onnxruntime as ort
+
+            from leafmachine3.inference.providers import session_options
             session = ort.InferenceSession(
-                self.model_path, providers=list(providers) if providers else ["CPUExecutionProvider"])
+                self.model_path, session_options(),
+                providers=list(providers) if providers else ["CPUExecutionProvider"])
         self.session = session
         self._check_contract()
         self._input_name = self.session.get_inputs()[0].name

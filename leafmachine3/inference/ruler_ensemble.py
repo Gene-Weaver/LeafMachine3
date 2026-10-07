@@ -168,7 +168,9 @@ class _Member:
         onnx_path = os.path.join(model_dir, "exported", "model.onnx")
         if not os.path.exists(onnx_path):
             raise FileNotFoundError(f"exported ONNX not found: {onnx_path}")
-        self.session = ort.InferenceSession(onnx_path, providers=list(providers))
+        from leafmachine3.inference.providers import session_options
+
+        self.session = ort.InferenceSession(onnx_path, session_options(), providers=list(providers))
         self._input_name = self.session.get_inputs()[0].name
         self._output_name = self.session.get_outputs()[0].name
         self.classes = classes
