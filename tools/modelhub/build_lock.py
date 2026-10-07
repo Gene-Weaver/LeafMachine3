@@ -25,7 +25,7 @@ from pathlib import Path
 import yaml
 
 HERE = Path(__file__).resolve().parent
-LOCK = HERE.parents[1] / "leafmachine3" / "models" / "models.lock.yaml"
+LOCK = HERE.parents[1] / "leafmachine3" / "modelhub" / "models.lock.yaml"
 NAMESPACE = "phyloforfun"
 
 #: action -> list of (repo_id, dest_dir, dest rules). ``dest`` is relative to the models root and
@@ -58,6 +58,18 @@ DEFAULTS: dict[str, dict] = {
                   "torchscript/model.torchscript": ("leaf_segmenter/model.torchscript", "torchscript"),
                   "pytorch/best.pt": ("leaf_segmenter/best.pt", "pytorch"),
                   "training_metadata.json": ("leaf_segmenter/training_metadata.json", "meta")}}]},
+    # Destination keeps the file name LM3_settings.orig.yaml already points at, so no settings change.
+    "specimen_segmenter": {"units": [{
+        "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__unetpp_effb7_1024",
+        "files": {"onnx/model.onnx": ("specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", "onnx"),
+                  "torchscript/model.torchscript.pt": ("specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.torchscript.pt", "torchscript"),
+                  "pytorch/best.pt": ("specimen_segmenter/best.pt", "pytorch"),
+                  "training_metadata.json": ("specimen_segmenter/training_metadata.json", "meta")}}]},
+    # Not a network: a one-parameter fit shipped as json. ``meta`` format, so it is always installed
+    # whatever --formats says (the stage cannot run without it).
+    "mp_conversion_factor": {"units": [{
+        "repo_id": f"{NAMESPACE}/lm3_mp_conversion_factor__sqrt_fit",
+        "files": {"json/model.json": ("mp_conversion_factor/model.json", "meta")}}]},
     # The ensemble: each member is its own repo; the runtime (inference/ruler_ensemble.py) expects
     # <models_dir>/<member>/exported/model.onnx + <models_dir>/<member>/metadata.json and ONE shared
     # <models_dir>/label_map.json. The same label_map.json ships in every member repo (same sha), so
@@ -82,14 +94,6 @@ DEFAULTS: dict[str, dict] = {
 #: Not on the Hub yet. Listed so status/UI know they are expected; the installer skips them.
 #: ``local`` points at the file in this checkout so its sha/bytes can be pinned ahead of upload.
 PLACEHOLDERS: dict[str, dict] = {
-    "specimen_segmenter": {"units": [{
-        "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__unet_control_1024",
-        "files": {"onnx/model.onnx": ("specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", "onnx")},
-        "local": {"onnx/model.onnx": "models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx"}}]},
-    "mp_conversion_factor": {"units": [{
-        "repo_id": f"{NAMESPACE}/lm3_mp_conversion_factor__sqrt_fit",
-        "files": {"model.json": ("mp_conversion_factor/model.json", "meta")},
-        "local": {"model.json": "models/mp_conversion_factor/model.json"}}]},
 }
 
 
