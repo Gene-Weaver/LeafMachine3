@@ -109,14 +109,31 @@ def _flat(run: str) -> str:
 # --- the Linux job must not be traded away for the new ones -------------------------------------
 
 
-def test_the_linux_job_still_runs_the_whole_suite_on_three_pythons(workflow: dict[str, Any]) -> None:
+def _release_python_minor() -> str:
+    for line in (_REPO_ROOT / "tools" / "release" / "versions.env").read_text().splitlines():
+        if line.startswith("PYTHON_VERSION="):
+            return ".".join(line.split("=", 1)[1].strip().split(".")[:2])
+    raise AssertionError("tools/release/versions.env has no PYTHON_VERSION")
+
+
+def test_the_linux_job_still_runs_the_whole_suite_on_the_release_python(workflow: dict[str, Any]) -> None:
     """Adding platforms must be additive. The finding that prompted this was explicit that
     ``test: runs-on: ubuntu-latest`` stays exactly as it was -- the platform legs cover the kernel
-    semantics a fake cannot model, not the suite."""
+    semantics a fake cannot model, not the suite.
+
+    It used to pin a 3.10/3.11/3.12 matrix. requires-python now admits exactly one minor (the
+    uv-managed interpreter in tools/release/versions.env), so the matrix is derived from that file:
+    a version bump cannot leave CI testing an interpreter the package refuses to install on."""
     job = _job(workflow, "test")
     assert job["runs-on"] == "ubuntu-latest"
-    assert job["strategy"]["matrix"]["python-version"] == ["3.10", "3.11", "3.12"]
+    assert job["strategy"]["matrix"]["python-version"] == [_release_python_minor()]
     assert _steps_running(job, "pytest"), "the Linux job no longer runs pytest"
+
+
+def test_every_ci_python_is_the_release_python(workflow: dict[str, Any]) -> None:
+    want = _release_python_minor()
+    seen = re.findall(r'python-version:\s*"?\[?"?([0-9.]+)', _CI_YML.read_text(encoding="utf-8"))
+    assert seen and all(v == want for v in seen), f"CI uses {seen}; requires-python admits only {want}"
 
 
 # --- section 7 "Platform CI": Linux, macOS and Windows ------------------------------------------
