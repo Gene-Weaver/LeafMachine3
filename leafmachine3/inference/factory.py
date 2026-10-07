@@ -14,7 +14,6 @@ Return contracts
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 log = logging.getLogger("leafmachine3.inference.factory")
@@ -42,7 +41,7 @@ def _model_path(cfg: Any, stage_cfg: Any) -> str:
     raw = _get(_get(stage_cfg, "model", None), "path", None)
     if raw is None:
         raise ValueError("stage config is missing model.path")
-    return cfg.resolve_path(raw)
+    return cfg.resolve_model_path(raw)
 
 
 def load_mp_conversion_factor(cfg: Any, device: Any = None):
@@ -60,7 +59,7 @@ def load_mp_conversion_factor(cfg: Any, device: Any = None):
     try:
         stage_cfg = cfg.stage("mp_conversion_factor")
         raw = _get(_get(stage_cfg, "model", None), "path", None) or "models/mp_conversion_factor/model.json"
-        return load_model(cfg.resolve_path(raw))
+        return load_model(cfg.resolve_model_path(raw))
     except Exception:  # noqa: BLE001
         return MpConversionFactorModel()
 
@@ -114,23 +113,32 @@ def load_segmenter(cfg: Any, device: Any):
 
 
 def load_specimen_segmenter(cfg: Any, device: Any):
-    """Return the whole-specimen segmentation backend (UNet++ ONNX + paperclean)."""
+    """Return the whole-specimen segmentation backend named by ``model.key`` (+ paperclean).
+
+    The KEY picks the model and therefore its input workflow (see ``inference/specimen_models.py``);
+    the file at ``model.path`` only has to match it. ``imgsz`` is no longer read: each model runs
+    at the size it was trained at.
+    """
     stage_cfg = cfg.stage("specimen_segmenter")
     if _is_mock(cfg):
         from leafmachine3.inference.mock import MockSpecimenSegmenter
 
         return MockSpecimenSegmenter()
 
-    from leafmachine3.inference.specimen_segmenter import OnnxSpecimenSegmenter
+    from leafmachine3.inference.specimen_models import resolve_specimen_model
+    from leafmachine3.inference.specimen_segmenter import build_specimen_segmenter
 
-    path = _model_path(cfg, stage_cfg)
-    return OnnxSpecimenSegmenter(
-        path,
+    spec, warnings = resolve_specimen_model(stage_cfg)
+    for w in warnings:
+        log.warning(w)
+    yolo = _get(stage_cfg, "yolo", None)
+    return build_specimen_segmenter(
+        spec,
+        _model_path(cfg, stage_cfg),
         providers=device.ort_providers(),
-        imgsz=int(_get(stage_cfg, "imgsz", 1024)),
         conf=float(_get(stage_cfg, "conf", 0.5)),
+        yolo={k: _get(yolo, k) for k in ("conf", "iou", "max_det") if _get(yolo, k) is not None},
         paperclean=bool(_get(stage_cfg, "paperclean", True)),
-        model_name=os.path.splitext(os.path.basename(path))[0],
     )
 
 
@@ -144,7 +152,7 @@ def load_ruler_ensemble(cfg: Any, device: Any):
     from leafmachine3.inference.ruler_ensemble import RulerEnsemble
 
     stage_cfg = cfg.stage("ruler_classifier")
-    models_dir = cfg.resolve_path(_get(stage_cfg, "models_dir", "models/ruler_classifier"))
+    models_dir = cfg.resolve_model_path(_get(stage_cfg, "models_dir", "models/ruler_classifier"))
     # squarify is mandatory (training-time preprocessing); only its shape is tunable
     sq = _get(stage_cfg, "squarify", None) or {}
     _sq = (lambda k, d: _get(sq, k, d)) if sq else (lambda k, d: d)

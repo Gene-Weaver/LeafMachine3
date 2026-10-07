@@ -170,8 +170,8 @@ modules:
   leaf_segmenter:
     enabled: true
     model:
-      path: ../models/leaf_segmenter/model.pt
-      format: pytorch
+      path: ../models/leaf_segmenter/model.onnx
+      format: onnx
     include_partial: false
     imgsz: 1024
     conf: 0.3
@@ -228,7 +228,8 @@ modules:
     include_holes: false
     num_dirs: 360
     bound_radius: 1
-    palette: viridis
+    palette: magma
+    apply_log_to_visual_for_bold_color: true    # log-scale the visuals (pictures only)
     radial_viz: true
     cartesian_viz: true
     radial_overlay_viz: true

@@ -262,7 +262,9 @@ def builtin_defaults() -> dict[str, Any]:
             "mp_conversion_factor": {"enabled": True},
             "archival_detector": {"enabled": True},
             "plant_detector": {"enabled": True},
-            "specimen_segmenter": {"enabled": True},
+            # The model is chosen by NAME; the default names the UNet++ (see inference/specimen_models.py).
+            "specimen_segmenter": {"enabled": True, "model": {"key": "unetpp_effb7_1024"},
+                                   "yolo": {"conf": 0.25, "iou": 0.5, "max_det": 300}},
             "phenology_detector": {"enabled": True},
             "ruler_classifier": {"enabled": True},
             "ruler_cf": {"enabled": True},   # lattice conversion-factor method
@@ -282,11 +284,38 @@ def builtin_defaults() -> dict[str, Any]:
             "reporter": {"enabled": True},
             "ect": {"enabled": True},
         },
-        # NB: no "report" key. An empty mapping is not a no-op here -- the settings
-        # form walks the merged tree and treats a childless dict as a LEAF, so
-        # `"report": {}` rendered as a free-text row holding "{}" on a fresh
+        # NB: no EMPTY "report" mapping. An empty mapping is not a no-op here -- the
+        # settings form walks the merged tree and treats a childless dict as a LEAF,
+        # so `"report": {}` rendered as a free-text row holding "{}" on a fresh
         # install. Config.report already returns an empty Section when the key is
-        # absent, so nothing needs the placeholder.
+        # absent, so nothing needs a placeholder. Populated subtrees are fine, and
+        # report.data is here because it has to be: the settings form renders a row
+        # only for a leaf of the MERGED tree, so a knob that lives solely in Python
+        # defaults is invisible and unsettable. report.data was exactly that -- the
+        # ten CSV toggles were documented in settings_meta.json and rendered nowhere,
+        # so the export bundle could not be configured from the file or the GUI at
+        # all. Keep this in step with reporting.data_export.FILES; a test compares them.
+        "report": {
+            "data": {
+                "enabled": True,
+                "folder": "Data",
+                "format": "csv",
+                "na_rep": "",
+                "float_precision": 6,
+                "files": {
+                    "leaf_measurements": True,
+                    "specimen_summary": True,
+                    "phenology": True,
+                    "detections": True,
+                    "landmarks": True,
+                    "ruler_conversion_factor": True,
+                    "ruler_crops": True,
+                    "run_stages": True,
+                    "stage_errors": True,
+                    "data_dictionary": True,
+                },
+            },
+        },
         "timing": {"enabled": False, "sample_interval_s": 0.25},
     }
 
@@ -294,6 +323,19 @@ def builtin_defaults() -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Config
 # --------------------------------------------------------------------------- #
+
+#: Settings LM3 no longer reads, and why. A file that still carries one is warned ONCE per run, by
+#: machine3, naming the key and the file -- not at every use (the Reporter used to warn once per
+#: specimen) and not inside Config.load(), which the server calls on every settings request.
+RETIRED_SETTINGS: dict[str, str] = {
+    "project.output.keep_tmp": "_tmp_original holds the downsampled copies the Reporter reads, so it is never deleted",
+    "report.crops.source": "crops are always cut from the working image, the frame every measurement is made in",
+    "report.overlay.draw_boxes_archival": "box border/fill is configured per group under report.overlay.groups",
+    "report.overlay.draw_boxes_plant": "box border/fill is configured per group under report.overlay.groups",
+    "report.overlay.line_width_archival": "line widths are configured per group under report.overlay.groups",
+    "report.overlay.line_width_plant": "line widths are configured per group under report.overlay.groups",
+}
+
 class Config:
     """The merged, validated LeafMachine3 configuration."""
 
@@ -440,6 +482,23 @@ class Config:
         # back as a clean absolute path, without following symlinks or requiring the file to exist.
         return os.path.normpath(str(base / path))
 
+    def resolve_model_path(self, p: str | os.PathLike[str]) -> str:
+        """Like :meth:`resolve_path`, but a relative ``models/...`` path re-roots onto ``$LM3_MODELS_DIR``.
+
+        The settings YAML keeps saying ``models/archival_detector/model.onnx`` everywhere; a packaged
+        app, a Docker image or a cluster job points ``LM3_MODELS_DIR`` at wherever ``lm3 models
+        install`` put the files, and a source checkout leaves it unset so the path resolves beside
+        the settings file as before. Every model/``models_dir`` load goes through here.
+        """
+        path = Path(str(p)).expanduser()
+        if path.is_absolute():
+            return str(path)
+        root = os.environ.get("LM3_MODELS_DIR")
+        parts = path.parts
+        if root and parts and parts[0] == "models":
+            return os.path.normpath(str(Path(root).expanduser() / Path(*parts[1:])))
+        return self.resolve_path(p)
+
     def io_workers(self) -> int:
         """Resolve the ingest / CPU-stage worker count (``auto`` -> tuned or cpu_count-2)."""
         raw = self.compute.get("io_workers", "auto")
@@ -558,6 +617,19 @@ class Config:
             hasher.update(f"|{artifact}:{st.st_size}:{int(st.st_mtime)}".encode("utf-8"))
         return hasher.hexdigest()
 
+    def retired_settings(self) -> list[tuple[str, str]]:
+        """``[(dotted key, why)]`` for every :data:`RETIRED_SETTINGS` key this file still sets. Pure."""
+        found = []
+        for dotted, why in RETIRED_SETTINGS.items():
+            node: Any = self._raw
+            for part in dotted.split("."):
+                node = node.get(part) if hasattr(node, "get") else None
+                if node is None:
+                    break
+            if node is not None:
+                found.append((dotted, why))
+        return found
+
     def _stage_artifacts(self, key: str) -> list[str]:
         """Resolved model file(s) / dir referenced by a stage (for hashing)."""
         blk = self.stage(key)
@@ -609,6 +681,17 @@ class Config:
             if self.is_enabled("ruler_classifier"):
                 if not self.stage("ruler_classifier").get("models_dir"):
                     errors.append("modules.ruler_classifier is enabled but has no models_dir")
+
+        # The specimen segmenter is chosen by NAME (model.key); an unknown name cannot run in any
+        # mode. A missing key is not an error -- it resolves to the UNet++ default with a warning.
+        if self.is_enabled("specimen_segmenter"):
+            from leafmachine3.inference.specimen_models import (  # noqa: PLC0415 - lazy, avoids a cycle
+                UnknownSpecimenModel, resolve_specimen_model,
+            )
+            try:
+                resolve_specimen_model(self.stage("specimen_segmenter"))
+            except UnknownSpecimenModel as exc:
+                errors.append(str(exc))
 
         restart = self.restart
         if isinstance(restart, list):

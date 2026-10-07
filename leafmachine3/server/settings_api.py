@@ -110,11 +110,27 @@ _SETTINGS_SUFFIXES = frozenset({".yaml", ".yml"})
 
 
 def settings_path(explicit: str | os.PathLike[str] | None = None) -> Path:
-    """Resolve the settings file through the canonical section 3.1 chain.
+    """THE settings resolver for every settings route -- the canonical section 3.1 chain.
+
+    Section 5 asks for "one settings resolver for all settings routes", and this is it: every
+    route ``create_router`` registers that names a file resolves through this function and no
+    other, whether the caller supplied ``yaml_path`` or not. ``/validate`` reaches it through
+    :func:`validate_values`, the preset and backup routes through their helpers, and the folder
+    picker through :func:`_picker_base`. ``tests/test_compat_cleanup.py`` asserts that -- by
+    replacing this one function and watching every route follow it -- so a future route that
+    resolves a settings path on its own fails a test rather than quietly reintroducing the split
+    that let the Settings tab edit one file while the run launcher started another.
+
+    Underneath it delegates to ``app.canonical_settings_path`` -> ``paths.settings_path``, which is
+    the one CHAIN shared with ``metrics_api``, ``progress_api``, ``postprocess_api`` and
+    ``results_api`` (proven by ``tests/test_settings_path_unification.py``). Two layers, one
+    answer: this function additionally enforces the caller-supplied-path rules below, which only
+    an HTTP surface needs.
 
     With no ``explicit`` argument this is exactly what ``metrics_api``, ``progress_api``,
     ``postprocess_api`` and ``results_api`` resolve: ``LM3_SETTINGS`` (honoring the deprecated
-    ``LM3_SETTINGS_PATH`` for one release), then the deployment workspace pointer, then
+    ``LM3_SETTINGS_PATH`` until the release named in ``docs/DEPRECATIONS.md``), then the
+    deployment workspace pointer, then
     ``<user-config>/lm3/<deployment>/LM3_settings.yaml``, then -- in a development checkout only --
     the checkout's own file. **No step falls back to the current working directory.**
 
@@ -574,15 +590,32 @@ def _collect_warnings(cfg: Any, values: dict, settings_file: Path | None = None)
                 mpath = model.get("path") if isinstance(model, dict) else None
             except Exception:  # noqa: BLE001
                 continue
-            if mpath and not _exists(Path(cfg.resolve_path(mpath))):
+            if mpath and not _exists(Path(cfg.resolve_model_path(mpath))):
                 warn("missing_model", f"modules.{key}.model.path",
-                     f"Model file not found: {cfg.resolve_path(mpath)}")
+                     f"Model file not found: {cfg.resolve_model_path(mpath)}")
         try:
             if cfg.is_enabled("ruler_classifier"):
                 mdir = cfg.stage("ruler_classifier").get("models_dir")
-                if mdir and not _is_dir(Path(cfg.resolve_path(mdir))):
+                if mdir and not _is_dir(Path(cfg.resolve_model_path(mdir))):
                     warn("missing_model", "modules.ruler_classifier.models_dir",
-                         f"Ruler classifier models folder not found: {cfg.resolve_path(mdir)}")
+                         f"Ruler classifier models folder not found: {cfg.resolve_model_path(mdir)}")
+        except Exception:  # noqa: BLE001
+            pass
+        # The specimen segmenter is named by model.key; a missing key or a retired imgsz is a
+        # warning here (an unknown key is a hard error from Config.validate()).
+        try:
+            if cfg.is_enabled("specimen_segmenter"):
+                from leafmachine3.inference.specimen_models import (  # noqa: PLC0415
+                    UnknownSpecimenModel, resolve_specimen_model,
+                )
+                try:
+                    _spec, notes = resolve_specimen_model(cfg.stage("specimen_segmenter"))
+                    for note in notes:
+                        path = ("modules.specimen_segmenter.imgsz" if "imgsz" in note.split(" is ")[0]
+                                else "modules.specimen_segmenter.model.key")
+                        warn("specimen_model", path, note)
+                except UnknownSpecimenModel:
+                    pass                      # reported as an error by Config.validate()
         except Exception:  # noqa: BLE001
             pass
 

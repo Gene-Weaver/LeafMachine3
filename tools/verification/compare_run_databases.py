@@ -1,11 +1,22 @@
 """Compare two LM3 run databases table by table on natural keys (not autoincrement ids).
 
-Usage: python tools/verification/compare_run_databases.py A.sqlite B.sqlite [label]
+Usage: python tools/verification/compare_run_databases.py A.sqlite B.sqlite [--label TEXT] [--json PATH]
+
+Exit status: 0 when every table matches, 1 when any differs -- so it can gate a script.
+--json writes the full per-column report; nothing is written unless asked (the old default wrote to
+/tmp under a file name built from the label, and a label containing the input paths had slashes).
 """
-import sqlite3, sys, json, math
+import argparse, sqlite3, sys, json, math
+from pathlib import Path
 import numpy as np
-A, B = sys.argv[1], sys.argv[2]
-label = sys.argv[3] if len(sys.argv) > 3 else f"{A} vs {B}"
+_ap = argparse.ArgumentParser(description="Compare two LM3 run databases table by table.")
+_ap.add_argument("a", help="the reference run's .sqlite")
+_ap.add_argument("b", help="the run to check against it")
+_ap.add_argument("--label", default=None, help="heading for the printout (default: the two run names)")
+_ap.add_argument("--json", default=None, help="also write the full report to this path")
+_args = _ap.parse_args()
+A, B = _args.a, _args.b
+label = _args.label or f"{Path(A).stem} vs {Path(B).stem}"
 
 def load(path):
     con = sqlite3.connect(path); con.row_factory = sqlite3.Row
@@ -88,4 +99,7 @@ for t, r in report.items():
     print(line)
 for t, oa, ob in worst:
     if oa or ob: print(f"   {t} examples only_a={oa} only_b={ob}")
-json.dump(report, open(f"/tmp/dbcmp_{label.replace(' ','_')}.json", "w"), indent=1)
+if _args.json:
+    with open(_args.json, "w", encoding="utf-8") as fh:
+        json.dump(report, fh, indent=1)
+sys.exit(1 if worst else 0)

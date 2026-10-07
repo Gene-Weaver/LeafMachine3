@@ -203,9 +203,21 @@ def test_migrated_example_configs_still_point_at_their_repository_files(
             assert Path(cfg.resolve_path(mod["models_dir"])) == REPO / "models" / "ruler_classifier"
 
 
-def test_the_absolute_global_greening_config_is_unaffected(elsewhere: Path) -> None:
-    """R5: that configuration is entirely absolute, so rule 1 cannot move it."""
-    cfg = Config.load(REPO / "LM3_settings_global_greening.yaml")
+def test_an_entirely_absolute_config_is_unaffected(tmp_path: Path, elsewhere: Path) -> None:
+    """R5: a configuration whose paths are all absolute cannot be moved by rule 1.
+
+    This used to load LM3_settings_global_greening.yaml, the real absolute-path config of a batch
+    run. That file is an operational artifact and is no longer tracked, so the same shape is built
+    here: absolute input dirs and output dir, loaded from a settings file in a third directory.
+    """
+    abs_in, abs_out = tmp_path / "absolute_in", tmp_path / "absolute_out"
+    abs_in.mkdir()
+    settings = write_cfg(tmp_path / "settings_dir")
+    raw = yaml.safe_load(settings.read_text(encoding="utf-8"))
+    raw["project"]["input"]["dirs"] = [str(abs_in)]
+    raw["project"]["output"]["dir"] = str(abs_out)
+    settings.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    cfg = Config.load(settings)
     assert Path(str(cfg.project.output.dir)).is_absolute()
     for raw in cfg.project.input.get("dirs", []):
         assert Path(str(raw)).is_absolute()

@@ -76,3 +76,18 @@ examples_out/
 # one line; this holds the reasoning. Deliberately untracked: it is a working note, not a
 # deliverable, and git log already carries what history needs.
 UNIFIED_RUNTIME_STEP2_CI_NOTES.txt
+
+# Runtime log from launch_gui.sh
+logs/
+
+# Settings backups written by the GUI / editors (never source)
+LM3_settings.bak.*.yaml
+# Personal settings: copy LM3_settings.yaml to this name for your own runs (machine3 --config ...)
+LM3_settings.local.yaml
+
+# Global Greening batch runs: operational, not part of LeafMachine3
+run_global_greening.sh
+run_global_greening.sh.bak.*
+LM3_settings_global_greening*.yaml
+LM3_settings_gg_watch.yaml
+tests/test_global_greening_wrapper.py

@@ -249,6 +249,131 @@ def test_specimen_summary_median_is_blank_when_nothing_was_grounded(project):
     assert b["median_lamina_area_incl_holes_px"] == "400"
 
 
+# --------------------------------------------------------------------------- #
+# the bundle is settable: code defaults, builtin_defaults and the shipped YAML agree
+# --------------------------------------------------------------------------- #
+# The settings form renders a row only for a leaf of the MERGED config tree, so a knob that
+# exists solely as a Python fallback is invisible in the GUI and unsettable from the file.
+# report.data was in that state: ten documented CSV toggles that rendered nowhere. Now the same
+# defaults live in three places, and these tests are what stop them drifting apart.
+def test_builtin_defaults_expose_every_export_file_as_a_toggle(project):
+    from leafmachine3.core.config import builtin_defaults
+    files = builtin_defaults()["report"]["data"]["files"]
+    assert set(files) == {f.key for f in FILES}, (
+        "builtin_defaults and data_export.FILES disagree about which files exist, so a file is "
+        "either unsettable or has a toggle that controls nothing"
+    )
+    for f in FILES:
+        assert files[f.key] == f.default, f"{f.key}: default disagrees with ExportFile.default"
+
+
+def test_shipped_settings_yaml_exposes_every_export_file_as_a_toggle():
+    """The GUI walks the merged tree, but the FILE is what a user edits and what a run reads."""
+    import pathlib
+    import yaml
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for name in ("LM3_settings.yaml", "LM3_settings.orig.yaml"):
+        cfg = yaml.safe_load((root / name).read_text())
+        data = cfg.get("report", {}).get("data")
+        assert data is not None, f"{name} has no report.data block, so the CSV bundle is unsettable"
+        assert set(data["files"]) == {f.key for f in FILES}, f"{name}: report.data.files is stale"
+        for f in FILES:
+            assert data["files"][f.key] == f.default, f"{name}: {f.key} disagrees with the code default"
+
+
+# --------------------------------------------------------------------------- #
+# phenology.csv -- the LeafMachine2-compatible file
+# --------------------------------------------------------------------------- #
+#: LM2's phenology.csv header, transcribed from utils_detect_phenology.py's fieldnames. The whole
+#: point of the file is that this list keeps reading it, so it is pinned here as a literal rather
+#: than derived from anything LM3 owns -- otherwise a rename on our side would silently "fix" the
+#: test while breaking every LM2 script the file exists to serve.
+_LM2_HEADER = [
+    "file_name", "leaf_whole", "leaf_partial", "leaflet", "seed_fruit_one", "seed_fruit_many",
+    "flower_one", "flower_many", "bud", "specimen", "roots", "wood", "has_leaves", "is_fertile",
+]
+
+
+def _phenology(project):
+    with (_data_dir(project) / "phenology.csv").open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))
+    return rows[0], {r[0]: dict(zip(rows[0], r)) for r in rows[1:]}
+
+
+def test_phenology_starts_with_lm2s_header_in_lm2s_order(project):
+    export_data_csvs(project, _cfg())
+    header, _ = _phenology(project)
+    assert header[:len(_LM2_HEADER)] == _LM2_HEADER
+
+
+def test_phenology_counts_kept_boxes_per_class(project):
+    """One row per sheet, counting the plant boxes -- LM2 counted lines in the label file."""
+    project.db.conn.execute(
+        "INSERT INTO plant_detection (specimen_id, cls_id, cls_name, conf, x1, y1, x2, y2) "
+        "VALUES (1, 6, 'Bud', 0.7, 5, 5, 15, 15)")
+    export_data_csvs(project, _cfg())
+    _, rows = _phenology(project)
+    assert rows["sheetA.jpg"]["leaf_whole"] == "1"
+    assert rows["sheetA.jpg"]["bud"] == "1"
+    assert rows["sheetA.jpg"]["flower_one"] == "0"
+    assert rows["sheetB.jpg"]["bud"] == "0"
+
+
+def test_phenology_excludes_suppressed_duplicates(project):
+    """A box suppressed as a same-class duplicate is not a second organ, so it must not be counted
+    -- otherwise every duplicate inflates the phenological signal this file exists to report."""
+    project.db.conn.execute(
+        "INSERT INTO plant_detection (specimen_id, cls_id, cls_name, conf, x1, y1, x2, y2, "
+        " suppressed, suppressed_by) VALUES (1, 0, 'Leaf_WHOLE', 0.4, 11, 21, 111, 221, 1, 1)")
+    export_data_csvs(project, _cfg())
+    _, rows = _phenology(project)
+    assert rows["sheetA.jpg"]["leaf_whole"] == "1"
+    assert rows["sheetA.jpg"]["n_plant_detections"] == "1"
+
+
+def test_phenology_classes_lm3_cannot_detect_are_blank_never_zero(project):
+    """`leaflet` and `specimen` are not classes of LM3's detector. A 0 would assert we looked and
+    found none; the truth is the detector cannot emit them at all, so they must read as absent."""
+    export_data_csvs(project, _cfg())
+    _, rows = _phenology(project)
+    for stem in ("sheetA.jpg", "sheetB.jpg"):
+        assert rows[stem]["leaflet"] == ""
+        assert rows[stem]["specimen"] == ""
+
+
+def test_phenology_is_fertile_is_flowers_or_fruits(project):
+    from leafmachine3.core.records import PhenologyResult
+    project.db.record_phenology(1, PhenologyResult(leaves=(True, 1), flowers=(False, 0),
+                                                   fruits=(True, 2)))
+    project.db.record_phenology(2, PhenologyResult(leaves=(True, 1), flowers=(False, 0),
+                                                   fruits=(False, 0)))
+    export_data_csvs(project, _cfg())
+    _, rows = _phenology(project)
+    assert rows["sheetA.jpg"]["is_fertile"] == "1"
+    assert rows["sheetB.jpg"]["is_fertile"] == "0"
+
+
+def test_phenology_flags_are_blank_when_the_stage_never_ran(project):
+    """No phenology row means unknown. Writing 0 would report every sheet of a run that skipped the
+    stage as leafless and sterile -- a real botanical claim LM3 never made."""
+    export_data_csvs(project, _cfg())
+    _, rows = _phenology(project)
+    assert rows["sheetA.jpg"]["has_leaves"] == ""
+    assert rows["sheetA.jpg"]["is_fertile"] == ""
+    # the counts are still real: they come from the detections, not from the stage
+    assert rows["sheetA.jpg"]["leaf_whole"] == "1"
+
+
+def test_phenology_keeps_sheets_with_no_plant_detections(project):
+    """LM2 had no row for such a sheet (no boxes -> no label file). Dropping it would shrink the
+    denominator of any rate computed from the file."""
+    project.db.conn.execute("DELETE FROM plant_detection WHERE specimen_id = 2")
+    export_data_csvs(project, _cfg())
+    _, rows = _phenology(project)
+    assert rows["sheetB.jpg"]["leaf_whole"] == "0"
+    assert rows["sheetB.jpg"]["n_plant_detections"] == "0"
+
+
 def test_detections_include_suppressed_boxes_with_their_flag(project):
     """Every consuming read hides suppressed duplicates; this file is the record of what the
     detectors proposed, so it keeps them and says so."""

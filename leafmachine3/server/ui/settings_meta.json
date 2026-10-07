@@ -1087,9 +1087,21 @@
     "important": true,
     "group": "Specimen Segmenter"
   },
+  "modules.specimen_segmenter.model.key": {
+    "label": "Model",
+    "help": "Which specimen segmenter this is: unetpp_effb7_1024 (UNet++, default), birefnet_hr_swinl_1024 (BiRefNet), yolo26x_seg_1280 (YOLO26x-seg). The name picks how the sheet is prepared for the model, so it must match the file below.",
+    "type": "enum",
+    "enum": [
+      "unetpp_effb7_1024",
+      "birefnet_hr_swinl_1024",
+      "yolo26x_seg_1280"
+    ],
+    "important": true,
+    "group": "Specimen Segmenter"
+  },
   "modules.specimen_segmenter.model.path": {
     "label": "Model file",
-    "help": "Path to the exported Specimen Segmenter weights, relative to the LM3 install or absolute.",
+    "help": "Path to the exported Specimen Segmenter weights (the file for the Model chosen above), relative to the LM3 install or absolute.",
     "type": "path",
     "important": true,
     "group": "Specimen Segmenter"
@@ -1108,23 +1120,54 @@
     "group": "Specimen Segmenter"
   },
   "modules.specimen_segmenter.imgsz": {
-    "label": "Image size",
-    "help": "Square input size for the segmenter; it must match the value the model was exported at.",
+    "label": "Image size (retired)",
+    "help": "No longer used: each model runs at the size it was trained at (UNet++ and BiRefNet 1024, YOLO26x-seg 1280). A different value here is ignored with a warning.",
     "type": "int",
     "min": 256,
     "max": 2048,
     "step": 32,
-    "important": true,
-    "group": "Specimen Segmenter"
+    "important": false,
+    "group": "Specimen Segmenter",
+    "retired": true
   },
   "modules.specimen_segmenter.conf": {
     "label": "Mask threshold",
-    "help": "Probability above which a pixel becomes plant in the binary mask.",
+    "help": "Probability above which a pixel becomes plant in the binary mask (UNet++ and BiRefNet). YOLO26x-seg uses its own confidence below.",
     "type": "float",
     "min": 0.0,
     "max": 1.0,
     "step": 0.01,
     "important": true,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.yolo.conf": {
+    "label": "YOLO instance confidence",
+    "help": "YOLO26x-seg only: keep plant instances at or above this confidence; their masks are joined into the specimen mask.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": false,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.yolo.iou": {
+    "label": "YOLO IoU",
+    "help": "YOLO26x-seg only: overlap setting passed to the model (end-to-end exports do no separate suppression, so this rarely matters).",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": false,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.yolo.max_det": {
+    "label": "YOLO max instances",
+    "help": "YOLO26x-seg only: most plant instances kept per sheet.",
+    "type": "int",
+    "min": 1,
+    "max": 1000,
+    "step": 1,
+    "important": false,
     "group": "Specimen Segmenter"
   },
   "modules.specimen_segmenter.paperclean": {
@@ -2886,6 +2929,13 @@
     "help": "specimen_summary.csv: one row per input image, with its conversion factor, phenology and counts and medians rolled up from that sheet's leaves.",
     "type": "bool",
     "important": true,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.phenology": {
+    "label": "Phenology (LM2 layout)",
+    "help": "phenology.csv: one row per sheet in LeafMachine2's phenology.csv layout \u2014 per-class plant-organ counts plus has_leaves and is_fertile \u2014 so an existing LM2 phenology script reads it unchanged. Its 'leaflet' and 'specimen' columns are always blank, because LM3's detector has no such classes.",
+    "type": "bool",
+    "important": false,
     "group": "Data Export (CSV)"
   },
   "report.data.files.detections": {

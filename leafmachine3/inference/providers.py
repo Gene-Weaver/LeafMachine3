@@ -84,6 +84,34 @@ def nvidia_gpu_present() -> bool:
         return False
 
 
+#: onnxruntime's session-creation log level for LM3's own sessions: 3 = ERROR.
+#:
+#: At its default (WARNING) onnxruntime prints, once per session and so once per worker, how it
+#: placed the graph -- "N Memcpy nodes are added to the graph", "Some nodes were not assigned to the
+#: preferred execution providers". For LM3's models those were diagnosed on 2026-10-07: the real CPU
+#: fallback (opset-19 Resize in the YOLO exports) is fixed by tools/modelhub/fix_resize_opset.py and
+#: checked by `lm3 doctor --models`; what remains is int64 shape arithmetic onnxruntime keeps on the
+#: CPU by design. Errors still print -- "Failed to load library", "Failed to create
+#: CUDAExecutionProvider" -- and a session that falls back to the CPU entirely is refused by
+#: make_session / reported by the doctor. Set LM3_ORT_LOG_SEVERITY (0 verbose .. 4 fatal) to see
+#: placements again when debugging a model.
+SESSION_LOG_SEVERITY = 3
+
+
+def session_options():
+    """``onnxruntime.SessionOptions`` for every LM3 inference session (see SESSION_LOG_SEVERITY)."""
+    import os
+
+    import onnxruntime as ort
+
+    so = ort.SessionOptions()
+    try:
+        so.log_severity_level = int(os.environ.get("LM3_ORT_LOG_SEVERITY", SESSION_LOG_SEVERITY))
+    except ValueError:
+        so.log_severity_level = SESSION_LOG_SEVERITY
+    return so
+
+
 def build_providers(cfg: Any) -> list:
     """Build the GPU-first EP ladder for the current onnxruntime build and config."""
     avail = _available_providers()
@@ -113,7 +141,7 @@ def make_session(model_path, cfg: Any):
     """
     import onnxruntime as ort
 
-    sess = ort.InferenceSession(str(model_path), providers=build_providers(cfg))
+    sess = ort.InferenceSession(str(model_path), session_options(), providers=build_providers(cfg))
     bound = sess.get_providers()[0]
     log.info("ONNXRuntime bound EP: %s", bound)
     if (

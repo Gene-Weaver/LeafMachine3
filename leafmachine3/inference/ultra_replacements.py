@@ -299,7 +299,9 @@ class YOLO:
                 "re-export with `format=onnx` (dynamic=True, nms=False)."
             )
         self.providers = list(providers) if providers else ["CPUExecutionProvider"]
-        self.session = ort.InferenceSession(self.model_path, providers=self.providers)
+        from leafmachine3.inference.providers import session_options
+
+        self.session = ort.InferenceSession(self.model_path, session_options(), providers=self.providers)
         self.bound_provider = self.session.get_providers()[0]
         requested = self.providers[0][0] if isinstance(self.providers[0], (tuple, list)) else self.providers[0]
         if requested != self.bound_provider:

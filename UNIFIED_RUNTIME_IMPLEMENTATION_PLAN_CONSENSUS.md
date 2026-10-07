@@ -965,9 +965,10 @@ midway through a backup and prove the previous archive still opens.
 
 The installed Electron **was 33.4.11** when this section was written. Step 5a has since
 landed: it is now pinned exactly at **43.4.1** (`app/package.json`, `app/package-lock.json`),
-above the CVE fix on every affected line and on a currently supported major. The analysis below
-is retained because it is why the upgrade had to precede `requestSingleInstanceLock()`, which
-remains Step 5b work and is still absent from `app/main.js`.
+above the CVE fix on every affected line and on a currently supported major. Step 5b has also now
+landed in the implementation tree: `requestSingleInstanceLock()` is deployment-scoped, attachment
+uses the authenticated connection descriptor, and closing an attached shell signals nothing. The
+analysis below is retained because it records why the upgrade had to precede the lock.
 
 **CVE-2026-34776 / GHSA-3c8v-cfp5-9885** (published April 2026, CVSS 5.3): on macOS and Linux, apps
 calling `app.requestSingleInstanceLock()` are vulnerable to an out-of-bounds heap read when parsing
@@ -1678,8 +1679,9 @@ a window in which the shell batch took and released a lease per species. Revisio
 batch orchestrator entirely (§2.3), so that window is now the accepted behavior and the merge has no
 purpose. Step 3 is execution integration alone.
 
-Keep the integration behind `LM3_RUNTIME_V2`, defaulting off, until its exit gate passes — the flag
-is now about landing safely rather than about waiting for the batch.
+Initially keep the integration behind `LM3_RUNTIME_V2`, defaulting off until its exit gate passes —
+the flag is about landing safely rather than about waiting for the batch. That gate has now passed;
+the cutover status below is normative for the current default.
 
 - Wrap `machine3()` (the public function, not just `main()`), so direct Python callers inherit it.
 - Wrap standalone and GUI hardware setup as a root `hardware_setup` activity.
@@ -1707,6 +1709,12 @@ legacy jobs all refuse a second **root** activity — while calibration under a 
 succeeds; a busy start returns 409 with the winner's identity; and a species launched by
 `run_global_greening.sh` against a busy deployment exits 75 and is recorded as retryable rather than
 failed.
+
+**Cutover status.** This exit gate is implemented and regression-pinned, including execution of the
+real shell wrapper (gates 47/48) and two concurrent deployment processes carrying disjoint explicit
+GPU plans (gate 43). `LM3_RUNTIME_V2` therefore defaults ON; explicit `0` retains the transition
+path until its scheduled 3.1.0 removal. A broken runtime import fails visibly rather than silently
+selecting that unsafe compatibility path.
 
 ### Step 4 — Registry-backed server and status
 

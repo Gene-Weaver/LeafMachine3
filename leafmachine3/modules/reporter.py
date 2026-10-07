@@ -456,10 +456,7 @@ class Reporter(PipelineStage):
         classes = _get(crops_cfg, "classes", default="all")
         want_all = isinstance(classes, str) and classes.lower() == "all"
         wanted = None if want_all else set(_list(classes))
-        if _getk(crops_cfg, "source", None) is not None:
-            log.warning("report.crops.source is no longer used -- crops are always cut from the "
-                        "working image, which is the frame every measurement is made in. Remove it "
-                        "from your settings file.")
+        # report.crops.source is retired; machine3 warns once per run (core.config.RETIRED_SETTINGS).
         img = read(b.working_path)
         crops_root = reports / "Crops"
 

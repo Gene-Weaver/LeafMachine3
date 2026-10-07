@@ -1,0 +1,157 @@
+{
+  "what": "plant_detector boxes drawn on the LM3 working image with the Reporter's build_summary_image (boxes + labels only; masks/landmarks/CF off; archival = translucent fill + border, plant = border). Rendered 2026-10-06 from the run DB of LM3/examples_out/collage_test_broadsampletrees (model = the LM3 3.0.0 default).",
+  "note": "10 candidates; Will prunes by hand, then survivors are linked from the model card under docs/.",
+  "examples": [
+    {
+      "file": "overlay_01_NY_1929402386_Fabaceae_Lonchocarpus_cultratus.jpg",
+      "specimen": "NY_1929402386_Fabaceae_Lonchocarpus_cultratus",
+      "n_boxes": 43,
+      "classes": [
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE",
+        "Seed_Fruit_MANY",
+        "Seed_Fruit_ONE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 324895
+    },
+    {
+      "file": "overlay_02_US_1317966461_Sapotaceae_Sideroxylon_foetidissimum.jpg",
+      "specimen": "US_1317966461_Sapotaceae_Sideroxylon_foetidissimum",
+      "n_boxes": 25,
+      "classes": [
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE",
+        "Seed_Fruit_ONE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 384077
+    },
+    {
+      "file": "overlay_03_CM_2859187346_Oleaceae_Syringa_vulgaris.jpg",
+      "specimen": "CM_2859187346_Oleaceae_Syringa_vulgaris",
+      "n_boxes": 22,
+      "classes": [
+        "Bud",
+        "Flower_MANY",
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 263962
+    },
+    {
+      "file": "overlay_04_UTEP_1899734012_Bignoniaceae_Tabebuia_rosea.jpg",
+      "specimen": "UTEP_1899734012_Bignoniaceae_Tabebuia_rosea",
+      "n_boxes": 21,
+      "classes": [
+        "Bud",
+        "Flower_ONE",
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 331233
+    },
+    {
+      "file": "overlay_05_UCR_2422502101_Fagaceae_Notholithocarpus_densiflorus.jpg",
+      "specimen": "UCR_2422502101_Fagaceae_Notholithocarpus_densiflorus",
+      "n_boxes": 73,
+      "classes": [
+        "Flower_ONE",
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE",
+        "Seed_Fruit_ONE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 355351
+    },
+    {
+      "file": "overlay_06_RSA_2610084148_Fabaceae_Gliricidia_sepium.jpg",
+      "specimen": "RSA_2610084148_Fabaceae_Gliricidia_sepium",
+      "n_boxes": 37,
+      "classes": [
+        "Flower_MANY",
+        "Flower_ONE",
+        "Wood"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 204460
+    },
+    {
+      "file": "overlay_07_BR_1839535867_Sapotaceae_Manilkara_obovata.jpg",
+      "specimen": "BR_1839535867_Sapotaceae_Manilkara_obovata",
+      "n_boxes": 52,
+      "classes": [
+        "Flower_MANY",
+        "Flower_ONE",
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 408299
+    },
+    {
+      "file": "overlay_08_DBG_2242395962_Oleaceae_Syringa_josikaea.jpg",
+      "specimen": "DBG_2242395962_Oleaceae_Syringa_josikaea",
+      "n_boxes": 238,
+      "classes": [
+        "Flower_MANY",
+        "Flower_ONE",
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 235786
+    },
+    {
+      "file": "overlay_09_CHSC_2417969644_Anacardiaceae_Pistacia_atlantica.jpg",
+      "specimen": "CHSC_2417969644_Anacardiaceae_Pistacia_atlantica",
+      "n_boxes": 97,
+      "classes": [
+        "Bud",
+        "Flower_ONE",
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE",
+        "Seed_Fruit_ONE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 268502
+    },
+    {
+      "file": "overlay_10_NCU_2640547550_Betulaceae_Ostrya_japonica.jpg",
+      "specimen": "NCU_2640547550_Betulaceae_Ostrya_japonica",
+      "n_boxes": 42,
+      "classes": [
+        "Bud",
+        "Flower_MANY",
+        "Leaf_PARTIAL",
+        "Leaf_WHOLE"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 334854
+    }
+  ],
+  "kept": [
+    "overlay_01_NY_1929402386_Fabaceae_Lonchocarpus_cultratus.jpg",
+    "overlay_02_US_1317966461_Sapotaceae_Sideroxylon_foetidissimum.jpg",
+    "overlay_03_CM_2859187346_Oleaceae_Syringa_vulgaris.jpg",
+    "overlay_04_UTEP_1899734012_Bignoniaceae_Tabebuia_rosea.jpg",
+    "overlay_05_UCR_2422502101_Fagaceae_Notholithocarpus_densiflorus.jpg",
+    "overlay_06_RSA_2610084148_Fabaceae_Gliricidia_sepium.jpg",
+    "overlay_07_BR_1839535867_Sapotaceae_Manilkara_obovata.jpg",
+    "overlay_08_DBG_2242395962_Oleaceae_Syringa_josikaea.jpg",
+    "overlay_09_CHSC_2417969644_Anacardiaceae_Pistacia_atlantica.jpg",
+    "overlay_10_NCU_2640547550_Betulaceae_Ostrya_japonica.jpg"
+  ]
+}

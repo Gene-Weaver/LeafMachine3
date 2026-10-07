@@ -152,10 +152,18 @@ def test_a_collection_failure_does_not_report_the_whole_baseline_as_newly_passin
 
 
 def test_the_real_baseline_file_parses_to_the_expected_node_ids() -> None:
-    """The gate is only as good as its baseline; a silently-empty one accepts everything."""
-    nodes = gate.parse_baseline(
-        Path("docs/verification/STEP2_BASELINE_NODE_IDS.txt").read_text(encoding="utf-8"))
-    assert len(nodes) == 11
+    """The parser must return exactly the node IDs the file lists -- no more, no fewer.
+
+    This pinned a literal count (11), which meant every legitimate fix that removed an ID failed
+    this test. What it guards is the PARSER: the expected set is re-derived here independently
+    (every non-comment line that looks like a node ID), so a parser that silently drops or invents
+    entries still fails, and an empty baseline -- the strictest gate -- is allowed.
+    """
+    text = Path("docs/verification/STEP2_BASELINE_NODE_IDS.txt").read_text(encoding="utf-8")
+    nodes = gate.parse_baseline(text)
+    expected = {ln.strip() for ln in text.splitlines()
+                if ln.strip().startswith("tests/") and "::" in ln}
+    assert set(nodes) == expected
     assert all(n.startswith("tests/") and "::" in n for n in nodes)
 
 

@@ -12,6 +12,7 @@ Which gates land here:
 * gate 9  -- a bogus inherited descriptor is rejected, including one on the RIGHT inode
 * gate 22 -- a child that fails validation renames nothing (here: it never reaches the grant)
 * gate 39 -- default deployments contend, resolved from the environment
+* gate 43 -- explicitly disjoint GPU deployments keep distinct leases and device plans
 * gate 51 -- a killed lone owner releases the lock and is left to be classified abandoned
 """
 from __future__ import annotations
@@ -127,6 +128,7 @@ from pathlib import Path
 
 from leafmachine3.core.runtime._types import EXIT_CODE_BUSY, RuntimeBusyError
 from leafmachine3.core.runtime.lease import RuntimeLease
+from leafmachine3.core.config import Config
 
 mode = sys.argv[1]
 report = Path(os.environ["LM3_TEST_REPORT"])
@@ -134,6 +136,9 @@ lease = RuntimeLease(env=os.environ)   # no deployment_dir, no deployment_key: r
 identity = {"deployment_key": lease.deployment_key,
             "deployment_dir": str(lease.deployment_dir),
             "cwd": os.getcwd()}
+config_path = os.environ.get("LM3_TEST_CONFIG")
+if config_path:
+    identity["devices"] = Config.load(config_path).resolve_gpus()
 try:
     lease.acquire()
 except RuntimeBusyError as busy:
@@ -966,6 +971,82 @@ def test_two_default_deployments_contend(tmp_path: Path) -> None:
     assert held["cwd"] != refused["cwd"]
     # And it landed under the tmp base -- nowhere near the developer's real default runtime dir.
     assert (base / P.deployment_key({}) / ACTIVITY_LOCK_FILENAME).exists()
+
+
+@posix_only
+def test_two_deployments_pinned_to_disjoint_gpus_run_side_by_side(tmp_path: Path) -> None:
+    """Gate 43: distinct deployment leases preserve the two explicit GPU plans concurrently.
+
+    This is intentionally a lease/config integration test rather than a CUDA test: CI need not own
+    two physical cards to prove that ``compute.devices: [0]`` and ``[1]`` survive real config
+    loading and that both root processes can hold their independently resolved deployment leases
+    at the same time.  The executor's device-plan tests separately pin worker-to-ordinal routing.
+    """
+    base = tmp_path / "runtime"
+    script = tmp_path / "gpu_deployment_child.py"
+    script.write_text(DEFAULT_DEPLOYMENT_CHILD, encoding="utf-8")
+
+    processes: list[subprocess.Popen[str]] = []
+    reports: dict[str, Path] = {}
+    stops: dict[str, Path] = {}
+    try:
+        for deployment_id, gpu in (("gpu0", 0), ("gpu1", 1)):
+            config = tmp_path / f"{deployment_id}.yaml"
+            config.write_text(
+                "version: 3\n"
+                "project:\n"
+                f"  run_name: {deployment_id}\n"
+                "  output:\n"
+                f"    dir: {tmp_path / 'output'}\n"
+                "compute:\n"
+                f"  devices: [{gpu}]\n",
+                encoding="utf-8",
+            )
+            ready = tmp_path / f"{deployment_id}.ready"
+            stop = tmp_path / f"{deployment_id}.stop"
+            report_path = tmp_path / f"{deployment_id}.json"
+            env = default_helper_env(
+                base,
+                LM3_DEPLOYMENT_ID=deployment_id,
+                LM3_TEST_CONFIG=config,
+                LM3_TEST_READY=ready,
+                LM3_TEST_STOP=stop,
+                LM3_TEST_REPORT=report_path,
+            )
+            proc = spawn("root-hold", env, cwd=str(tmp_path), script=script)
+            processes.append(proc)
+            reports[deployment_id] = report_path
+            stops[deployment_id] = stop
+            wait_for(ready)
+
+        assert all(proc.poll() is None for proc in processes), "both GPU roots must be live together"
+
+        # Each deployment still excludes a second root in its OWN namespace while the other GPU's
+        # deployment remains independently occupied.
+        for deployment_id in ("gpu0", "gpu1"):
+            contender_report = tmp_path / f"{deployment_id}.contender.json"
+            contender = spawn(
+                "contend",
+                default_helper_env(
+                    base, LM3_DEPLOYMENT_ID=deployment_id,
+                    LM3_TEST_REPORT=contender_report,
+                ),
+                cwd=str(REPO_ROOT), script=script,
+            )
+            assert contender.wait(timeout=SPAWN_TIMEOUT_S) == EXIT_CODE_BUSY, contender.communicate()
+            assert report(contender_report)["result"] == "busy"
+    finally:
+        for stop in stops.values():
+            stop.write_text("go", encoding="utf-8")
+        for proc in processes:
+            assert proc.wait(timeout=SPAWN_TIMEOUT_S) == 0, proc.communicate()
+
+    gpu0, gpu1 = report(reports["gpu0"]), report(reports["gpu1"])
+    assert gpu0["devices"] == [0]
+    assert gpu1["devices"] == [1]
+    assert gpu0["deployment_key"] == P.canonical_deployment_key("gpu0")
+    assert gpu1["deployment_key"] == P.canonical_deployment_key("gpu1")
+    assert gpu0["deployment_dir"] != gpu1["deployment_dir"]
 
 
 @posix_only

@@ -30,8 +30,18 @@
 #   2 x Settings UI 'report.data' rail-group / settings_meta.json assertions -- apparently a
 #                   code/test contract discrepancy (metadata describing settings that no longer
 #                   exist), not an environment property.
+#                   FIXED 2026-10-07 (commit "Settings template: list every live setting, drop
+#                   retired ones"): the shipped template now lists every live setting and the one
+#                   retired key is marked "retired" in settings_meta.json. Both IDs removed below.
 #
 # None is caused by or affected by the Step 1/2 work.
+#
+# RESOLVED 2026-10-07 -- all three categories, so the list below is EMPTY. An empty baseline is the
+# strictest gate: any failing node ID is a new failure.
+#   NumPy: pyproject.toml pins numpy==2.4.4 (packaging Phase A), so the declared range is the one
+#          production code needs; the uv lock installs exactly that.
+#   ect:   ect==1.3.0 is a base dependency of every install (packaging Phase A).
+#   Settings UI: fixed by "Settings template: list every live setting, drop retired ones".
 
 # COVERAGE FLOOR. The node-id diff above protects failure IDENTITIES; it does not protect VOLUME.
 # "6 skipped in 0.01s" has no failures, no errors, a valid summary and exit 0, so an entirely
@@ -39,19 +49,8 @@
 # marker expression -- passes an identity-only gate. This is the number of tests that must actually
 # EXECUTE (passed + failed; skips run nothing and do not count).
 #
-# Set below the current 1014 executed with deliberate slack, so ordinary churn does not trip it while
+# Set below the current count executed with deliberate slack, so ordinary churn does not trip it while
 # catastrophic loss does. RAISE IT DELIBERATELY as the suite grows; lowering it is a decision, not
-# a formality.
-min-executed: 980
-
-tests/test_bilateral_symmetry.py::test_area_ratio_is_mirror_consistent
-tests/test_bilateral_symmetry.py::test_cumulative_integral_has_no_half_bin_bias
-tests/test_bilateral_symmetry.py::test_mirror_symmetric_mask_is_exactly_symmetric
-tests/test_bilateral_symmetry.py::test_mirroring_the_mask_negates_the_signed_measures_exactly
-tests/test_bilateral_symmetry.py::test_width_guard_drops_the_tip_slivers
-tests/test_pipeline_mock.py::test_end_to_end_mock_pipeline
-tests/test_pipeline_mock.py::test_pipeline_resumes_without_duplicates
-tests/test_pipeline_mock.py::test_restart_reruns_a_stage
-tests/test_settings_ui.py::test_declared_subsection_paths_resolve_to_real_rail_groups
-tests/test_settings_ui.py::test_no_metadata_for_settings_that_do_not_exist
-tests/test_working_frame.py::test_reporter_outputs_are_working_sized_and_survive_a_deleted_original
+# a formality. Raised 2026-10-07 from 980 (set at 1014 executed) to 1450: the suite now executes
+# about 1600 (unified-runtime Step 3, packaging, model installer, specimen backends).
+min-executed: 1450

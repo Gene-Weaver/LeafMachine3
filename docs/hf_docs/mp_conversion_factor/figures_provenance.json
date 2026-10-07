@@ -1,0 +1,13 @@
+{
+  "what": "Figures for the lm3_mp_conversion_factor__sqrt_fit model card: the light/dark pair, shown by theme on the Hub (img classes dark:hidden / hidden dark:block). Will kept only these (2026-10-06).",
+  "images": [
+    {
+      "file": "fit_708_sheets_light.png",
+      "origin": "RENDERED 2026-10-06 from models/mp_conversion_factor/fit_data.csv + model.json (the shipped fit; no such static image existed -- the original line of fit was drawn live in the MIDAS web_guide demo page)"
+    },
+    {
+      "file": "fit_708_sheets_dark.png",
+      "origin": "same, dark theme"
+    }
+  ]
+}

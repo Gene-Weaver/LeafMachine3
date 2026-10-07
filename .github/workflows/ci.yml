@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.11"]   # the one interpreter requires-python allows (tools/release/versions.env)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -86,7 +86,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - name: Install (CPU + server + test, no heavy ML deps)
         run: |
           python -m pip install --upgrade pip
@@ -94,7 +94,13 @@ jobs:
           # tests/test_settings_path_unification.py, which imports the server modules and drives
           # TestClient, so both `server` and `test` (for httpx) are required to even collect.
           pip install -e ".[cpu,dev,server,test]"
-      - name: Step 2 runtime primitives (isolated)
+      # Steps 2 AND 3. Gate 17 is "the launch handshake and process-tree Stop pass on Windows CI,
+      # not only the lock adapter" -- so a list containing only the Step 2 primitive files leaves
+      # that gate unmet BY CONSTRUCTION, however green it runs. The section 2.4 handshake is the
+      # part with a genuinely different Windows implementation (STARTUPINFOEX handle allowlist
+      # instead of pass_fds, a job object instead of a process group), which is exactly why the
+      # plan singles it out.
+      - name: Step 2 + 3 runtime primitives and handshake (isolated)
         run: >
           python -m pytest -q -rs
           tests/test_runtime_lease.py
@@ -103,14 +109,18 @@ jobs:
           tests/test_runtime_grant.py
           tests/test_runtime_config_io.py
           tests/test_runtime_isolation.py
+          tests/test_runtime_launch.py
+          tests/test_runtime_execution.py
+          tests/test_server_handshake.py
+          tests/test_setup_runtime.py
+          tests/test_machine3_runtime.py
           tests/test_paths.py
           tests/test_setup_paths.py
           tests/test_settings_path_unification.py
-      # The two `skipif(sys.platform != "win32")` tests are the only ones in the tree that touch
-      # the real object manager -- the one thing the Linux FakeWin32 harness cannot establish
-      # (CreateEventW, ERROR_ALREADY_EXISTS, CompareObjectHandles, DuplicateHandle, STARTUPINFOEX).
-      # They are named here so the Windows leg proves they RAN; the step above already ran them,
-      # but a skip there would pass silently.
+      # These `skipif(sys.platform != "win32")` tests touch the real object manager -- the one thing
+      # the Linux fakes cannot establish (event lifetime/identity, STARTUPINFOEX, and a Job Object
+      # actually terminating a descendant). They are named here so the Windows leg proves they RAN;
+      # the step above already ran them, but a skip there would pass silently.
       - name: The real Win32 surface must not have skipped
         if: matrix.os == 'windows-latest'
         # bash (git-bash on the Windows runner) rather than PowerShell, because GitHub runs it with
@@ -121,9 +131,10 @@ jobs:
           python -m pytest -q -rs \
             "tests/test_runtime_lease_windows.py::test_the_real_allowlist_is_a_startupinfo" \
             "tests/test_runtime_lease_windows.py::test_the_real_surface_acquires_and_releases" \
+            "tests/test_server_handshake.py::test_the_real_windows_job_object_stops_root_and_grandchild" \
             | tee win32-real-surface.log
           # pytest exits 0 on a skip, so a passing run is NOT by itself proof that the real object
           # manager was touched. These two lines are the actual assertion behind gate 27's
           # "verified against the Windows adapter itself, not inferred from the POSIX result".
-          grep -q "2 passed" win32-real-surface.log
+          grep -q "3 passed" win32-real-surface.log
           ! grep -qi "skipped" win32-real-surface.log

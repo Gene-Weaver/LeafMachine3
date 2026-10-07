@@ -17,8 +17,16 @@
 
 const TOKEN_KEY = "lm3.token";
 
-/** Read a <meta name="..."> value, or null. */
+/**
+ * Read a `<meta name="...">` value, or null.
+ *
+ * Guarded on `document` because this module is imported at the TOP of every renderer module, and
+ * the renderer's pure decision logic (topbar.js `deriveView`) is unit-tested under plain node,
+ * which has no DOM. Without the guard the import itself throws and the only way to test that logic
+ * would be to copy it into the test -- i.e. to test a copy.
+ */
 function meta(name) {
+  if (typeof document === "undefined" || !document.querySelector) return null;
   const m = document.querySelector(`meta[name="${name}"]`);
   const v = m && m.getAttribute("content");
   return v && v.trim() ? v.trim() : null;
@@ -42,7 +50,7 @@ function resolveToken() {
   try {
     const q = new URLSearchParams(location.search).get("token");
     if (q) return remember(q);
-  } catch { /* opaque origin (file://) — fall through to storage */ }
+  } catch { /* opaque origin (file://), or no window at all — fall through to storage */ }
 
   try {
     return localStorage.getItem(TOKEN_KEY) || "";
@@ -52,7 +60,7 @@ function resolveToken() {
 }
 
 function remember(tok) {
-  try { localStorage.setItem(TOKEN_KEY, tok); } catch { /* private mode */ }
+  try { localStorage.setItem(TOKEN_KEY, tok); } catch { /* private mode, or no browser at all */ }
   return tok;
 }
 
@@ -279,6 +287,16 @@ export const api = {
    */
   getSettingsMeta: () => get("/v1/settings/meta"),
 
+  /* -- models (Hugging Face installer) ----------------------------------- */
+  /** Per-action install state + the resolved models folder; `verify` re-hashes files. */
+  getModelsStatus: (verify = false) => get("/v1/models/status", { params: verify ? { verify: 1 } : undefined, timeout: 60000 }),
+  /** Start an install; {task_id}. Body: {actions?, formats?, force?}. */
+  installModels: (body = {}) => post("/v1/models/install", body),
+  /** Snapshot of an install task (state, events since `since`). */
+  getModelsInstall: (taskId, since = 0) => get(`/v1/models/install/${encodeURIComponent(taskId)}`, { params: { since } }),
+  /** Live progress events for an install task; ends with a "done" event. */
+  streamModelsInstall: (taskId, handlers) => sse(`/v1/models/install/${encodeURIComponent(taskId)}/events`, { ...handlers, events: ["progress", "done", "ping"] }),
+
   /* -- machine performance ----------------------------------------------- */
   /** One-shot sample: CPU, RAM, GPU, VRAM, disk. */
   getMetrics: () => get("/v1/metrics", { timeout: 8000 }),
@@ -286,19 +304,48 @@ export const api = {
   /** Continuous samples for the pinned bottom perf panel. */
   streamMetrics: (handlers) => sse("/v1/metrics/stream", handlers),
 
-  /* -- live run status ---------------------------------------------------- */
-  /** Current LM3 run: modules, per-module counts, per-worker slots. */
-  getStatus: () => get("/v1/status", { timeout: 8000 }),
+  /* -- the runtime registry ------------------------------------------------ */
+  /**
+   * THE canonical runtime view (plan section 5): `{active, last, next_run_settings, server,
+   * diagnostics}`. Identity comes from the deployment's lease record -- never from the settings
+   * YAML and never from a filesystem recency guess (invariant 5).
+   *
+   * 404 means this server predates the route (or `LM3_RUNTIME_V2` is off). Callers fall back to
+   * `GET /v1/run/active`, which describes only runs THIS server launched; topbar.js marks that
+   * view `supported: false` so nothing pretends the two are the same answer.
+   */
+  getRuntime: () => get("/v1/runtime", { timeout: 10000 }),
 
-  /** Same shape as getStatus(), pushed as it changes. */
+  /** The legacy per-server run record. Compatibility projection; superseded by getRuntime(). */
+  getActiveRun: () => get("/v1/run/active", { timeout: 10000 }),
+
+  /* -- live run status ---------------------------------------------------- */
+  /**
+   * Current LM3 run: modules, per-module counts, per-worker slots.
+   * `opts` may pin the answer to one run: `{db}` (a ledger path) or `{run}` (a run name/id).
+   * Unpinned, the server answers for whatever `resolve_run()` follows -- the active record first.
+   */
+  getStatus: (opts) => get("/v1/status", { timeout: 8000, params: opts || undefined }),
+
+  /** Same shape as getStatus(), pushed as it changes. Accepts the same `params: {db|run}` pin. */
   streamStatus: (handlers) => sse("/v1/status/stream", handlers),
 
-  /** The log stream that feeds the console pane. */
+  /** The log stream that feeds the console pane. Accepts the same `params: {db|run}` pin. */
   streamLogs: (handlers) => sse("/v1/logs/stream", handlers),
 
   /* -- runs / results ----------------------------------------------------- */
   /** Every run directory the server can see, newest first. */
-  listRuns: () => get("/v1/runs"),
+  listRuns: (opts) => get("/v1/runs", { params: opts || undefined }),
+
+  /**
+   * The run list PLUS which row is live: `{runs, active, last, follow, selected_default,
+   * runtime}`. `active` is non-null only when the deployment lease is held and the record is
+   * compatible, so it is the one field a renderer may read as "a run is happening right now".
+   *
+   * Two literal path segments (`/-/selector`) so it can neither shadow nor be shadowed by
+   * `GET /v1/runs/{run}`. 404 on a server that predates it -- callers fall back to listRuns().
+   */
+  runSelector: (opts) => get("/v1/runs/-/selector", { params: opts || undefined }),
 
   /**
    * Media produced by a run.

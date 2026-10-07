@@ -1,222 +1,330 @@
+# ============================================================================
+# LM3_settings.yaml  --  LeafMachine3's single user control surface (INTENT).
+# Paths may be absolute or relative to project.output.dir. Machine-derived perf
+# settings live in hardware_settings.yaml (written by LM3_Setup); per-crop RESULTS
+# live in the per-project SQLite DB. Precedence: defaults < hardware_settings.yaml
+# < THIS file (explicit, non-"auto") < CLI.
+# ============================================================================
 version: 3
+
 project:
-  run_name: liquidambar_examples6
+  run_name: "demo"
   input:
-    dirs: [/datab/Magnoliopsida_By_Family_IMGS/Altingiaceae/img]
-    recursive: false
-    image_extensions: [.jpg]
-  output: {dir: /datac/Labelbox_Dump/LM3/examples_out, tmp_dir: auto}
+    dirs: ["examples/images"]           # folder(s) of ORIGINAL images
+    recursive: true
+    image_extensions: [".jpg", ".jpeg", ".png", ".tif", ".tiff"]
+  output:
+    dir: "runs"                         # <dir>/<run_name>/ holds db, crops, reports, logs
+    # Where ingest writes _tmp_original: the RGB-converted / downscaled copies of any original that
+    # is not already an RGB JPEG within ingest.max_working_dim. These are the only bulky derived
+    # inputs (often most of the set), and _working/<stem>.jpg symlinks point at them.
+    #   "auto"  -> <dir>/<run_name>/_tmp_original   (default; sits beside the rest of the run)
+    #   <path>  -> <path>/<run_name>/_tmp_original  (put them on a fast/large scratch disk instead,
+    #              e.g. "/scratch" or "/mnt/nvme/lm3_tmp"; falls back to the run dir if unwritable)
+    tmp_dir: "auto"
   run_mode:
     overwrite: false
-    restart: []
+    restart: []                         # [] resume | "all" | ["leaf_segmenter", ...]
     fail_fast: false
-  logging: {level: INFO, to_file: true, to_console: true}
+  logging: { level: "INFO", to_file: true, to_console: true }
+
 compute:
-  devices: auto
+  devices: "auto"                       # GPU-first: every visible NVIDIA GPU; CPU only if none | [0,1] | "cpu"
   tensorrt: false
-  mock: false
-  longest_first: true
-  vram: {safety_fraction: 0.95, reserve_mb: 1024, per_worker_mb: auto, max_workers_per_gpu: 16, headroom_factor: 1.05,
-    concurrent_warm_loads: 4}
-  workers: {default: auto, ruler_cf: 8}
-  onnxruntime: {providers: auto, ld_library_path: auto, allow_cpu_fallback: false}
-  precision: fp16
-ingest: {max_working_dim: 100000, jpg_quality: 100}
+  mock: false                           # true = deterministic synthetic models (no weights/GPU) for testing
+  vram: { safety_fraction: 0.90, reserve_mb: 1024, per_worker_mb: "auto", max_workers_per_gpu: 6 }
+  workers: { default: "auto", ruler_cf: 8 }
+  onnxruntime: { providers: "auto", ld_library_path: "auto", allow_cpu_fallback: false }
+  precision: "fp16"
+
+ingest:
+  max_working_dim: 3200                 # long-side cap; larger originals get a resized _tmp jpg
+  jpg_quality: 100
+
+# ----------------------------------------------------------------------------
+# NAMING — crop / mask filenames are <stem>__<PREFIX>-<friendly>__x1_y1_x2_y2.<ext>
+# (PREFIX = BBOX for detection boxes, SEG for segmentation masks). Rename the friendly
+# values however you like — these are the defaults and drive folder + file names.
+# ----------------------------------------------------------------------------
 naming:
-  bbox_prefix: BBOX
-  seg_prefix: SEG
-  seg_rgb_prefix: SEGRGB
-  mask_full_prefix: MaskFull
-  mask_rgb_full_prefix: MaskRGBFull
-  landmark_prefix: LM
-  petiole_prefix: PET
-  bilateral_prefix: BSYM
-  friendly_names: {Ruler: ruler, Barcode: barcode, Colorcard: colorcard, Label: label, Map: map, Envelope: envelope,
-    Photo: photo, Attached_Item: attachedItem, Weights: weights, Leaf_WHOLE: leaf, Leaf_PARTIAL: leafReject,
-    Leaflet: leaflet, Seed_Fruit_ONE: fruit, Seed_Fruit_MANY: fruitMany, Flower_ONE: flower, Flower_MANY: flowerMany,
-    Bud: bud, Specimen: specimen, Specimen_Inverse: specimenInverse, Roots: roots, Wood: wood, Leaf: leaf,
-    Petiole: petiole, Hole: hole}
+  bbox_prefix: "BBOX"                   # detection bbox crops:  <stem>__BBOX-<friendly>__x_y_x_y
+  seg_prefix: "SEG"                     # per-crop seg masks:    <stem>__SEG-<friendly>__x_y_x_y
+  mask_full_prefix: "MaskFull"          # full-image masks:      <stem>__MaskFull-<friendly>
+  landmark_prefix: "LM"                 # per-leaf landmark overlay: <stem>__LM-<friendly>__x_y_x_y
+  petiole_prefix: "PET"                 # per-leaf petiole overlay:  <stem>__PET-<friendly>__x_y_x_y
+  seg_rgb_prefix: "SEGRGB"              # per-crop RGB cutouts (must differ from seg_prefix)
+  mask_rgb_full_prefix: "MaskRGBFull"   # full-image RGB cutouts (must differ from mask_full_prefix)
+  bilateral_prefix: "BSYM"              # per-leaf bilateral-symmetry QC panels
+  friendly_names:                       # real class name -> friendly name used in filenames
+    # archival
+    Ruler: ruler
+    Barcode: barcode
+    Colorcard: colorcard
+    Label: label
+    Map: map
+    Envelope: envelope
+    Photo: photo
+    Attached_Item: attachedItem
+    Weights: weights
+    # plant organs
+    Leaf_WHOLE: leaf
+    Leaf_PARTIAL: leafReject
+    Leaflet: leaflet
+    Seed_Fruit_ONE: fruit
+    Seed_Fruit_MANY: fruitMany
+    Flower_ONE: flower
+    Flower_MANY: flowerMany
+    Bud: bud
+    Specimen: specimen
+    Specimen_Inverse: specimenInverse   # the not-specimen complement (report.masks.*_Specimen_Inverse)
+    Roots: roots
+    Wood: wood
+    # segmentation instance classes
+    Leaf: leaf
+    Petiole: petiole
+    Hole: hole
+
 modules:
+
   mp_conversion_factor:
     enabled: true
-    model: {path: /datac/Labelbox_Dump/LM3/models/mp_conversion_factor/model.json, format: json}
+    # Runs FIRST (before the detectors). Resolution -> conversion-factor linear predictor:
+    #   cf_px_per_cm = slope * megapixels + intercept,  megapixels = original_w * original_h / 1e6
+    # Fitted by models/mp_conversion_factor/fit_mp_cf.py on fit_data.csv (708 herbarium specimens
+    # with ruler groundtruth, R^2=0.91). Writes specimen.cf_px_per_cm_predicted_by_mp (float, 2 dp).
+    model: { path: "models/mp_conversion_factor/model.json", format: "json" }
+
   archival_detector:
     enabled: true
-    model: {path: /datac/Labelbox_Dump/LM3/models/archival_detector/model.onnx, format: onnx}
+    model: { path: "models/archival_detector/model.onnx", format: "onnx" }
     imgsz: 1280
     conf: 0.25
-    iou: 0.6
+    iou: 0.60
     max_det: 100
-    min_box_area: 64
+    min_box_area: 128
     classes: [Ruler, Barcode, Colorcard, Label, Map, Envelope, Photo, Attached_Item, Weights]
-    dedup: {enabled: true, overlap: 0.95, metric: min}
+    # reject the lower-confidence box of any SAME-CLASS pair that overlaps >= `overlap` (YOLO26 is
+    # NMS-free, so duplicates can slip through). metric: min = intersection/smaller-box area (catches
+    # nested dups) | iou. Suppressed boxes are kept in the DB (flagged) but excluded from all downstream.
+    dedup: { enabled: true, overlap: 0.95, metric: min }
+
   plant_detector:
     enabled: true
-    model: {path: /datac/Labelbox_Dump/LM3/models/plant_detector/model.onnx, format: onnx}
+    model: { path: "models/plant_detector/model.onnx", format: "onnx" }
     imgsz: 1280
-    conf: 0.3
+    conf: 0.30
     iou: 0.55
     max_det: 1000
     min_box_area: 40
-    classes: [Leaf_WHOLE, Leaf_PARTIAL, Seed_Fruit_ONE, Seed_Fruit_MANY, Flower_ONE, Flower_MANY, Bud,
-      Roots, Wood]
-    dedup: {enabled: true, overlap: 0.95, metric: min}
+    classes: [Leaf_WHOLE, Leaf_PARTIAL, Seed_Fruit_ONE, Seed_Fruit_MANY,
+              Flower_ONE, Flower_MANY, Bud, Roots, Wood]
+    # reject lower-confidence SAME-CLASS duplicate boxes (see archival_detector.dedup). metric:
+    # min = intersection/smaller-box area (catches nested dups) | iou. Flagged in DB, excluded downstream.
+    dedup: { enabled: true, overlap: 0.95, metric: min }
+
   specimen_segmenter:
     enabled: true
-    model: {path: /datac/Labelbox_Dump/LM3/models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx,
-      format: onnx}
-    imgsz: 1024
-    conf: 0.3
-    paperclean: true
+    # Whole-sheet plant-vs-background segmenter, run via onnxruntime. `key` NAMES the model and so
+    # decides how each sheet is prepared for it (resize, padding, normalization: each model gets the
+    # input it was trained on). `path` must be that model's file. Keys (= Hugging Face repo suffixes):
+    #   unetpp_effb7_1024       UNet++ EfficientNet-B7, 1024 letterbox      (default)
+    #   birefnet_hr_swinl_1024  BiRefNet Swin-L, 1024 stretch               lm3 models install --model specimen_segmenter=birefnet_hr_swinl_1024
+    #   yolo26x_seg_1280        YOLO26x-seg, 1280 letterbox, instance union lm3 models install --model specimen_segmenter=yolo26x_seg_1280
+    # Each model runs at its training size; there is no imgsz setting.
+    model: { key: "unetpp_effb7_1024", path: "models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", format: "onnx" }
+    conf: 0.5                         # pixel threshold for the binary mask (UNet++, BiRefNet)
+    yolo: { conf: 0.25, iou: 0.5, max_det: 300 }   # YOLO26x-seg only: instance confidence / overlap / cap
+    paperclean: true                  # follow-up HSV paper-removal step (locked settings); final = model -> paperclean
+
   phenology_detector:
     enabled: true
     targets:
-      leaves: {min_conf: 0.35, min_count: 1}
-      flowers: {min_conf: 0.4, min_count: 1}
-      fruits: {min_conf: 0.4, min_count: 1}
+      leaves:  { min_conf: 0.35, min_count: 1 }
+      flowers: { min_conf: 0.40, min_count: 1 }
+      fruits:  { min_conf: 0.40, min_count: 1 }
+
   ruler_classifier:
     enabled: true
-    models_dir: /datac/Labelbox_Dump/LM3/models/ruler_classifier
+    models_dir: "models/ruler_classifier"    # dir holding the ONNX ensemble members
     ensemble_members: [yolo26x_cls_224, yolo26n_cls_224, dinov2_frozen_mlp]
     min_conf: 0.35
-    squarify: {sz: 720, method: tile_four}
-  ruler_cf: {enabled: true, anchor_tol: 0.25, min_frame_cm: null}
+    # TRAINING-TIME preprocessing, ALWAYS APPLIED (not switchable): all three members
+    # were fitted on LM2-squarified 1440x1440 crops (datasets/LM3_RulerCrops-h-squarify),
+    # so inference must match. Only the collage shape is tunable.
+    squarify: { sz: 720, method: tile_four }   # tile_four -> 2*sz on a side
+
+  ruler_cf:
+    # Lattice conversion-factor method (inference/ruler_lattice): measures every Ruler crop's
+    # tick lattice and fuses them to ONE gated sheet CF, anchored by the MP-predicted CF. Pure
+    # cv2/numpy, no model. Reuses the four-tile squarify tiles the RulerClassifier pre-made in
+    # _ruler_squarify. Runs after archival_detector + ruler_classifier; writes ruler_CF_lattice
+    # (+ _crop). Publishes specimen.cf_px_per_cm (working frame) ONLY on high confidence.
+    enabled: true
+    anchor_tol: 0.25                    # |cf/anchor| tolerance the MP anchor gates a reading at
+    min_frame_cm: null                  # null -> the engine's own MIN_FRAME_CM (20 cm) anchor sanity floor
+
   leaf_segmenter:
     enabled: true
-    model: {path: /datac/Labelbox_Dump/LM3/models/leaf_segmenter/model.pt, format: pytorch}
+    model: { path: "models/leaf_segmenter/model.onnx", format: "onnx" }
     include_partial: false
     imgsz: 1024
-    conf: 0.3
-    iou: 0.5
+    conf: 0.30
+    iou: 0.50
     retina_masks: true
-    max_det: 100
-    mask_storage: {format: polygon_xy, min_area_px: 64}
-  morphology:
+    max_det: 50
+    mask_storage: { format: "polygon_xy", min_area_px: 64 }   # polygon_xy (no extra deps) | coco_rle
+
+  morphology:                           # runs right after leaf_segmenter
     enabled: true
-    classes: [Leaf]
-    method: pca
-    find_minimum_bounding_box: true
-  landmark_detector:
+    classes: ["Leaf"]                   # seg classes to measure (Petiole / Hole addable later)
+    method: "pca"                       # rotated-bbox algorithm (DEFAULT: "pca" = area-weighted
+                                        #   principal axis; robust across the broadest range of leaf
+                                        #   shapes). Options: "pca" | "feret" (max-Feret axis) |
+                                        #   "lm2" (fit_min_bbox) | "minarearect" (cv2, can mis-orient).
+    find_minimum_bounding_box: true     # (lm2 only) run the rotate-to-min-circle procedure
+
+  landmark_detector:                    # leaf-landmark pose (31-kpt mid15_pet5); runs on leaf crops
     enabled: true
-    model: {path: /datac/Labelbox_Dump/LM3/models/landmark_detector/model.onnx, format: onnx}
-    source_classes: [Leaf_WHOLE]
-    include_partial: false
+    model: { path: "models/landmark_detector/model.onnx", format: "onnx" }
+    source_classes: ["Leaf_WHOLE"]
+    include_partial: false              # true also landmarks Leaf_PARTIAL crops
     imgsz: 640
     conf: 0.25
     iou: 0.45
-    white_pad: 0.1
-  landmark_measurements: {enabled: true, min_kpt_conf: 0.25}
-  leaf_orientation: {enabled: true, min_kpt_conf: 0.25, min_midvein: 5}
-  petiole_width: {enabled: true, min_kpt_conf: 0.25, touch_dist_px: 20}
-  bilateral_symmetry: {enabled: true, min_kpt_conf: 0.25, n_bins: 200, min_score: 0.5, qc_images: flagged}
-  metric_grounding: {enabled: true, missing_cf_policy: skip, round_ndigits: 4}
-  reporter: {enabled: true}
-  ect: {enabled: true, include_petiole: false, include_holes: false, num_dirs: 720, bound_radius: 1, palette: Greens,
-    apply_log_to_visual_for_bold_color: true, radial_viz: true, cartesian_viz: true, radial_overlay_viz: true,
-    outline_simple: true, simplify_tolerance: 0.0025, simplify_cutoff: 1000, export_literal_coords: false}
+    white_pad: 0.10                     # training white border re-applied at inference then removed
+
+  landmark_measurements:                # derives measurements from the keypoints (post-process, CPU)
+    enabled: true
+    min_kpt_conf: 0.25                  # keypoints below this are "occluded/absent"; metrics null out
+
+  leaf_orientation:                     # upright rotation (tip up) from keypoints -> leaf_morphology
+    enabled: true
+    min_kpt_conf: 0.25                  # keypoint confidence floor (matches landmark_measurements)
+    min_midvein: 5                      # PCA fallback needs >= this many midvein points when tip/base absent
+
+  petiole_width:                        # median perpendicular width of the Petiole mask -> leaf_petiole
+    enabled: true
+    min_kpt_conf: 0.25                  # confidence floor for the petiole centerline landmarks
+    touch_dist_px: 20                   # petiole "touches leaf" if within this many px of the Leaf mask
+    # NOTE: runs on the RAW petiole mask; once LM3_Specimen_Segmentation lands (TODO #5) it should
+    # consume the EDGE-REFINED petiole mask (a thin petiole is very sensitive to leftover paper).
+
+  bilateral_symmetry:                   # midvein-axis symmetry + archetype score -> bilateral_symmetry
+    enabled: true
+    min_kpt_conf: 0.25                  # confidence floor for the midvein trace keypoints
+    n_bins: 200                         # MAXIMUM arclength bins, not a target
+    # The bin count ADAPTS to leaf size (core.bilateral.bins_for). si_a averages a per-bin ratio,
+    # and a ratio built from a few pixels is noise with a positive expected magnitude -- at a fixed
+    # 200 bins si_a correlated with 1/sqrt(area) at Spearman +0.84 on 538 real leaves, i.e. it was
+    # mostly reporting leaf SIZE. Holding >=500 px/bin cuts that to +0.42.
+    min_score: 0.50                     # archetype_score needed for is_archetypal; gates always apply
+    qc_images: flagged                  # none | flagged | all
+    # 'flagged' renders a QC panel only for leaves that fail a gate or fall below min_score -- the
+    # ones anyone actually opens. 'all' renders every leaf and is the single most expensive choice
+    # in this module; 'none' costs the Reporter exactly zero.
+
+  metric_grounding:
+    enabled: true                       # runs, but no-ops until ruler_cf provides a CF
+    missing_cf_policy: "skip"
+    round_ndigits: 4
+
+  reporter:
+    enabled: true
+
+  ect:                                  # Euler Characteristic Transform per oriented Leaf_WHOLE leaf.
+    enabled: true                       # runs AFTER the Reporter; loads its Leaf_Oriented masks.
+    # Which mask to run the ECT on. include_holes=true PUNCHES the holes out of the lamina;
+    # false FILLS them (union). include_petiole=true adds the petiole. The 4 combos map to
+    # mask_includes = lamina | lamina_petiole | lamina_hole | lamina_petiole_hole, and force the
+    # matching Reporter Oriented leaf-product mask to be exported (overrides report.leaf_products).
+    include_petiole: false
+    include_holes: false
+    num_dirs: 360                       # ECT angular directions (and threshold count)
+    bound_radius: 1.0                   # shapes scaled to this unit-circle radius
+    palette: "magma"                    # matplotlib colormap for the radial + Cartesian ECT visuals
+    apply_log_to_visual_for_bold_color: true  # log-scale before coloring (pictures only; the .h5 is unchanged)
+    radial_viz: true                    # Leaf_Data/Oriented_Leaf_Radial_ECT/*.png (polar)
+    cartesian_viz: true                 # Leaf_Data/Oriented_Leaf_ECT/*.png (matrix)
+    radial_overlay_viz: true            # Leaf_Data/Oriented_Leaf_Radial_ECT_Overlay/*.png (polar + outline)
+    outline_simple: true               # also store the Douglas-Peucker-simplified outline in the .h5
+    simplify_tolerance: 0.0025          # DP tolerance (on the unit-circle-normalized outline)
+    simplify_cutoff: 500               # only simplify outlines with more points than this
+    export_literal_coords: false       # also store the raw (un-normalized) px outline in the .h5
+
 report:
+  # ---- Summary_Image overlay -------------------------------------------------
+  # ALL overlay colors AND per-part display flags live here so users can fully
+  # restyle the overlay without touching code. Colors are [R, G, B] (0-255); the
+  # defaults below are the LeafMachine2 palette. `show: false` hides that class.
   overlay:
     enabled: true
-    box_style: rotated
-    draw_masks: true
-    draw_landmarks: true
-    draw_petiole: true
-    draw_labels: true
-    draw_confidence: true
-    draw_cf_banner: true
-    insert_cf_in_rulers: true
-    insert_cf_exterior: true
-    cf_scalebar:
-      cm_color: [0, 255, 255]
-      inch_color: [0, 255, 0]
-      raft_color: [255, 255, 255]
-      brim: 3
-      bar_thickness: 10
-      exterior_cells: 2
-      exterior_light: [255, 255, 255]
-      exterior_dark: [0, 0, 0]
+    # global part toggles
+    box_style: "rotated"            # leaf boxes: "rotated" (min bounding box from Morphology) | "yolo"
+    draw_masks: true                # draw LeafSegmenter instance masks (Leaf/Petiole/Hole)
+    draw_landmarks: true            # draw leaf keypoints + skeleton ON TOP of masks/boxes
+    draw_petiole: true              # draw each measured petiole width as a purple band
+    draw_labels: true               # draw the class-name label centered in each box
+    draw_confidence: true           # append the confidence score to the label
+    draw_cf_banner: true            # print the derived CF (px/cm) banner on the sheet
+    insert_cf_in_rulers: false      # lay a 1 cm and a 1 inch bar (drawn at the sheet CF) on a raft over each ruler
+    insert_cf_exterior: false       # append a checkerboard of 1 cm squares outside the top and left edges
+    cf_scalebar:                    # styling for the two options above (colors are RGB)
+      cm_color: [0, 255, 255]       # 1 cm bar
+      inch_color: [0, 255, 0]       # 1 inch bar
+      raft_color: [255, 255, 255]   # solid backing behind both bars
+      brim: 3                       # px of raft showing around and between the bars
+      bar_thickness: 10             # px across the ruler at the reference resolution (scales; shrinks to fit)
+      exterior_cells: 2             # exterior checkerboard thickness, in 1 cm squares
+      exterior_light: [255, 255, 255]  # light squares and the margin behind them
+      exterior_dark: [0, 0, 0]      # dark squares
+    # per-GROUP box drawing. Detections split into three groups you style independently:
+    #   leaf     = Leaf_WHOLE / Leaf_PARTIAL (drawn as rotated min-bboxes when box_style: rotated)
+    #   plant    = every other PlantDetector class (Flower, Seed_Fruit, Bud, Leaflet, ...)
+    #   archival = every ArchivalDetector class (Ruler, Label, Barcode, Colorcard, Envelope, ...)
+    # Per group: `border` strokes the outline, `fill` shades the interior at `fill_alpha` (0..1),
+    # both in the class color and toggled independently. `line_width` is px at the reference
+    # resolution (2592 long side) and scales with image size. The class label is white text
+    # centered inside the box (rotated onto the box's long axis), sized relative to the image.
     groups:
-      leaf: {border: true, fill: false, fill_alpha: 0.3, line_width: 3}
-      plant: {border: true, fill: false, fill_alpha: 0.3, line_width: 3}
-      archival: {border: false, fill: true, fill_alpha: 0.3, line_width: 3}
-    alpha: 0.45
-    line_width_mask: 2
-    font_scale: 1
+      leaf:     { border: true,  fill: false, fill_alpha: 0.30, line_width: 3 }
+      plant:    { border: true,  fill: false, fill_alpha: 0.30, line_width: 3 }
+      archival: { border: false, fill: true,  fill_alpha: 0.30, line_width: 3 }
+    # global style
+    alpha: 0.45                     # mask fill transparency, 0 (clear) .. 1 (opaque)
+    line_width_mask: 2              # mask outline width
+    font_scale: 1.0                 # label size multiplier (labels auto-fit each box, then x this)
     label_text_color: [255, 255, 255]
     cf_banner_color: [255, 255, 255]
+    # per-class color [R,G,B] + visibility. Defaults = LeafMachine2 palette.
     classes:
       archival:
-        Ruler:
-          color: [255, 0, 70]
-          show: true
-        Barcode:
-          color: [0, 137, 65]
-          show: true
-        Colorcard:
-          color: [242, 255, 0]
-          show: true
-        Label:
-          color: [0, 0, 255]
-          show: true
-        Map:
-          color: [0, 251, 255]
-          show: true
-        Envelope:
-          color: [163, 0, 89]
-          show: true
-        Photo:
-          color: [255, 205, 220]
-          show: true
-        Attached_Item:
-          color: [255, 172, 40]
-          show: true
-        Weights:
-          color: [140, 140, 140]
-          show: true
+        Ruler:         { color: [255, 0, 70],    show: true }
+        Barcode:       { color: [0, 137, 65],    show: true }
+        Colorcard:     { color: [242, 255, 0],   show: true }
+        Label:         { color: [0, 0, 255],     show: true }
+        Map:           { color: [0, 251, 255],   show: true }
+        Envelope:      { color: [163, 0, 89],    show: true }
+        Photo:         { color: [255, 205, 220], show: true }
+        Attached_Item: { color: [255, 172, 40],  show: true }
+        Weights:       { color: [140, 140, 140], show: true }
       plant:
-        Leaf_WHOLE:
-          color: [0, 255, 55]
-          show: true
-        Leaf_PARTIAL:
-          color: [0, 255, 250]
-          show: true
-        Leaflet:
-          color: [255, 203, 0]
-          show: true
-        Seed_Fruit_ONE:
-          color: [252, 255, 0]
-          show: true
-        Seed_Fruit_MANY:
-          color: [0, 0, 80]
-          show: true
-        Flower_ONE:
-          color: [255, 52, 255]
-          show: true
-        Flower_MANY:
-          color: [154, 0, 255]
-          show: true
-        Bud:
-          color: [255, 0, 9]
-          show: true
-        Specimen:
-          color: [0, 0, 0]
-          show: true
-        Roots:
-          color: [255, 134, 0]
-          show: true
-        Wood:
-          color: [144, 22, 22]
-          show: true
+        Leaf_WHOLE:      { color: [0, 255, 55],   show: true }
+        Leaf_PARTIAL:    { color: [0, 255, 250],  show: true }
+        Leaflet:         { color: [255, 203, 0],  show: true }
+        Seed_Fruit_ONE:  { color: [252, 255, 0],  show: true }
+        Seed_Fruit_MANY: { color: [0, 0, 80],     show: true }
+        Flower_ONE:      { color: [255, 52, 255],  show: true }
+        Flower_MANY:     { color: [154, 0, 255],  show: true }
+        Bud:             { color: [255, 0, 9],    show: true }
+        Specimen:        { color: [0, 0, 0],      show: true }
+        Roots:           { color: [255, 134, 0],  show: true }
+        Wood:            { color: [144, 22, 22],  show: true }
       segmentation:
-        Leaf:
-          color: [46, 255, 0]
-          show: true
-        Petiole:
-          color: [255, 0, 150]
-          show: true
-        Hole:
-          color: [200, 0, 255]
-          show: true
+        Leaf:    { color: [46, 255, 0],   show: true }
+        Petiole: { color: [255, 0, 150],  show: true }
+        Hole:    { color: [200, 0, 255],  show: true }
+    # landmark drawing (points + skeleton), shared by Overlay_Summary + Overlay_Landmarks.
+    # Colors are per keypoint GROUP; points below min_conf are hidden (occluded/uncertain).
     landmark:
       draw_points: true
       draw_skeleton: true
@@ -224,57 +332,130 @@ report:
       line_width: 2
       min_conf: 0.25
       label_color: [255, 255, 255]
-      curvature_color: [0, 0, 0]
-      colors:
-        lamina: [255, 255, 255]
-        midvein: [0, 200, 255]
-        apex: [255, 60, 60]
-        base: [255, 60, 255]
-        petiole: [255, 170, 0]
-        width: [0, 255, 128]
+      curvature_color: [0, 0, 0]        # the two bend lines (midvein ends -> curvature_point); drawn UNDER cyan/white
+      colors:                         # [R, G, B] per keypoint group
+        lamina:  [255, 255, 255]      # lamina_tip / lamina_base anchors
+        midvein: [0, 200, 255]        # midrib trace
+        apex:    [255, 60, 60]        # apex triple
+        base:    [255, 60, 255]       # base triple
+        petiole: [255, 170, 0]        # petiole trace + tip
+        width:   [0, 255, 128]        # width_left / width_right
+    # petiole-width overlay colors (report.overlay.petiole). Masks use the segmentation palette.
     petiole:
-      width_color: [3, 32, 252]
-      sample_color: [6, 124, 191]
+      width_color: [3, 32, 252]       # reported (median) width band + the 1px zoom line -- blue
+      sample_color: [6, 124, 191]     # per-sample perpendicular probes -- light blue
       band_thickness: 4
       sample_thickness: 2
-      mask_alpha: 0.45
+      mask_alpha: 0.45                # Leaf/Petiole fill opacity in the per-leaf petiole overlay
       label_color: [255, 255, 255]
-      zoom_bg_tint: 0
-      zoom_bg_color: [255, 0, 0]
-  overlay_landmarks: {enabled: true}
-  overlay_petiole: {enabled: true}
+      zoom_bg_tint: 0.0               # right-half zoom: background tint fraction, 0 = off (petiole stays full color)
+      zoom_bg_color: [255, 0, 0]      # right-half zoom background tint color (used when zoom_bg_tint > 0)
+  # ---- per-leaf landmark overlay --------------------------------------------
+  # One image per leaf under Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>:
+  # keypoints + skeleton drawn on the crop plus a panel of the derived measurements
+  # (lamina trace/extent, width, apex/base angle + type, petiole trace, curvature).
+  overlay_landmarks:
+    enabled: true                     # optional; on by default. Styling reuses overlay.landmark.
+  # ---- per-leaf petiole overlay ---------------------------------------------
+  # One image per leaf with a petiole under Overlay/Overlay_Petiole/<stem>__PET-leaf__x_y_x_y.<ext>:
+  # LEFT half = the leaf crop with Leaf + Petiole masks filled (no border), the width sample probes
+  # (light blue) + reported width band (blue), and a panel of the lamina areas + petiole width.
+  # RIGHT half = the petiole in full color (optional background tint via overlay.petiole.zoom_bg_tint,
+  # off by default), ROTATED to minimize its width (a long/curved petiole would otherwise make the
+  # image huge), blown up (pixelated) to the same height, with a 1-px blue line (width_color) at the
+  # exact reported-width location for checking.
+  overlay_petiole:
+    enabled: true                     # optional; on by default. Colors from overlay.petiole above.
+  # ---- Overlay_Specimen_Segmentation (2-panel: annotated sheet | masked cutout on black) ----
+  # LEFT: the sheet with the final specimen mask filled (mask_color), the paperclean-removed
+  # region tinted (refined_color), and the paper-sampling locations boxed (sample_box_color).
+  # RIGHT: the final masked RGB cutout on black. Colors are [R, G, B].
   overlay_specimen:
     enabled: true
-    mask_color: [70, 200, 70]
-    refined_color: [235, 60, 60]
-    sample_box_color: [30, 120, 245]
-    mask_alpha: 0.4
+    mask_color: [70, 200, 70]         # final specimen mask fill -- green
+    refined_color: [235, 60, 60]      # paperclean-removed region -- red
+    sample_box_color: [30, 120, 245]  # paper-sampling box outlines -- blue
+    mask_alpha: 0.40
     refined_alpha: 0.55
-    outline: true
-    display_max_dim: 2048
-  overlay_ruler_lattice: {enabled: true}
+    outline: true                     # stroke the final mask contour
+    display_max_dim: 2048             # fit each panel's long side to this (0 = full resolution)
+  # ---- Overlay_Ruler_Lattice (one stacked panel per sheet: the lattice ruler-CF audit) ----
+  # For every Ruler crop: the four-tile squarify collage the classifier saw, the deskewed strip
+  # with detected tick lattice + per-unit combs + 1 cm/1 inch bars, and the multi-ruler
+  # reconciliation that produced the sheet CF. Rebuilt entirely from the stored ruler_CF_lattice
+  # record (no re-measure). Supersedes the old Overlay_Ruler_QC.
+  overlay_ruler_lattice:
+    enabled: true                     # toggle saving the ruler-lattice QC panels on/off
+  # ---- segmentation mask exports --------------------------------------------
+  # Each toggle writes a folder named <toggle>__<Class> for every class in `classes`.
+  # Full_Image variants = one file per specimen (original frame); the others = one file
+  # per leaf CROP (crop frame), named <stem>__SEG-<friendly>__x1_y1_x2_y2.<ext>.
   masks:
-    classes: [Leaf]
-    background: black
-    subtract_holes: true
-    Binary_Masks_Full_Image: true
-    RGB_Masks_Full_Image: true
-    Binary_Masks__Specimen: true
-    RGB_Masks__Specimen: true
-    Binary_Masks__Specimen_Inverse: true
-    RGB_Masks__Specimen_Inverse: true
-    inverse_fill: white
-    Binary_Masks: true
-    RGB_Masks: true
-  crops: {enabled: true, classes: all}
+    classes: ["Leaf"]                   # segmentation classes to export (Leaf | Petiole | Hole)
+    background: "black"                 # black | white  (RGB_* outputs)
+    subtract_holes: true                # Leaf minus Hole for binary/rgb
+    Binary_Masks_Full_Image: true       # -> Binary_Masks_Full_Image__Leaf/<stem>.png  (whole sheet)
+    RGB_Masks_Full_Image: true          # -> RGB_Masks_Full_Image__Leaf/<stem>.jpg     (whole sheet)
+    # whole-specimen (plant-vs-background) mask from the SpecimenSegmenter, one file per specimen.
+    # All four land under reports/Specimen_Masks/.
+    Binary_Masks__Specimen: true        # -> Binary_Masks_Specimen/<stem>__MaskFull-specimen.png
+    RGB_Masks__Specimen: true           # -> RGB_Masks_Specimen/<stem>__MaskFull-specimen.jpg (cutout on `background`)
+    # ...and its complement: everything that is NOT the plant. The binary is the exact inverse of
+    # the mask above; the RGB keeps the sheet and paints the plant out with `inverse_fill`.
+    Binary_Masks__Specimen_Inverse: true  # -> Binary_Masks_Specimen_Inverse/<stem>__MaskFull-specimenInverse.png
+    RGB_Masks__Specimen_Inverse: true     # -> RGB_Masks_Specimen_Inverse/<stem>__MaskFull-specimenInverse.jpg
+    inverse_fill: "white"               # what replaces the plant: white | black | [R, G, B]
+    # LEGACY (off) — per-crop, unfitted, single-class LEAF masks. Superseded by the fitted per-leaf
+    # leaf_products (Leaf_Original/Leaf_Oriented Lamina_Mask + Lamina_RGB, etc.). Kept for back-compat only.
+    Binary_Masks: false                 # LEGACY -> Binary_Masks__Leaf/<stem>__SEG-leaf__x_y_x_y.png
+    RGB_Masks: false                    # LEGACY -> RGB_Masks__Leaf/<stem>__SEG-leaf__x_y_x_y.jpg
+  # ---- raw RGB crop exports (non-leaf classes) ------------------------------
+  # Exports the plain bbox crops into Crops/RGB__<friendly>/ (one folder per class). Leaf_WHOLE /
+  # Leaf_PARTIAL are EXCLUDED here -- leaf bbox crops live in the leaf_products tree instead.
+  crops:
+    enabled: true
+    classes: "all"                      # "all", or a list of real class names e.g. [Ruler, Label]
+  # ---- leaf products:  ---------------------
+  # Five products per leaf, each written in a non-oriented (Original/) and an upright, tip-up
+  # (Oriented/) form under reports/. Masks/cutouts are fitted tight to the mask; the bbox crop is
+  # not. lamina+petiole products are skipped for leaves with no petiole mask. Oriented outputs are
+  # produced only when the LeafOrientation stage found a rotation (oriented_leaf_success = 1).
   leaf_products:
     enabled: true
-    original: true
-    oriented: true
-    background: black
-    fit_pad: 0
-    hole_rgb_color: [10, 10, 10]
-    products: {bbox: true, lamina_mask: true, lamina_petiole_mask: true, lamina_holes_mask: true, lamina_petiole_holes_mask: true,
-      lamina_rgb: true, lamina_petiole_rgb: true, lamina_holes_rgb: true}
-  formats: {image_ext: jpg, jpg_quality: 90, mask_ext: png}
-timing: {enabled: true}
+    original: true                      # write the reports/Original/ tree
+    oriented: true                      # write the reports/Oriented/ tree (tip-up, base-down)
+    background: "black"                 # black | white  (cutout background + rotated-crop corners)
+    fit_pad: 0                          # px of padding around the fitted content (0 = tight)
+    hole_rgb_color: [10, 10, 10]        # holes in the *_holes RGB cutout get this color (color-thresholdable)
+    products:                           # toggle individual products
+      bbox: true                        # Leaf_BBox/            <stem>__BBOX-leaf__x_y_x_y.jpg  (not fitted)
+      lamina_mask: true                 # Lamina_Mask/          <stem>__SEG-lamina__x_y_x_y.png   (holes removed)
+      lamina_petiole_mask: true         # LaminaPetiole_Mask/   <stem>__SEG-laminaPetiole__x_y_x_y.png
+      lamina_holes_mask: true           # Lamina_Holes_Mask/    <stem>__SEG-laminaHoles__x_y_x_y.png  (solid silhouette)
+      lamina_petiole_holes_mask: false  # LaminaPetiole_Holes_Mask/ (opt-in; ECT turns it on when it needs it)
+      lamina_rgb: true                  # Lamina_RGB/           <stem>__RGB-lamina__x_y_x_y.jpg
+      lamina_petiole_rgb: true          # LaminaPetiole_RGB/    <stem>__RGB-laminaPetiole__x_y_x_y.jpg
+      lamina_holes_rgb: true            # Lamina_Holes_RGB/     <stem>__RGB-laminaHoles__x_y_x_y.jpg  (holes=(10,10,10))
+  formats: { image_ext: "jpg", jpg_quality: 100, mask_ext: "png" }
+  # ---- data export (CSV):  ---------------------
+  # The Reporter's LAST step: the project database written out as CSV into reports/<folder>/, so a
+  # run is analyzable without opening SQLite. leaf_measurements.csv is the master file (one row per
+  # leaf). Every value is a column the pipeline stored -- an empty cell means "not measured", never
+  # zero. Pixel columns are in the WORKING frame; divide by work_scale for original-frame pixels.
+  data:
+    enabled: true
+    folder: "Data"                      # subfolder of reports/
+    format: "csv"                       # csv | tsv
+    na_rep: ""                          # what a missing value is written as (default: empty cell)
+    float_precision: 6                  # decimal places, to keep float noise out of the files
+    files:                              # toggle individual files
+      leaf_measurements: true           # ONE ROW PER LEAF -- the master file
+      specimen_summary: true            # one row per input image, plus per-sheet roll-ups
+      phenology: true                   # one row per sheet in LeafMachine2's phenology.csv layout
+      detections: true                  # one row per detection box, both detectors
+      landmarks: true                   # one row per predicted keypoint (31 per leaf)
+      ruler_conversion_factor: true     # one row per sheet: the CF verdict and its audit trail
+      ruler_crops: true                 # one row per candidate ruler crop
+      run_stages: true                  # one row per pipeline stage (the run ledger)
+      stage_errors: true                # one row per per-image stage failure
+      data_dictionary: true             # every column above: file, units, meaning

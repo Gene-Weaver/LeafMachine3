@@ -11,11 +11,19 @@ Standalone postprocessing tool -- NOT part of the pipeline. Configure in ``postp
         --config postprocessing_settings.yaml --paths mask.png --length-mm 150 --thickness-mm 2
 
 Heavy deps (trimesh, shapely, mapbox_earcut) are imported lazily so the module imports without them.
+
+The CLI is subject to plan section 2.8 exactly as the Postprocess tab is -- it refuses a target
+that belongs to the running pipeline and serializes two read/write tools on one completed run --
+through the same guard the HTTP API calls (see :func:`guarded_targets`). A refusal exits
+``EXIT_REFUSED``.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
+import os
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,6 +36,11 @@ _DEFAULTS: dict[str, Any] = {
     "simplify_tolerance_px": 1.5, "min_area_px": 4.0,
 }
 _NAMED_COLORS = {"white": (255, 255, 255), "black": (0, 0, 0)}
+
+#: Exit code for a plan section 2.8 refusal (the target is the live run, or another read/write
+#: tool holds that run's lock). Deliberately DISTINCT from 1 (the tool failed) and 2 (argparse),
+#: so a batch script can tell "refused, retry later" apart from "this input is broken".
+EXIT_REFUSED = 3
 
 
 # -- color selection ---------------------------------------------------------------
@@ -241,6 +254,75 @@ def run(settings: Optional[dict] = None, paths=None, output_dir=None) -> list[di
     return results
 
 
+# -- section 2.8 concurrency guard ------------------------------------------------
+#: This CLI's id in the postprocessing registry. The registry owns the tool's ``access``
+#: (``read_write`` here) and its ``target_keys``, so the guard below is driven by the SAME
+#: metadata the HTTP layer uses instead of a second description of what this tool touches.
+TOOL_ID = "generate_stl_from_mask"
+
+
+def _normalize_target(value):
+    """Realpath one CLI-supplied target so it can be compared with the active run's directory.
+
+    Not policy -- spelling. ``postprocess_api.active_run_target`` realpaths the record's artifact
+    dir because every HTTP target arrives realpathed through ``resolve_path``; a CLI path reaches
+    the guard raw, and two spellings of one directory (a symlinked output root is the common case
+    on a cluster) never meet. Only the resolution is borrowed: the sandbox half of ``resolve_path``
+    is an HTTP-input concern and applying it here would refuse CLI targets that are legal today.
+    """
+    if value is None or value == "":
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_normalize_target(v) for v in value]
+    try:
+        return os.path.realpath(os.path.expanduser(str(value)))
+    except (OSError, ValueError):                    # an unresolvable path is left as written
+        return str(value)
+
+
+@contextlib.contextmanager
+def guarded_targets(paths, output_dir):
+    """Hold plan section 2.8's guarantees around this tool's write, or raise.
+
+    Both of section 2.8's rules, through the ONE implementation in
+    :mod:`leafmachine3.server.postprocess_api` -- the last bullet of that section requires a
+    standalone CLI to use the HTTP API's guard and not a parallel one:
+
+    1. ``check_target_allowed`` refuses a target that is (or contains, or sits inside) the run a
+       pipeline is writing right now, and raises :class:`~...postprocess_api.TargetActive`;
+    2. ``_acquire_artifact_locks`` takes the per-run advisory lock in the LOCAL deployment runtime
+       registry, so two ``read_write`` tools aimed at one completed run serialize instead of
+       interleaving, and raises :class:`~...postprocess_api.TargetLocked` when another holds it.
+
+    The lock helper is private today; calling it is still correct -- re-implementing the lock here
+    is exactly the "parallel guard" the plan forbids. See ``follow_ups``: postprocess_api should
+    export this context manager and both CLIs should then call the exported name.
+
+    Importing ``postprocess_api`` is lazy and cheap (stdlib plus ``core.paths``; no fastapi, no
+    torch) and it must stay lazy, because that module's runner imports this one.
+    """
+    from leafmachine3.server import postprocess_api
+
+    tool = postprocess_api.get_tool(TOOL_ID)
+    supplied = {"paths": paths, "output_dir": output_dir}
+    unknown = [k for k in tool.target_keys if k not in supplied]
+    if unknown:
+        # A tripwire, not defensive noise: if the registry grows a target this CLI does not pass,
+        # the guard would silently cover only part of what the tool writes.
+        raise RuntimeError(
+            f"{TOOL_ID}: the registry declares target key(s) {unknown} that this CLI does not "
+            f"supply; the section 2.8 guard would only see part of the target"
+        )
+    params = {key: _normalize_target(supplied[key]) for key in tool.target_keys}
+    targets = postprocess_api.check_target_allowed(tool, params)
+    locks = postprocess_api._acquire_artifact_locks(tool, targets)
+    try:
+        yield targets
+    finally:
+        for lock in locks:
+            lock.release()
+
+
 def _colors_from_cli(tokens) -> list:
     """`--colors white` -> ['white']; `--colors 255 255 255` -> [[255,255,255]] (one RGB color)."""
     try:
@@ -291,7 +373,22 @@ def main(argv=None) -> int:
     if args.colors is not None:
         s["colors"] = _colors_from_cli(args.colors)
 
-    results = run(s, paths=args.paths, output_dir=args.output_dir)
+    # The EFFECTIVE targets, resolved the same way ``run`` resolves them: a yaml-configured
+    # ``paths`` writes into a run just as surely as ``--paths`` does, so the guard must see the
+    # values that will actually be written, not only the flags that happened to be typed.
+    paths = args.paths if args.paths is not None else s.get("paths")
+    output_dir = args.output_dir if args.output_dir is not None else s.get("output_dir")
+
+    from leafmachine3.server import postprocess_api
+
+    try:
+        with guarded_targets(paths, output_dir):
+            results = run(s, paths=paths, output_dir=output_dir)
+    except (postprocess_api.TargetActive, postprocess_api.TargetLocked) as exc:
+        # Section 2.8 is a "come back later", not a broken input -- say so on stderr and exit with
+        # a code a caller can branch on.
+        print(str(exc), file=sys.stderr)
+        return EXIT_REFUSED
     for r in results:
         print(f"  {Path(r['stl']).name}  size={r['size_mm']}mm  parts={r['n_parts']}  "
               f"watertight={r['watertight']}")

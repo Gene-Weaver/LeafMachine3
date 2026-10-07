@@ -22,7 +22,6 @@ project:
     #   <path>  -> <path>/<run_name>/_tmp_original  (put them on a fast/large scratch disk instead,
     #              e.g. "/scratch" or "/mnt/nvme/lm3_tmp"; falls back to the run dir if unwritable)
     tmp_dir: "auto"
-    keep_tmp: false                     # (cleanup not implemented yet -- copies are always kept)
   run_mode:
     overwrite: false
     restart: []                         # [] resume | "all" | ["leaf_segmenter", ...]
@@ -53,6 +52,9 @@ naming:
   mask_full_prefix: "MaskFull"          # full-image masks:      <stem>__MaskFull-<friendly>
   landmark_prefix: "LM"                 # per-leaf landmark overlay: <stem>__LM-<friendly>__x_y_x_y
   petiole_prefix: "PET"                 # per-leaf petiole overlay:  <stem>__PET-<friendly>__x_y_x_y
+  seg_rgb_prefix: "SEGRGB"              # per-crop RGB cutouts (must differ from seg_prefix)
+  mask_rgb_full_prefix: "MaskRGBFull"   # full-image RGB cutouts (must differ from mask_full_prefix)
+  bilateral_prefix: "BSYM"              # per-leaf bilateral-symmetry QC panels
   friendly_names:                       # real class name -> friendly name used in filenames
     # archival
     Ruler: ruler
@@ -122,12 +124,17 @@ modules:
 
   specimen_segmenter:
     enabled: true
-    # UNet++ (efficientnet-b7) whole-sheet plant-vs-background segmenter, run via onnxruntime.
-    # Swap `path` to the selfheal export to switch models (both are exported side by side).
-    model: { path: "models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", format: "onnx" }
-    imgsz: 1024                       # model input (letterboxed square); must match the export
-    conf: 0.5                         # sigmoid threshold for the binary mask
-    paperclean: true                  # follow-up HSV paper-removal step (locked settings); final = UNet -> paperclean
+    # Whole-sheet plant-vs-background segmenter, run via onnxruntime. `key` NAMES the model and so
+    # decides how each sheet is prepared for it (resize, padding, normalization: each model gets the
+    # input it was trained on). `path` must be that model's file. Keys (= Hugging Face repo suffixes):
+    #   unetpp_effb7_1024       UNet++ EfficientNet-B7, 1024 letterbox      (default)
+    #   birefnet_hr_swinl_1024  BiRefNet Swin-L, 1024 stretch               lm3 models install --model specimen_segmenter=birefnet_hr_swinl_1024
+    #   yolo26x_seg_1280        YOLO26x-seg, 1280 letterbox, instance union lm3 models install --model specimen_segmenter=yolo26x_seg_1280
+    # Each model runs at its training size; there is no imgsz setting.
+    model: { key: "unetpp_effb7_1024", path: "models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", format: "onnx" }
+    conf: 0.5                         # pixel threshold for the binary mask (UNet++, BiRefNet)
+    yolo: { conf: 0.25, iou: 0.5, max_det: 300 }   # YOLO26x-seg only: instance confidence / overlap / cap
+    paperclean: true                  # follow-up HSV paper-removal step (locked settings); final = model -> paperclean
 
   phenology_detector:
     enabled: true
@@ -158,7 +165,7 @@ modules:
 
   leaf_segmenter:
     enabled: true
-    model: { path: "models/leaf_segmenter/model.pt", format: "pytorch" }   # exported .onnx when available
+    model: { path: "models/leaf_segmenter/model.onnx", format: "onnx" }
     include_partial: false
     imgsz: 1024
     conf: 0.30
@@ -234,7 +241,8 @@ modules:
     include_holes: false
     num_dirs: 360                       # ECT angular directions (and threshold count)
     bound_radius: 1.0                   # shapes scaled to this unit-circle radius
-    palette: "viridis"                  # matplotlib colormap for the radial + Cartesian ECT visuals
+    palette: "magma"                    # matplotlib colormap for the radial + Cartesian ECT visuals
+    apply_log_to_visual_for_bold_color: true  # log-scale before coloring (pictures only; the .h5 is unchanged)
     radial_viz: true                    # Leaf_Data/Oriented_Leaf_Radial_ECT/*.png (polar)
     cartesian_viz: true                 # Leaf_Data/Oriented_Leaf_ECT/*.png (matrix)
     radial_overlay_viz: true            # Leaf_Data/Oriented_Leaf_Radial_ECT_Overlay/*.png (polar + outline)
@@ -258,6 +266,17 @@ report:
     draw_labels: true               # draw the class-name label centered in each box
     draw_confidence: true           # append the confidence score to the label
     draw_cf_banner: true            # print the derived CF (px/cm) banner on the sheet
+    insert_cf_in_rulers: false      # lay a 1 cm and a 1 inch bar (drawn at the sheet CF) on a raft over each ruler
+    insert_cf_exterior: false       # append a checkerboard of 1 cm squares outside the top and left edges
+    cf_scalebar:                    # styling for the two options above (colors are RGB)
+      cm_color: [0, 255, 255]       # 1 cm bar
+      inch_color: [0, 255, 0]       # 1 inch bar
+      raft_color: [255, 255, 255]   # solid backing behind both bars
+      brim: 3                       # px of raft showing around and between the bars
+      bar_thickness: 10             # px across the ruler at the reference resolution (scales; shrinks to fit)
+      exterior_cells: 2             # exterior checkerboard thickness, in 1 cm squares
+      exterior_light: [255, 255, 255]  # light squares and the margin behind them
+      exterior_dark: [0, 0, 0]      # dark squares
     # per-GROUP box drawing. Detections split into three groups you style independently:
     #   leaf     = Leaf_WHOLE / Leaf_PARTIAL (drawn as rotated min-bboxes when box_style: rotated)
     #   plant    = every other PlantDetector class (Flower, Seed_Fruit, Bud, Leaflet, ...)
@@ -396,7 +415,6 @@ report:
   crops:
     enabled: true
     classes: "all"                      # "all", or a list of real class names e.g. [Ruler, Label]
-    source: "working"                   # working (matches detector crops) | original (full-res)
   # ---- leaf products:  ---------------------
   # Five products per leaf, each written in a non-oriented (Original/) and an upright, tip-up
   # (Oriented/) form under reports/. Masks/cutouts are fitted tight to the mask; the bbox crop is
@@ -414,7 +432,30 @@ report:
       lamina_mask: true                 # Lamina_Mask/          <stem>__SEG-lamina__x_y_x_y.png   (holes removed)
       lamina_petiole_mask: true         # LaminaPetiole_Mask/   <stem>__SEG-laminaPetiole__x_y_x_y.png
       lamina_holes_mask: true           # Lamina_Holes_Mask/    <stem>__SEG-laminaHoles__x_y_x_y.png  (solid silhouette)
+      lamina_petiole_holes_mask: false  # LaminaPetiole_Holes_Mask/ (opt-in; ECT turns it on when it needs it)
       lamina_rgb: true                  # Lamina_RGB/           <stem>__RGB-lamina__x_y_x_y.jpg
       lamina_petiole_rgb: true          # LaminaPetiole_RGB/    <stem>__RGB-laminaPetiole__x_y_x_y.jpg
       lamina_holes_rgb: true            # Lamina_Holes_RGB/     <stem>__RGB-laminaHoles__x_y_x_y.jpg  (holes=(10,10,10))
   formats: { image_ext: "jpg", jpg_quality: 100, mask_ext: "png" }
+  # ---- data export (CSV):  ---------------------
+  # The Reporter's LAST step: the project database written out as CSV into reports/<folder>/, so a
+  # run is analyzable without opening SQLite. leaf_measurements.csv is the master file (one row per
+  # leaf). Every value is a column the pipeline stored -- an empty cell means "not measured", never
+  # zero. Pixel columns are in the WORKING frame; divide by work_scale for original-frame pixels.
+  data:
+    enabled: true
+    folder: "Data"                      # subfolder of reports/
+    format: "csv"                       # csv | tsv
+    na_rep: ""                          # what a missing value is written as (default: empty cell)
+    float_precision: 6                  # decimal places, to keep float noise out of the files
+    files:                              # toggle individual files
+      leaf_measurements: true           # ONE ROW PER LEAF -- the master file
+      specimen_summary: true            # one row per input image, plus per-sheet roll-ups
+      phenology: true                   # one row per sheet in LeafMachine2's phenology.csv layout
+      detections: true                  # one row per detection box, both detectors
+      landmarks: true                   # one row per predicted keypoint (31 per leaf)
+      ruler_conversion_factor: true     # one row per sheet: the CF verdict and its audit trail
+      ruler_crops: true                 # one row per candidate ruler crop
+      run_stages: true                  # one row per pipeline stage (the run ledger)
+      stage_errors: true                # one row per per-image stage failure
+      data_dictionary: true             # every column above: file, units, meaning

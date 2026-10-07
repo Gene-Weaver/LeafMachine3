@@ -30,6 +30,7 @@ import {
   api, el, clear, esc,
   fmtNum, fmtDuration, fmtTime, fmtMB, fmtPath,
 } from "../api.js";
+import { mountModelsPanel } from "../models.js";
 
 
 /* ================================================================ constants */
@@ -349,11 +350,16 @@ const store = {
    segments) calls it without holding a reference to the controller. */
 
 let S = null;
-// Deliberately OUTSIDE S: "the GUI was reset, do not adopt the run the server is reporting" has to
-// survive S being null. The app restores whichever tab you were last on, so a launch reset usually
-// fires while Live Status has never been mounted -- storing this in S dropped it on the floor, and
-// the tab then rendered the previous run's "Run complete" cards as if nothing had been reset.
-let newRunPending = false;
+/* The run this tab describes -- the shared run-reference shape the top bar derives from
+   `GET /v1/runtime` (section 2.6, invariant 7). Deliberately OUTSIDE S: `lm3:runtime` lands
+   before this tab is ever mounted (the app restores whichever tab you were last on), and the
+   pin has to survive that so the first stream this tab opens is already pointed at the right run.
+
+   It REPLACES `newRunPending`, the module-scope copy of the top bar's sticky suppression. That
+   flag dropped every frame that was not "running and not stale" so a client-side reset could not
+   be contradicted by the server -- which is exactly why a finished or stalled run had no
+   representation here. Nothing resets the GUI any more, so there is nothing to suppress. */
+let runRef = null;
 let pendingFocus = null;
 
 
@@ -404,6 +410,12 @@ export function initStatus(root) {
   root.appendChild(pane);
 
   ui.scroll = scroll;
+
+  /* First thing in the first window: a banner with the install button, shown only while a required
+     model is missing or a newer one is pinned (it hides itself otherwise). */
+  const modelsBanner = el("div", { style: { padding: "8px 8px 0" } });
+  scroll.appendChild(modelsBanner);
+  mountModelsPanel(modelsBanner, { compact: true });
 
   ui.consoleHost = el("div.split-pane.st-conspane");   // detached until the Console tab mounts it
   buildTop(scroll, ui);
@@ -527,24 +539,6 @@ function counterSpecs() {
 
 function renderSnapshot(snap) {
   if (!snap || !S) return;
-  // After "New run" the server still reports the PREVIOUS run (it discovers the
-  // newest one off disk when no job is active). Stay blank until something is
-  // genuinely running, or the reset would undo itself on the next frame.
-  //
-  // `stale` has to be part of "genuinely running": a killed run's ledger still says `running`,
-  // and without this that frame walks straight past the guard. See the matching test in topbar.js.
-  if (newRunPending) {
-    if (snap.state !== "running" || snap.stale) {
-      // Show the idle pane and HIDE the finished-run pane. Returning without this
-      // leaves the previous run's "Run complete" cards on screen: the live/idle
-      // swap below is the only thing that hides them, and we never reach it.
-      S.ui.live.hidden = true;
-      S.ui.idle.hidden = false;
-      renderIdle();
-      return;
-    }
-    newRunPending = false;
-  }
   S.snap = snap;
   const t = num(snap.t);
   if (t !== null) S.skew = Date.now() / 1000 - t;    // neutralize server/browser clock drift
@@ -1290,8 +1284,14 @@ async function copyVisible() {
 
 /* ================================================================= streams */
 
+/** The `?db=` pin for the run this window is following, or undefined for "whatever you resolve". */
+function streamPin() {
+  return runRef && runRef.db_path ? { db: String(runRef.db_path) } : undefined;
+}
+
 function connect() {
   S.closeStatus = api.streamStatus({
+    params: streamPin(),
     onOpen: () => { S.drops = 0; stopPolling(); setConn("up"); },
     onMessage: (frame) => {
       if (!frame || frame.type !== "status") return;
@@ -1308,7 +1308,7 @@ function connect() {
   });
 
   S.closeLogs = api.streamLogs({
-    params: { backfill: LOG_BACKFILL },
+    params: { backfill: LOG_BACKFILL, ...(streamPin() || {}) },
     onMessage: (frame) => {
       if (!frame) return;
       if (frame.type === "log") {
@@ -1328,6 +1328,15 @@ function connect() {
   });
 }
 
+/** Re-open both streams against the current pin. */
+function reconnect() {
+  try { if (S.closeStatus) S.closeStatus(); } catch { /* already closed */ }
+  try { if (S.closeLogs) S.closeLogs(); } catch { /* already closed */ }
+  S.closeStatus = null;
+  S.closeLogs = null;
+  connect();
+}
+
 /** Poll /v1/status when the stream cannot hold. Stops as soon as a frame lands. */
 function startPolling() {
   if (S.pollTimer) return;
@@ -1342,7 +1351,7 @@ function stopPolling() {
 
 async function pollOnce() {
   try {
-    const snap = await api.getStatus();
+    const snap = await api.getStatus(streamPin());
     renderSnapshot(snap);
     if (!S.pollTimer) setConn("up");
   } catch (err) {
@@ -1444,16 +1453,25 @@ export function initConsole(root) {
 }
 
 /**
- * The top bar's "New run" button clears the GUI down to "nothing has run yet".
- * Registered at module scope so it works even if this tab was never opened --
- * the console buffer accumulates from the moment the app starts.
+ * Follow whatever run the window is describing (section 2.6, invariant 7).
+ *
+ * Registered at module scope so the pin is correct before this tab is first mounted -- the app
+ * restores the last tab you were on, and the console buffer accumulates from app start either way.
+ * When the run moves (a CLI run appears, the active run finishes, the user picks a finished run in
+ * the Results tab) both streams are re-opened against the new ledger, so the Status tab and the
+ * top bar can no longer describe two different runs.
  */
-document.addEventListener("lm3:newrun", () => {
-  newRunPending = true;              // set FIRST: the rest needs S, this must not depend on it
-  if (!S) return;                    // never mounted yet -- the flag is applied by its first render
+document.addEventListener("lm3:runtime", (ev) => {
+  const view = (ev && ev.detail && ev.detail.view) || null;
+  const next = view ? view.runRef : null;
+  const before = runRef;
+  const moved = String((before && before.db_path) || "") !== String((next && next.db_path) || "");
+  runRef = next;
+  if (!S || !moved) return;
+  // A different ledger means everything on screen belongs to the previous run.
   S.consoleRunName = null;
-  resetForNewRun(null);
-  renderIdle();
+  resetForNewRun(next ? next.run_name : null);
+  reconnect();
 });
 
 export default initStatus;

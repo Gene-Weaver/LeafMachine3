@@ -10,6 +10,8 @@ import { initTopBar } from "./topbar.js";
 import { initPerfMon } from "./perfmon.js";
 import { initStatus, initConsole, focusModule } from "./tabs/status.js";
 import { initSettings } from "./tabs/settings.js";
+import { initModelsTab } from "./tabs/models.js";
+import { refreshModelsStatus } from "./models.js";
 import { initResults } from "./tabs/results.js";
 import { initPostprocess } from "./tabs/postprocess.js";
 
@@ -17,6 +19,7 @@ const TABS = {
   status: { pane: "pane-status", init: initStatus },
   console: { pane: "pane-console", init: initConsole },
   settings: { pane: "pane-settings", init: initSettings },
+  models: { pane: "pane-models", init: initModelsTab },
   results: { pane: "pane-results", init: initResults },
   postprocess: { pane: "pane-postprocess", init: initPostprocess },
 };
@@ -28,6 +31,12 @@ const started = new Set();
    matters: it exposes focusPath/showSection, which is how a click on the stage
    bar reaches the right settings pane. */
 const controllers = {};
+/* The top-bar controller. It used to be DISCARDED at the call site, which made
+   `topbar.refresh()` -- documented in its own source as "the escape hatch for a run
+   started OUTSIDE the app (from the machine3 CLI)" -- unreachable for the life of the
+   app. Kept now, so the shell can re-read the runtime record after anything that could
+   have changed it. */
+let topbar = null;
 
 function show(name) {
   if (!TABS[name]) name = "status";
@@ -113,6 +122,19 @@ async function gateResultsTab() {
   } catch (_) { /* leave enabled; the tab shows its own empty state */ }
 }
 
+/**
+ * Re-read the runtime record when the window comes back to the front.
+ *
+ * A CLI run can start, finish, or be started by a second window while this one is hidden, and the
+ * idle poll is deliberately slow. This is the cheap way to make "open the GUI during a CLI run and
+ * it shows that run" true for "come back to the GUI" as well.
+ */
+function wakeOnFocus() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && topbar) void topbar.refresh();
+  });
+}
+
 function boot() {
   wireTabs();
   wireNavigation();
@@ -121,7 +143,7 @@ function boot() {
   // Start LM3 must run what the Settings tab is SHOWING, so the top bar needs a way to commit
   // that tab's unsaved edits. Looked up at call time, not bound here: tabs are initialized lazily,
   // so `controllers.settings` usually does not exist yet at boot.
-  initTopBar(document.querySelector(".app"), {
+  topbar = initTopBar(document.querySelector(".app"), {
     focusModule,
     flushSettings: () => (controllers.settings && controllers.settings.flush
       ? controllers.settings.flush()
@@ -132,7 +154,9 @@ function boot() {
     try { return localStorage.getItem("lm3.tab"); } catch (_) { return null; }
   })() || "status";
   show(initial);
+  refreshModelsStatus();          // colors the Models tab (and feeds its panels) from boot, whichever tab opens first
   watchConnection();
+  wakeOnFocus();
   gateResultsTab();
   setInterval(gateResultsTab, 20000);
 }

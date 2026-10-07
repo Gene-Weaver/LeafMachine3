@@ -1,0 +1,166 @@
+{
+  "what": "archival_detector boxes drawn on the LM3 working image with the Reporter's build_summary_image (boxes + labels only; masks/landmarks/CF off; archival = translucent fill + border, plant = border). Rendered 2026-10-06 from the run DB of LM3/examples_out/collage_test_broadsampletrees (model = the LM3 3.0.0 default).",
+  "note": "10 candidates; Will prunes by hand, then survivors are linked from the model card under docs/.",
+  "examples": [
+    {
+      "file": "overlay_01_CM_2859192239_Sapindaceae_Aesculus_hippocastanum.jpg",
+      "specimen": "CM_2859192239_Sapindaceae_Aesculus_hippocastanum",
+      "n_boxes": 11,
+      "classes": [
+        "Colorcard",
+        "Label",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 313759
+    },
+    {
+      "file": "overlay_02_US_1456419778_Urticaceae_Cecropia_peltata.jpg",
+      "specimen": "US_1456419778_Urticaceae_Cecropia_peltata",
+      "n_boxes": 15,
+      "classes": [
+        "Barcode",
+        "Colorcard",
+        "Envelope",
+        "Label",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 433193
+    },
+    {
+      "file": "overlay_03_NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum.jpg",
+      "specimen": "NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum",
+      "n_boxes": 9,
+      "classes": [
+        "Barcode",
+        "Envelope",
+        "Label",
+        "Map",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 239471
+    },
+    {
+      "file": "overlay_04_FLAS_1457827530_Fabaceae_Pterocarpus_indicus.jpg",
+      "specimen": "FLAS_1457827530_Fabaceae_Pterocarpus_indicus",
+      "n_boxes": 11,
+      "classes": [
+        "Barcode",
+        "Colorcard",
+        "Envelope",
+        "Label",
+        "Ruler",
+        "Weights"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 427416
+    },
+    {
+      "file": "overlay_05_UTEP_1899734012_Bignoniaceae_Tabebuia_rosea.jpg",
+      "specimen": "UTEP_1899734012_Bignoniaceae_Tabebuia_rosea",
+      "n_boxes": 8,
+      "classes": [
+        "Barcode",
+        "Colorcard",
+        "Label",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 269079
+    },
+    {
+      "file": "overlay_06_USCH_1849172030_Fabaceae_Cercis_canadensis.jpg",
+      "specimen": "USCH_1849172030_Fabaceae_Cercis_canadensis",
+      "n_boxes": 11,
+      "classes": [
+        "Barcode",
+        "Colorcard",
+        "Envelope",
+        "Label",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 203457
+    },
+    {
+      "file": "overlay_07_TEX_2807384639_Fabaceae_Leucaena_pulverulenta.jpg",
+      "specimen": "TEX_2807384639_Fabaceae_Leucaena_pulverulenta",
+      "n_boxes": 12,
+      "classes": [
+        "Barcode",
+        "Colorcard",
+        "Envelope",
+        "Label",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 292890
+    },
+    {
+      "file": "overlay_08_MIN_2651336112_Apocynaceae_Plumeria_rubra.jpg",
+      "specimen": "MIN_2651336112_Apocynaceae_Plumeria_rubra",
+      "n_boxes": 10,
+      "classes": [
+        "Barcode",
+        "Colorcard",
+        "Envelope",
+        "Label",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 227766
+    },
+    {
+      "file": "overlay_09_ASC_3091281519_Rhamnaceae_Ziziphus_mauritiana.jpg",
+      "specimen": "ASC_3091281519_Rhamnaceae_Ziziphus_mauritiana",
+      "n_boxes": 10,
+      "classes": [
+        "Barcode",
+        "Colorcard",
+        "Envelope",
+        "Label",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 280717
+    },
+    {
+      "file": "overlay_10_SBBG_3341899306_Fabaceae_Leucaena_esculenta.jpg",
+      "specimen": "SBBG_3341899306_Fabaceae_Leucaena_esculenta",
+      "n_boxes": 10,
+      "classes": [
+        "Barcode",
+        "Colorcard",
+        "Envelope",
+        "Label",
+        "Ruler"
+      ],
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 411113
+    }
+  ],
+  "kept": [
+    "overlay_01_CM_2859192239_Sapindaceae_Aesculus_hippocastanum.jpg",
+    "overlay_02_US_1456419778_Urticaceae_Cecropia_peltata.jpg",
+    "overlay_03_NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum.jpg",
+    "overlay_04_FLAS_1457827530_Fabaceae_Pterocarpus_indicus.jpg",
+    "overlay_05_UTEP_1899734012_Bignoniaceae_Tabebuia_rosea.jpg",
+    "overlay_06_USCH_1849172030_Fabaceae_Cercis_canadensis.jpg",
+    "overlay_07_TEX_2807384639_Fabaceae_Leucaena_pulverulenta.jpg",
+    "overlay_08_MIN_2651336112_Apocynaceae_Plumeria_rubra.jpg",
+    "overlay_09_ASC_3091281519_Rhamnaceae_Ziziphus_mauritiana.jpg",
+    "overlay_10_SBBG_3341899306_Fabaceae_Leucaena_esculenta.jpg"
+  ]
+}

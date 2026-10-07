@@ -32,6 +32,24 @@ def _serve() -> Callable[[list[str]], int]:
 _COMMANDS["serve"] = ("run the local LeafMachine3 server", _serve)
 
 
+def _models() -> Callable[[list[str]], int]:
+    from leafmachine3.modelhub.cli import main as models_main  # noqa: PLC0415 - lazy by design
+
+    return models_main
+
+
+_COMMANDS["models"] = ("install / check the default models from the Hugging Face Hub", _models)
+
+
+def _doctor() -> Callable[[list[str]], int]:
+    from leafmachine3.doctor import main as doctor_main  # noqa: PLC0415 - lazy by design
+
+    return doctor_main
+
+
+_COMMANDS["doctor"] = ("check that this install will run (Python, packages, GPU driver, accelerator)", _doctor)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lm3",

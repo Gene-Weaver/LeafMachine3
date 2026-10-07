@@ -45,6 +45,8 @@ Public surface (all plain Python, importable without the ``server`` extra):
     bind_run(...)        -> point the API at a specific run (the integrator calls this)
     bind_job_source(...) -> hand the API a callable returning the live JobManager job
     active_run()         -> the run everything above resolved to (results_api can reuse it)
+    active_runtime_ref() -> the run HOLDING the deployment lease, or None (never a fallback)
+    invalidate_run_caches() -> drop every cached "which run / what is it doing" answer
     router(...)          -> the FastAPI APIRouter the integrator mounts on app.py
 """
 from __future__ import annotations
@@ -401,9 +403,35 @@ class RunRef:
     db_path: Path              # <root>/<run_name>.sqlite
     log_path: Path             # <root>/logs/lm3.log
     job_id: Optional[str] = None
-    source: str = "discovered"  # bound | job | query | settings | discovered
+    #: runtime | query | job | bound | settings | last | discovered -- the tier that won.
+    source: str = "discovered"
+    #: The registry ``run_id`` (plan section 3.2), set when this reference came from the runtime
+    #: record. It is the only STABLE identity a run has: ``db_path`` and ``run_name`` both move the
+    #: instant somebody edits ``project.run_name`` mid-run, which is precisely what the Step 4 exit
+    #: gate forbids. Everything that must not drift with an edit -- the snapshot cache key, the
+    #: console's "am I still following the same run" test -- keys off this instead.
+    run_id: Optional[str] = None
+    #: The registry record's own ``state``, when this reference came from one. The ledger cannot
+    #: report ``starting``: it does not exist until ``build_dirs()`` and the first stage row do,
+    #: so without this a run between lease acquisition and its first commit reads as ``idle``.
+    record_state: Optional[str] = None
+
+    @property
+    def may_authorize_control(self) -> bool:
+        """False for filesystem discovery (plan section 2.5 / Step 4).
+
+        Discovery is a RECENCY GUESS over directories nobody claimed. It is good enough to point
+        a read-only view at something, and it is never evidence that the caller is entitled to
+        stop, overwrite, or postprocess whatever it found. Control authority comes from the
+        runtime record (and, for Stop, from a retained child handle) -- never from this module.
+        """
+        return self.source != "discovered"
 
     def as_dict(self) -> dict:
+        # Deliberately UNCHANGED key set: this dict is spread into the ``/v1/status`` snapshot,
+        # whose keys are pinned exactly (tests/_contract_helpers.py STATUS_SPEC). ``run_id`` is a
+        # Python-level identity for cache keys and stream following; publishing it belongs to
+        # ``GET /v1/runtime`` (Step 4, metrics_api), not to a silent widening of this shape.
         return {
             "run_name": self.run_name,
             "run_path": str(self.root),
@@ -424,6 +452,204 @@ def _run_ref(root: Path, *, job_id: Optional[str] = None, source: str = "discove
         job_id=job_id,
         source=source,
     )
+
+
+# --------------------------------------------------------------------------- #
+# The runtime registry -- what is ACTUALLY running (plan sections 3.2 / 2.9, invariant 7)
+# --------------------------------------------------------------------------- #
+# Everything above this line derives "which run" from mutable inputs: a YAML field the user may
+# retype mid-run, a directory mtime, a hook the server happens to have called. The registry is the
+# one input that is neither -- ``active.json`` is written by the process that HOLDS the deployment
+# lease, carries the paths that process actually opened, and is keyed by a ``run_id`` that no
+# settings edit can move. Invariant 7 is exactly that: in follow-active mode, status, logs, results
+# and postprocessing follow the ACTIVE RECORD's paths.
+#
+# The read is TTL-cached because ``resolve_run`` runs at 2 Hz per connected client and
+# ``read_runtime`` probes the OS lock (the lock, never the JSON, decides occupancy -- section 2.9).
+_RUNTIME_CACHE = _TimedCache(min_ttl=0.25, max_ttl=2.0)
+
+
+def _runtime_v2_enabled() -> bool:
+    """The one place this module reads ``LM3_RUNTIME_V2`` (default ON since the cutover).
+
+    With explicit ``LM3_RUNTIME_V2=0`` nothing writes a record, so the registry tiers below are dead
+    weight rather than merely empty. Imported lazily to avoid a module-import cycle. Import failures
+    propagate instead of silently restoring mtime/project guessing while Start uses the registry.
+    """
+    from leafmachine3.core.runtime.execution import runtime_v2_enabled
+
+    return bool(runtime_v2_enabled())
+
+
+def _deployment_runtime_dir() -> Optional[Path]:
+    """This deployment's runtime directory, or ``None`` when it cannot be resolved.
+
+    ``check_filesystem=False``: the network-filesystem refusal is for a WRITER taking a lock. A
+    read-only observer that declines to look would report "no run" on exactly the cluster setup
+    section 3.1 warns about, which is worse than reading a record it will not lock.
+    """
+    try:
+        from leafmachine3.core import paths as core_paths
+
+        return core_paths.deployment_runtime_dir(check_filesystem=False)
+    except Exception:  # noqa: BLE001 - unresolvable deployment == no registry to read
+        log.debug("could not resolve the deployment runtime directory", exc_info=True)
+        return None
+
+
+def _runtime_snapshot() -> Optional[Any]:
+    """The section 2.9 compatibility read of ``active.json``, or ``None`` when there is nothing.
+
+    Never raises: a corrupt, newer-schema, or unreadable record must degrade this module to the
+    lower precedence tiers, not take the status endpoint down with it.
+    """
+    if not _runtime_v2_enabled():
+        return None
+
+    def produce() -> Optional[Any]:
+        deployment = _deployment_runtime_dir()
+        if deployment is None or not deployment.is_dir():
+            return None
+        try:
+            from leafmachine3.core.runtime import records as runtime_records
+
+            return runtime_records.read_runtime(deployment, include_children=True)
+        except Exception:  # noqa: BLE001 - see the docstring
+            log.debug("runtime registry read failed", exc_info=True)
+            return None
+
+    return _RUNTIME_CACHE.get("runtime", produce)
+
+
+def _record_ref(record: Any, *, source: str, live: bool) -> Optional[RunRef]:
+    """A :class:`RunRef` built from a registry record's PROJECT block, or ``None``.
+
+    ``None`` for a ``hardware_setup`` root is the point, not an omission: invariant 6 forbids it a
+    project block, and section 2.6 says a machine-tuning root shows a tuning state in the Machine
+    panel and must NOT switch project history to ``_lm3_calibration``. Returning nothing here lets
+    the lower tiers keep describing the user's own project while the machine is being tuned, and
+    deliberately does not descend into the calibration child.
+
+    ``live`` selects the ledger by TIER, which is section 2.10's "GUI database resolution" rule
+    verbatim: "while the run is active -> ``active_db_path``; after terminal finalization ->
+    ``archived_db_path``; ``last.json`` must never leave the historical GUI pointing at deleted
+    node-local scratch" (gates 26 and 59). So the asymmetry with the live caller is deliberate, not
+    an oversight: on a STAGED (cluster) run ``active_db_path`` is node-local scratch that dies with
+    the allocation, and following it out of ``last.json`` renders a confusing "database missing" for
+    a run whose archive is sitting in persistent storage. On a desktop in-place run
+    ``archived_db_path == active_db_path``, so both branches produce a byte-identical ref.
+
+    The plain ``archived_db_path or active_db_path`` form -- the same one ``results_api._record_ref``
+    uses -- is deliberate in place of ``config_io.resolve_archived_db_path()``: gate 14 already
+    guarantees a finalized ``last.json`` carries a RESOLVED generation, and the pointer-resolving
+    reader raises on a malformed pointer, which this module's "never raise, degrade to a lower tier"
+    contract forbids.
+    """
+    project = getattr(record, "project", None)
+    if project is None:
+        return None
+    try:
+        root = Path(str(project.run_dir))
+        if live:
+            db_path = Path(str(project.active_db_path))     # the ledger the run is writing NOW
+        else:
+            db_path = Path(str(getattr(project, "archived_db_path", None)
+                                or project.active_db_path))
+        log_path = Path(str(project.log_path))
+        run_name = str(project.run_name)
+    except (AttributeError, TypeError, ValueError):
+        log.debug("runtime record carries an unusable project block", exc_info=True)
+        return None
+    state = getattr(record.state, "value", record.state)
+    return RunRef(run_name=run_name, root=root, db_path=db_path, log_path=log_path,
+                  job_id=None, source=source, run_id=str(getattr(record, "run_id", "")) or None,
+                  record_state=str(state))
+
+
+def _from_runtime() -> Optional[RunRef]:
+    """The ACTIVE run: a live record under a held lease. Precedence tier 2.
+
+    Deliberately STRICTER than ``metrics_api.active_run_ref()``, which reports any COMPATIBLE
+    record so that ``GET /v1/runtime`` can describe an occupied-but-crashed deployment honestly.
+    Follow-active and the section 2.8 refusal need the opposite bias: pinning every view -- and
+    every postprocessing refusal -- to a ledger nobody is advancing would outlast the process that
+    wrote it. See the module note above ``_RUNTIME_CACHE`` for why this reader exists at all.
+
+    Only ``LIVE`` qualifies. ``ABANDONED`` (the lease became acquirable while the record still says
+    ``running``) is a crashed writer, and pinning every view to a ledger nobody is advancing is the
+    exact failure ``_discover_run`` already learned to avoid. ``INCOMPATIBLE`` yields no record at
+    all, so a newer-schema runtime cannot be half-interpreted here (section 2.9); reporting that
+    skew to the UI is ``GET /v1/runtime``'s job, not this module's.
+    """
+    snap = _runtime_snapshot()
+    if snap is None or getattr(snap, "record", None) is None:
+        return None
+    try:
+        from leafmachine3.core.runtime import RecordClassification
+    except Exception:  # noqa: BLE001
+        return None
+    if snap.classification is not RecordClassification.LIVE:
+        return None
+    return _record_ref(snap.record, source="runtime", live=True)
+
+
+def active_runtime_ref() -> Optional[RunRef]:
+    """The run that HOLDS this deployment's lease right now, or ``None``.
+
+    Unlike :func:`resolve_run` this never falls back to a hook, the settings file, or the
+    filesystem: the answer is the runtime record or nothing. That is what makes it usable as an
+    authorization input -- section 2.8's postprocessing guard refuses a tool aimed at the active
+    run, and a refusal driven by a recency guess would block work on an unrelated finished run.
+    """
+    return _from_runtime()
+
+
+def _from_last_record() -> Optional[RunRef]:
+    """The deployment's most recently FINISHED run (``last.json``). Precedence tier 4b.
+
+    Step 4, verbatim: "on completion follow ``last.json`` rather than the most recently modified
+    unrelated run". ``last.json`` is written by the process that just finished; recency over the
+    filesystem is a guess about directories that may belong to a different project entirely.
+
+    Only returned when the run directory still exists -- a deleted run is history, not a view.
+    """
+    if not _runtime_v2_enabled():
+        return None
+
+    def produce() -> Optional[RunRef]:
+        deployment = _deployment_runtime_dir()
+        if deployment is None:
+            return None
+        try:
+            from leafmachine3.core.runtime import LAST_RECORD_FILENAME
+            from leafmachine3.core.runtime import records as runtime_records
+
+            payload, error = runtime_records.read_json_file(deployment / LAST_RECORD_FILENAME)
+            if payload is None or error is not None:
+                return None
+            record = runtime_records.sanitize_record(runtime_records.record_from_dict(payload))
+        except Exception:  # noqa: BLE001 - a bad last.json is history we simply do not have
+            log.debug("last.json could not be read", exc_info=True)
+            return None
+        return _record_ref(record, source="last", live=False)
+
+    ref = _RUNTIME_CACHE.get("last", produce)
+    if ref is None:
+        return None
+    return ref if (ref.db_path.exists() or ref.root.is_dir()) else None
+
+
+def invalidate_run_caches() -> None:
+    """Drop every cached "which run / what is it doing" answer.
+
+    The three TTL caches used to be invalidated only by ``bind_run``/``clear_run``. The registry
+    tiers have no such hook -- a run starts without telling this module -- so the runtime read is
+    kept on a short TTL instead, and this exists for the callers that DO know something changed.
+    """
+    _RUNTIME_CACHE.invalidate()
+    _SNAPSHOT_CACHE.invalidate()
+    _RUNS_CACHE.invalidate()
+    _SCAN_CACHE.invalidate()
 
 
 # The integrator's hooks. app.py knows things this module cannot discover -- which job the
@@ -579,17 +805,44 @@ def _scan_runs() -> list[Path]:
     return _SCAN_CACHE.get("scan", produce)
 
 
+def _selected_run() -> Optional[RunRef]:
+    """An explicitly SELECTED historical run: precedence tier 3.
+
+    The host (``app.py``'s job worker, ``metrics_api._bind_status``) can name a run it knows about
+    through :func:`bind_job_source` / :func:`bind_run`. That is a deliberate selection, so it still
+    outranks the settings file and discovery -- but it no longer outranks the runtime record,
+    because a hook someone forgot to call is not evidence about what is running, and a hook someone
+    called for a finished run must not hide a live one.
+    """
+    ref, _ = _from_job_source()
+    if ref is not None and (ref.db_path.exists() or ref.root.exists()):
+        return ref
+    with _BIND_LOCK:
+        bound = _BOUND
+    if bound is not None and (bound.db_path.exists() or bound.root.exists()):
+        return bound
+    return None
+
+
 def resolve_run(run: Optional[str] = None, db: Optional[str] = None) -> Optional[RunRef]:
     """Decide which run the status endpoints describe.
 
-    Precedence: an explicit ``db=`` path, then an explicit ``run=`` name, then the live job
-    handed over by :func:`bind_job_source`, then whatever :func:`bind_run` pinned, then the
-    project the SETTINGS name (:func:`_from_settings`), and only failing all of those,
-    discovery -- which prefers a genuinely live run and otherwise the most recently written one.
+    Precedence, exactly as plan Step 4 fixes it:
 
-    The settings step is the important one for a GUI that is sitting idle: <output folder>/<project
-    name> is what the app is pointed at, so the status stream, the console and the stage bar all
-    describe that project instead of whatever scanning the disk happens to turn up.
+    1. an explicit ``db=`` path or ``run=`` name (``source: query``) -- invariant 7's deliberate
+       override, scoped to that one client request, which the UI shows as a paused follow-active;
+    2. the ACTIVE RUNTIME RECORD (``source: runtime``) -- the process holding the deployment lease,
+       describing the paths it actually opened;
+    3. an explicitly selected historical run (``source: job`` / ``bound``);
+    4. the canonical next-run project for an idle PREPARED project (``source: settings``), with
+       ``last.json`` (``source: last``) preferred when that project has never been created;
+    5. filesystem discovery LAST (``source: discovered``), which is a recency guess and therefore
+       can never authorize a control action (see :attr:`RunRef.may_authorize_control`).
+
+    Tier 2 is the whole point of the step. Everything below it derives identity from something the
+    user can retype -- ``project.run_name`` above all -- so with the old ordering, editing the name
+    field during a run moved status, the console, the results list and postprocessing off the
+    running project and onto a directory that did not exist. The record does not move.
     """
     if db:
         candidate = Path(db).expanduser()
@@ -604,14 +857,23 @@ def resolve_run(run: Optional[str] = None, db: Optional[str] = None) -> Optional
                 return _run_ref(root / run, source="query")
         return None
 
-    ref, _ = _from_job_source()
-    if ref is not None and (ref.db_path.exists() or ref.root.exists()):
-        return ref
-    with _BIND_LOCK:
-        bound = _BOUND
-    if bound is not None and (bound.db_path.exists() or bound.root.exists()):
-        return bound
+    active = _from_runtime()
+    if active is not None:
+        return active
+
+    selected = _selected_run()
+    if selected is not None:
+        return selected
+
+    # An "idle prepared project" is one the settings name AND that exists on disk. When the name
+    # points at a directory that was never created -- which is what an edit mid-run leaves behind
+    # the moment the run ends -- the honest answer is the run that actually just finished.
     configured = _from_settings()
+    if configured is not None and (configured.db_path.exists() or configured.root.is_dir()):
+        return configured
+    finished = _from_last_record()
+    if finished is not None:
+        return finished
     if configured is not None:
         return configured
     return _SCAN_CACHE.get("discover", _discover_run)
@@ -1257,7 +1519,13 @@ def status(run: Optional[str] = None, db: Optional[str] = None, *,
     # The reference is part of the key, not just the DB path: the same ledger reached through
     # ``?run=`` and through discovery produces snapshots that differ in ``source`` / ``job_id``,
     # and keying on the path alone would serve one request's provenance to the other.
-    key = (str(ref.db_path), ref.source, ref.job_id, int(recent) if recent is not None else -1)
+    #
+    # ``run_id`` is in the key because ``db_path`` is NOT a stable identity (plan Step 4): rename
+    # ``project.run_name`` and the same live run resolves to a different path, while two different
+    # runs of the same project name resolve to the same one. Keying on the registry identity is
+    # what stops a cached snapshot from being served across that boundary in either direction.
+    key = (str(ref.db_path), ref.source, ref.job_id, ref.run_id,
+           int(recent) if recent is not None else -1)
     return _SNAPSHOT_CACHE.get(key, lambda: _build_status(ref, recent))
 
 
@@ -1423,7 +1691,8 @@ def _build_status(ref: RunRef, recent: Optional[int]) -> dict:
     errored = [m for m in modules if m["state"] == "error"]
 
     last_activity = _parse_db_ts(ledger.get("last_update")) or _log_mtime(ref.log_path)
-    run_state = _run_state(active, errored, modules, ledger, last_activity, now)
+    run_state = _run_state(active, errored, modules, ledger, last_activity, now,
+                           record_state=ref.record_state)
     stale_for = (now - last_activity) if (run_state == "running" and last_activity) else None
     stale = bool(stale_for is not None and stale_for > STALE_AFTER_S)
 
@@ -1535,17 +1804,29 @@ def _active_view(active: Optional[dict]) -> Optional[dict]:
     }
 
 
+#: Registry ``state`` -> the four states this snapshot speaks. ``stopped`` and ``interrupted`` are
+#: deliberately absent: a user-initiated stop is not an error, and the ledger's own reading of a
+#: half-finished run is the more useful description of what is on disk.
+_RECORD_STATE_TO_RUN_STATE = {"starting": "running", "running": "running",
+                              "done": "done", "error": "error"}
+
+
 def _run_state(active: Optional[dict], errored: list[dict], modules: list[dict],
-               ledger: dict, last_activity: Optional[float], now: float) -> str:
+               ledger: dict, last_activity: Optional[float], now: float,
+               *, record_state: Optional[str] = None) -> str:
     """Run-level state: ``idle`` | ``running`` | ``done`` | ``error``.
 
-    The JobManager's own state wins when the integrator bound one -- it is the only thing that
-    knows about ``queued`` and about a job that died before touching the ledger.
+    The RUNTIME RECORD wins when there is one (invariant 7): it is written by the process holding
+    the lease, and it is the only source that can say ``starting`` -- the window between lease
+    acquisition and the ledger's first commit, which the ledger cannot describe at all and which
+    otherwise renders as ``idle`` while a run is plainly under way. The JobManager's own state is
+    next, because it is the only thing that knows about ``queued`` and about a job that died before
+    touching the ledger.
     """
     with _BIND_LOCK:
         bound_state = _BOUND_STATE
     _, job_state = _from_job_source()
-    override = job_state or bound_state
+    override = _RECORD_STATE_TO_RUN_STATE.get(record_state or "") or job_state or bound_state
     if override in ("running", "done", "error"):
         # A bound 'running' job whose ledger already shows an error is an error.
         if override == "running" and errored:
@@ -2058,9 +2339,11 @@ def router(dependencies: Optional[list] = None) -> Any:
                    recent: Optional[int] = None) -> dict:
         return status(run, db, recent=recent)
 
-    @api.get("/v1/runs", dependencies=guards)
-    def get_runs(limit: int = 60) -> dict:
-        return list_runs(limit=limit)
+    # NO ``GET /v1/runs`` here. ``results_api`` owns that path (plan Step 4: "Remove the duplicate
+    # progress-router GET /v1/runs, keeping the results_api route"). Two routers answering one path
+    # meant the winner was decided by registration ORDER in app.py, and the loser's row shape
+    # (``run_name`` and no stable ``id``) is what every Results-tab consumer had to defend against.
+    # ``list_runs()`` below stays as a plain function: the Status tab's idle summary uses it.
 
     @api.get("/v1/logs", dependencies=guards)
     def get_logs(run: Optional[str] = None, db: Optional[str] = None,
@@ -2114,6 +2397,11 @@ def router(dependencies: Optional[list] = None) -> Any:
             # first poll. That opening frame is the only logmeta the console used to receive, so
             # it sat on "waiting for log" for the whole run while lines streamed in underneath.
             last_meta = tailer.state if tailer is not None else None
+            # Follow the RUN, not the path (plan Step 4: "follow the active run_id for logs").
+            # Two different runs can share one log path -- rerunning a project truncates it in
+            # place -- and one run can be renamed underneath us; only the registry identity
+            # distinguishes those, and a path comparison gets both cases backwards.
+            followed = (ref.run_id, ref.log_path) if ref is not None else None
             try:
                 while not await request.is_disconnected():
                     # Follow the ACTIVE run, not just the file we opened with: when the user
@@ -2121,11 +2409,13 @@ def router(dependencies: Optional[list] = None) -> Any:
                     if run is None and db is None and time.time() - last_check > 2.0:
                         last_check = time.time()
                         current = await asyncio.to_thread(resolve_run, None, None)
-                        if current is not None and (tailer is None
-                                                    or current.log_path != tailer.path):
+                        current_key = (None if current is None
+                                       else (current.run_id, current.log_path))
+                        if current is not None and (tailer is None or current_key != followed):
                             if tailer is not None:
                                 tailer.close()
                             ref, tailer = current, LogTailer(current.log_path, backfill=backfill)
+                            followed = current_key
                             last_meta = tailer.state
                             yield _frame("logmeta", state=tailer.state, run=current.run_name,
                                          path=str(current.log_path), reset=True)
@@ -2166,5 +2456,6 @@ def router(dependencies: Optional[list] = None) -> Any:
 __all__ = [
     "status", "list_runs", "log_tail", "status_frames", "log_frames",
     "bind_run", "clear_run", "bind_job_source", "active_run", "resolve_run",
+    "active_runtime_ref", "invalidate_run_caches",
     "module_table", "parse_log_line", "LogTailer", "RunRef", "router",
 ]

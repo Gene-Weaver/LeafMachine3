@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import logging
 import multiprocessing as mp
+import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -24,6 +25,7 @@ from leafmachine3.core.logging_setup import start_logging
 from leafmachine3.core.project import Project
 from leafmachine3.core.stage import RunContext
 from leafmachine3.core.executor import reap_orphaned_workers
+from leafmachine3.core.runtime import Launcher, RuntimeBusyError, execution_activity
 from leafmachine3.core.timing import TimeReport
 from leafmachine3.core.validate import validate_ml_artifacts
 from leafmachine3.pipeline import build_pipeline, run_pipeline
@@ -40,8 +42,17 @@ def machine3(
     restart: RestartArg = None,
     input_dir: str | Path | None = None,
     output_dir: str | Path | None = None,
+    run_name: str | None = None,
+    launcher: Launcher | str = Launcher.PYTHON,
+    handle_sigterm: bool = False,
 ) -> Project:
     """Run the full LM3 pipeline for ``cfg_path`` and return the resolved project.
+
+    This is the PUBLIC entry point, and the runtime activity is owned HERE rather than in
+    :func:`main`, so a direct Python caller (a notebook, the server's legacy job worker, a test)
+    gets the same exclusion, the same published record and the same finalization as the CLI. A
+    lease taken only by ``main()`` would leave every in-process caller able to start a second
+    concurrent run on the same GPUs (plan section 4, Step 3).
 
     Parameters
     ----------
@@ -52,56 +63,105 @@ def machine3(
         everything downstream; ``"all"`` rebuilds the whole project.
     input_dir / output_dir:
         Optional CLI overrides for ``project.input.dirs`` / ``project.output.dir``.
+    run_name:
+        Optional override for ``project.run_name``. A NAME, never a path -- see
+        :func:`_cli_overrides`.
+    launcher:
+        Descriptive provenance for the runtime record (plan section 3.2): ``python`` for a direct
+        call, ``cli`` from :func:`main`. It is never an authorization decision.
+    handle_sigterm:
+        Finalize as ``stopped`` when this process is terminated (plan section 3.3: a server Stop
+        targets the root process group). Default OFF and opted into by :func:`main` alone, because
+        installing a handler is a PROCESS-wide act: a library caller -- the server's in-process job
+        worker above all -- must not have its own signal handling replaced by ours.
+
+    Raises
+    ------
+    RuntimeBusyError
+        Another root activity already holds this deployment (plan section 3.3). :func:`main` turns
+        it into exit code 75.
     """
     _set_spawn()                                     # MUST precede any CUDA import
 
-    cfg = Config.load(cfg_path, overrides=_cli_overrides(input_dir, output_dir, restart))
+    # Hoisted out of Config.load() because section 3.4 requires the manifest to record the explicit
+    # overrides as such -- once they are deep-merged, nothing downstream can tell a CLI-supplied
+    # output.dir from a YAML-supplied one.
+    overrides = _cli_overrides(input_dir, output_dir, restart, run_name)
+    cfg = Config.load(cfg_path, overrides=overrides)
     cfg.validate()                                   # raises on missing / incoherent settings
 
-    ensure_hardware_profile(cfg)                     # bind hardware_settings.yaml; auto-run setup if ABSENT
+    # THE section 3.3 insertion point: after cheap config loading and validation have resolved
+    # project identity, and BEFORE hardware profiling, orphan reaping, directory creation, database
+    # writes, model loading or GPU work -- every one of which is a side effect a losing launch must
+    # not have. execution_activity() chooses root vs inherited subactivity from the environment
+    # (section 2.2, never from an argument a caller can get wrong), publishes ``starting``, answers
+    # a section 2.4 status channel when this process was launched with one, and finalizes on the
+    # normal path, on an exception and on KeyboardInterrupt alike. With LM3_RUNTIME_V2 off it
+    # yields an inert handle: nothing is acquired, published or created, and the body below runs
+    # exactly as it did before this wiring existed.
+    with execution_activity(cfg=cfg, config_path=getattr(cfg, "source_path", None),
+                            launcher=launcher, handle_sigterm=handle_sigterm) as activity:
+        ensure_hardware_profile(cfg)                 # bind hardware_settings.yaml; auto-run setup if ABSENT
+        # Auto-setup is deliberately NOT a subactivity: ensure_hardware_profile() calls run_setup()
+        # in-process with calibrate=False, so it spawns nothing and simply runs under this root's
+        # own lease. The taxonomy agrees -- a hardware_setup child of a pipeline root does not exist
+        # (``_types.CHILD_PARENT_ACTIVITY``).
 
-    dirs = build_dirs(cfg)                           # working set, _tmp, crops, reports, logs, db
-    start_logging(dirs, cfg)
-    log.info("LM3 start | out=%s | restart=%s", dirs.root, cfg.restart)
+        dirs = build_dirs(cfg)                       # working set, _tmp, crops, reports, logs, db
+        start_logging(dirs, cfg)
+        log.info("LM3 start | out=%s | restart=%s", dirs.root, cfg.restart)
+        for key, why in cfg.retired_settings():      # once per run, not once per specimen
+            log.warning("settings: %s is no longer used (%s); remove it from %s", key, why,
+                        getattr(cfg, "source_path", "your settings file"))
 
-    validate_ml_artifacts(cfg)                       # fail fast if an export is missing
+        # Section 3.4, and it has to be here: build_dirs() has just settled ``tmp`` (only a
+        # successful mkdir decides it), start_logging() has opened the log the manifest sits beside,
+        # and build_dirs() itself runs three times per run -- so a manifest written inside it would
+        # not be immutable.
+        activity.write_manifest(tmp_dir=dirs.tmp, overrides=overrides)
 
-    # Crash recovery, part two: a previously SIGKILLed run leaves its GPU workers orphaned and
-    # still holding their CUDA contexts, which silently shrinks the VRAM this run gets sized
-    # against. Reap them BEFORE any device planning reads free VRAM.
-    reap_orphaned_workers()
+        validate_ml_artifacts(cfg)                   # fail fast if an export is missing
 
-    db = ProjectDB.open_or_create(dirs.db_path)      # an existing DB here => RESUME
-    db.reclaim_running()                             # crash recovery: 'running' -> 'pending'
-    project = Project(cfg, dirs, db)
+        # Crash recovery, part two: a previously SIGKILLed run leaves its GPU workers orphaned and
+        # still holding their CUDA contexts, which silently shrinks the VRAM this run gets sized
+        # against. Reap them BEFORE any device planning reads free VRAM.
+        reap_orphaned_workers()
 
-    ImageIngestor(cfg, db).run(restart=cfg.wipe_working_set)   # immutable originals -> symlinks
+        db = ProjectDB.open_or_create(dirs.db_path)  # an existing DB here => RESUME
+        db.reclaim_running()                         # crash recovery: 'running' -> 'pending'
+        project = Project(cfg, dirs, db)
 
-    timer = TimeReport()
-    stages = build_pipeline(cfg)                     # ordered, ENABLED PipelineStage instances
-    ctx = RunContext(cfg=cfg, dirs=dirs, timer=timer)
+        # ``starting -> running``, section 3.3: the DB and the log path both exist now, so the
+        # record finally points at files a reader can open.
+        activity.mark_running()
 
-    sampler = None
-    if bool(cfg.timing.get("enabled", False)):       # run-timing profiler -> reports/Timing/
-        from leafmachine3.setup.timing import UtilizationSampler
-        sampler = UtilizationSampler(interval=float(cfg.timing.get("sample_interval_s", 0.25)),
-                                     gpu_indices=_timed_gpu_indices(cfg))
-        sampler.start()
-    try:
-        run_pipeline(stages, project, ctx, restart=cfg.restart)
-    finally:
-        if sampler is not None:
-            sampler.stop()
-            try:
-                from leafmachine3.setup.timing import write_timing_reports
-                write_timing_reports(stages, timer, sampler, project, dirs.reports / "Timing",
-                                     cfg, run_name=str(cfg.project.run_name))
-            except Exception:                        # a timing-report failure must not fail the run
-                log.exception("timing report generation failed")
+        ImageIngestor(cfg, db).run(restart=cfg.wipe_working_set)   # immutable originals -> symlinks
 
-    timer.log_report(log)
-    log.info("LM3 complete | %s", dirs.db_path)
-    return project
+        timer = TimeReport()
+        stages = build_pipeline(cfg)                 # ordered, ENABLED PipelineStage instances
+        ctx = RunContext(cfg=cfg, dirs=dirs, timer=timer)
+
+        sampler = None
+        if bool(cfg.timing.get("enabled", False)):   # run-timing profiler -> reports/Timing/
+            from leafmachine3.setup.timing import UtilizationSampler
+            sampler = UtilizationSampler(interval=float(cfg.timing.get("sample_interval_s", 0.25)),
+                                         gpu_indices=_timed_gpu_indices(cfg))
+            sampler.start()
+        try:
+            run_pipeline(stages, project, ctx, restart=cfg.restart)
+        finally:
+            if sampler is not None:
+                sampler.stop()
+                try:
+                    from leafmachine3.setup.timing import write_timing_reports
+                    write_timing_reports(stages, timer, sampler, project, dirs.reports / "Timing",
+                                         cfg, run_name=str(cfg.project.run_name))
+                except Exception:                    # a timing-report failure must not fail the run
+                    log.exception("timing report generation failed")
+
+        timer.log_report(log)
+        log.info("LM3 complete | %s", dirs.db_path)
+        return project
 
 
 def _timed_gpu_indices(cfg) -> "list[int] | None":
@@ -130,12 +190,9 @@ def _exec_with_cuda_libpath() -> None:
 
     if os.environ.get(_LIBPATH_FLAG):                # already re-exec'd (or explicitly disabled)
         return
-    try:
-        import nvidia
-        base = Path(nvidia.__file__).resolve().parent
-        libdirs = sorted(str(p) for p in base.glob("*/lib") if p.is_dir())
-    except Exception:                                # noqa: BLE001 - no wheels -> nothing to add
-        libdirs = []
+    from leafmachine3.core.cuda_libs import nvidia_lib_dirs
+
+    libdirs = nvidia_lib_dirs()                      # via nvidia.__path__: survives a deleted __init__.py
     os.environ[_LIBPATH_FLAG] = "1"
     if not libdirs:
         return
@@ -163,6 +220,7 @@ def _cli_overrides(
     input_dir: str | Path | None,
     output_dir: str | Path | None,
     restart: RestartArg,
+    run_name: str | None = None,
 ) -> dict:
     """Build the override tree so CLI flags win over the YAML (deep-merged in ``Config.load``).
 
@@ -171,6 +229,11 @@ def _cli_overrides(
     mapping, nothing downstream can tell a CLI-supplied ``output.dir`` from a YAML-supplied one, and
     the two take different bases -- the caller's CWD for a flag, the settings file's directory for
     YAML. Absolutize while the provenance still exists, or lose the ability to be correct.
+
+    ``run_name`` is the exception that proves the rule: it is a single directory NAME that
+    ``build_dirs()`` joins under ``output.dir``, so absolutizing it would silently relocate the run
+    (``--run-name ../elsewhere`` escaping the output root, an absolute value becoming the whole
+    path). It is validated as a name and passed through verbatim instead.
     """
     def _from_cwd(value: str | Path) -> str:
         return str(Path(str(value)).expanduser().resolve())
@@ -182,7 +245,29 @@ def _cli_overrides(
         overrides["project"]["output"] = {"dir": _from_cwd(output_dir)}
     if restart is not None:
         overrides["project"]["run_mode"] = {"restart": restart}
-    return overrides
+    if run_name is not None:
+        overrides["project"]["run_name"] = _checked_run_name(run_name)
+    # An empty tree means "no explicit overrides", and that is what the section 3.4 manifest should
+    # record -- not a hollow {"project": {}} that reads like something was overridden.
+    return overrides if overrides["project"] else {}
+
+
+def _checked_run_name(value: str) -> str:
+    """A run name is one directory component, never a path. Raise rather than relocate the run.
+
+    ``build_dirs()`` joins this under ``project.output.dir``, so a separator, ``..`` or an absolute
+    value would move the whole run somewhere the record, the manifest and the API all disagree
+    about. Refusing here -- before the lease, before any directory exists -- is the only place the
+    mistake is still cheap.
+    """
+    text = str(value).strip()
+    # ``Path("..").name`` is ".."  -- a bare dotted component survives the name test, so it is
+    # spelled out rather than left to a property that only ALMOST rejects it.
+    if not text or text in {".", ".."} or text != Path(text).name or "/" in text or "\\" in text:
+        raise ValueError(
+            f"run name must be a single directory name, not a path: {value!r}"
+        )
+    return text
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -203,10 +288,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     parser.add_argument("--input", default=None, help="override the YAML input dir")
     parser.add_argument("--output", default=None, help="override the YAML output dir")
+    parser.add_argument("--run-name", default=None,
+                        help="override the YAML project.run_name (a NAME, not a path)")
     args = parser.parse_args(argv)
 
+    from leafmachine3.doctor import run_startup_gate  # noqa: PLC0415 - after argparse, so --help is free
+
+    refused = run_startup_gate("machine3")            # `lm3 doctor` checks 1-4: Python, variant, packages
+    if refused is not None:
+        return refused
+
     restart: RestartArg = "all" if args.restart == ["all"] else args.restart   # "all" | list | None
-    machine3(args.config, restart=restart, input_dir=args.input, output_dir=args.output)
+    try:
+        # handle_sigterm: this process IS the run, so a SIGTERM (a server Stop, a shell kill)
+        # should finalize the record as ``stopped`` rather than leave an ``active.json`` that says
+        # ``running`` until the next reader classifies it as abandoned (section 3.3).
+        machine3(args.config, restart=restart, input_dir=args.input, output_dir=args.output,
+                 run_name=args.run_name, launcher=Launcher.CLI, handle_sigterm=True)
+    except RuntimeBusyError as busy:
+        # Section 3.3: another ROOT activity holds this deployment. Exit 75 is a distinct answer
+        # from a genuine failure -- it is what lets run_global_greening.sh record the species as
+        # retryable rather than failed (section 2.3). The winner is named on stderr rather than
+        # through ``log``: the lease is attempted before start_logging(), so this process has no
+        # log file yet and the message would otherwise go nowhere a user looks.
+        print(f"machine3: {busy}", file=sys.stderr)
+        return busy.exit_code
     return 0
 
 

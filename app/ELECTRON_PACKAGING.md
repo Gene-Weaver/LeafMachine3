@@ -80,32 +80,44 @@ production dependencies (both Electron and electron-builder are `devDependencies
 
 ### Packaged layout — read this before shipping to a user
 
-`main.js` computes the LM3 checkout as `ROOT = path.resolve(__dirname, "..")` and the interpreter as
-`ROOT/.venv_LM3/bin/python`. In a packaged app `__dirname` is `<install>/resources/app.asar`, so
-**ROOT becomes `<install>/resources`**. This was measured, not assumed — the packaged AppImage was
-launched with `LM3_PYTHON` pointed at a stand-in script that prints its working directory:
+In a packaged app `__dirname` is `<install>/resources/app.asar`, so **ROOT becomes
+`<install>/resources`**. This was measured, not assumed — the packaged AppImage was launched with
+`LM3_PYTHON` pointed at a stand-in script that prints its working directory:
 
 ```
 [lm3] CWD=/tmp/.mount_LeafMakrPx0e/resources
 ARGV=-m uvicorn leafmachine3.server.app:create_app --factory --host 127.0.0.1 --port 8801
 ```
 
-Consequences, all of which are behavior of `main.js` (not of this packaging config, and not changed
-here — `main.js` is owned by other steps):
+The original package therefore had no checkout venv and was attach-only by default. The runtime
+integration has since replaced that single guessed path with a bounded, filesystem-only resolver:
+
+1. explicit `LM3_PYTHON`;
+2. `VIRTUAL_ENV` or `CONDA_PREFIX`;
+3. a checkout venv when `LM3_ROOT` is explicit (or in an unpackaged developer checkout);
+4. the installed `lm3` console command on `PATH` (`lm3.exe` on Windows).
+
+It never launches a probe subprocess or imports a candidate. A wrong candidate fails through the
+existing bounded server-start/identity handshake, so discovery cannot hang the Electron harness.
+
+Current consequences:
 
 - A packaged app **can attach** to an LM3 server that is already listening. This was smoke-tested
   end to end and works (§4).
-- A packaged app **cannot spawn** an LM3 server with default settings, because
-  `<install>/resources/.venv_LM3/bin/python` does not exist. `LM3_PYTHON` must be set to a real
-  interpreter, or `main.js` must learn a separate "where is the LM3 checkout" setting.
+- A packaged app **can spawn** the separately installed LM3 backend when an activated environment
+  is visible or its canonical `lm3` command is on the app's `PATH`. `LM3_PYTHON` and `LM3_ROOT`
+  remain explicit overrides.
+- The Electron artifact still does **not bundle** Python, CUDA, models, or LM3 dependencies. If no
+  separately installed backend is discoverable, it gives a precise installation/`lm3 serve`
+  message rather than guessing a nonexistent interpreter under `<install>/resources`.
 - When `ensureServer()` fails, `main.js` calls `dialog.showErrorBox()`, which is **modal and
   blocking**. On a headless host the process then never exits on its own; the probe above had to be
   killed (`exit=137`). Not a packaging bug, but it makes automated packaged-app failure testing
   awkward.
 
-Shipping a self-contained desktop app therefore needs a decision that is out of scope here: either
-bundle a Python runtime as `extraResources`, or ship the shell as a thin client that is pointed at
-an installed LM3.
+This remains the deliberately thin-client packaging model from `DEPLOYMENT_PLAN.md`: Electron and
+the LM3 backend are separate artifacts. A future all-in-one installer would still have to bundle a
+Python runtime as `extraResources`; that is not implied by backend discovery.
 
 ## 3. How to build each target
 

@@ -26,10 +26,15 @@ import signal
 import sys
 import threading
 from collections import Counter, deque
-from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from leafmachine3.core.device import Device
+# The section 2.2 step 6 process-creation mutex. The executor is the SECOND party to it: the lease
+# handoff is the first (leafmachine3/core/runtime/lease.py). Importing it here is cheap and pure
+# stdlib -- the runtime package resolves its submodules lazily, so this pulls in `lease` only, and
+# `lease` reaches ctypes/Win32 exclusively from inside runtime platform checks, so it imports
+# cleanly on Linux and in every spawned worker.
+from leafmachine3.core.runtime import process_creation_lock
 from leafmachine3.core.stage import PipelineStage, WorkItem
 
 log = logging.getLogger("leafmachine3.executor")
@@ -196,15 +201,9 @@ class DeviceManager:
         at process start. Spawn children inherit this process's environment, so exporting
         it here (before any worker starts) is enough -- no re-exec required.
         """
-        try:
-            import nvidia  # type: ignore
-        except Exception:
-            return
-        try:
-            base = Path(nvidia.__file__).resolve().parent
-        except Exception:
-            return
-        libdirs = [str(p) for p in base.glob("*/lib") if p.is_dir()]
+        from leafmachine3.core.cuda_libs import nvidia_lib_dirs
+
+        libdirs = nvidia_lib_dirs()                  # via nvidia.__path__: survives a deleted __init__.py
         if not libdirs:
             return
         current = os.environ.get("LD_LIBRARY_PATH", "")
@@ -795,8 +794,7 @@ class StageExecutor:
             )
             for i in range(n)
         ]
-        for worker in workers:
-            worker.start()
+        self._start_workers(workers)
 
         feeder = threading.Thread(
             target=self._feed, args=(task_q, todo, n), name=f"{self.stage.key}-feed", daemon=True
@@ -955,8 +953,38 @@ class StageExecutor:
             name=f"{self.stage.key}-w{len(workers)}",
             daemon=True,
         )
-        replacement.start()
+        # Same window as the initial pool start: a replacement spawned while a subactivity
+        # handoff holds its inheritable duplicate open is precisely the concurrent CreateProcess
+        # the plan names, and a fault-recovery respawn is the one worker launch that can land at an
+        # arbitrary moment rather than at a stage boundary.
+        self._start_workers([replacement])
         workers.append(replacement)
+
+    def _start_workers(self, workers: list[Any]) -> None:
+        """Start worker processes inside the ONE process-creation mutex of plan section 2.2, step 6.
+
+        THE reason this exists: between the root duplicating its lease handle inheritably and
+        closing that duplicate (``lease.py`` ``_handoff``, steps 2-4), an inheritable lease handle
+        exists in this process. A ``CreateProcess`` issued from another thread inside that window
+        is the only way an ordinary executor worker could inherit the lease and hold the deployment
+        occupied after the root and its subactivities have exited (invariant 3, gates 32/33). The
+        handoff takes the same lock; this is the other party to it, so every worker launch in a
+        lease-holding root is serialized against that window. Gate 33's evidence is therefore in
+        the code on BOTH sides, not in an unstated CPython behavior.
+
+        Two properties worth stating because they bound what this can do. ``process_creation_lock``
+        is a ``threading.RLock``, so it serializes only launchers in the SAME process as the
+        handoff -- which is exactly what an executor pool inside a root activity is, and why the
+        server's own ``Popen`` sites do not take it (that process performs no handoff). And the
+        lock is belt-and-braces rather than the sole defense: CPython confines inheritance already
+        (``pass_fds`` is a per-spawn opt-in on POSIX; ``multiprocessing`` spawn calls
+        ``CreateProcess`` with ``bInheritHandles=FALSE`` on Windows). Starting a pool is
+        milliseconds of ``CreateProcess``/``fork_exec``, so holding it across the loop costs
+        nothing measurable and keeps the window shut for the whole pool rather than per worker.
+        """
+        with process_creation_lock():
+            for worker in workers:
+                worker.start()
 
     def _shutdown(self, workers: list[Any], task_q: "mp.Queue", result_q: "mp.Queue") -> None:
         for worker in workers:

@@ -1,0 +1,105 @@
+{
+  "what": "leaf_segmenter input/output pairs: input = the plant_detector Leaf_WHOLE crop exactly as stored in _crops/ (working frame); output = same crop with this model's Leaf/Petiole/Hole masks (polygons re-based from the specimen frame).",
+  "examples": [
+    {
+      "input": "io_01_NY_1927952050_Fagaceae_Quercus_bicolor_input_crop.jpg",
+      "output": "io_01_NY_1927952050_Fagaceae_Quercus_bicolor_output_masks.jpg",
+      "specimen": "NY_1927952050_Fagaceae_Quercus_bicolor",
+      "shape": "lobed",
+      "detection_id": 86,
+      "plant_detector_class": "Leaf_WHOLE",
+      "plant_detector_conf": 0.754,
+      "crop_bbox_px_x1y1x2y2": [
+        1331,
+        1019,
+        2101,
+        1640
+      ],
+      "crop_size_px": [
+        769,
+        621
+      ],
+      "instances": {
+        "Leaf": 1,
+        "Petiole": 1,
+        "Hole": 2
+      },
+      "source_run": "LM3/examples_out/_cfsum"
+    },
+    {
+      "input": "io_02_CM_2859108687_Cannabaceae_Celtis_occidentalis_input_crop.jpg",
+      "output": "io_02_CM_2859108687_Cannabaceae_Celtis_occidentalis_output_masks.jpg",
+      "specimen": "CM_2859108687_Cannabaceae_Celtis_occidentalis",
+      "shape": "toothed, holes",
+      "detection_id": 122,
+      "plant_detector_class": "Leaf_WHOLE",
+      "plant_detector_conf": 0.866,
+      "crop_bbox_px_x1y1x2y2": [
+        212,
+        788,
+        887,
+        1240
+      ],
+      "crop_size_px": [
+        676,
+        453
+      ],
+      "instances": {
+        "Leaf": 1,
+        "Petiole": 1,
+        "Hole": 6
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees"
+    },
+    {
+      "input": "io_03_CM_2859104604_Fagaceae_Castanea_dentata_input_crop.jpg",
+      "output": "io_03_CM_2859104604_Fagaceae_Castanea_dentata_output_masks.jpg",
+      "specimen": "CM_2859104604_Fagaceae_Castanea_dentata",
+      "shape": "toothed",
+      "detection_id": 102,
+      "plant_detector_class": "Leaf_WHOLE",
+      "plant_detector_conf": 0.827,
+      "crop_bbox_px_x1y1x2y2": [
+        1118,
+        1842,
+        1589,
+        2360
+      ],
+      "crop_size_px": [
+        470,
+        517
+      ],
+      "instances": {
+        "Leaf": 1,
+        "Petiole": 1,
+        "Hole": 3
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees"
+    },
+    {
+      "input": "io_04_USCH_1849094340_Theaceae_Stewartia_ovata_input_crop.jpg",
+      "output": "io_04_USCH_1849094340_Theaceae_Stewartia_ovata_output_masks.jpg",
+      "specimen": "USCH_1849094340_Theaceae_Stewartia_ovata",
+      "shape": "entire",
+      "detection_id": 30737,
+      "plant_detector_class": "Leaf_WHOLE",
+      "plant_detector_conf": 0.878,
+      "crop_bbox_px_x1y1x2y2": [
+        695,
+        1684,
+        1064,
+        2030
+      ],
+      "crop_size_px": [
+        369,
+        347
+      ],
+      "instances": {
+        "Leaf": 1,
+        "Petiole": 1,
+        "Hole": 1
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees"
+    }
+  ]
+}

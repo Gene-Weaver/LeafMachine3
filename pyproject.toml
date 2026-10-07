@@ -14,42 +14,69 @@ name = "leafmachine3"
 version = "3.0.0"
 description = "LeafMachine3 — herbarium specimen image analysis pipeline (runtime)"
 readme = "README.md"
-requires-python = ">=3.10"
+# Exactly one interpreter line, uv-managed (see .python-version and tools/release/versions.env).
+requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }
 authors = [{ name = "William Weaver", email = "willwe@umich.edu" }]
 keywords = ["herbarium", "computer-vision", "segmentation", "phenology", "botany"]
 
 # Runtime is EXPORTED models only. No torch, no ultralytics: the YOLO26 detector / segmenter / pose
 # exports are end2end ONNX graphs driven by onnxruntime through inference/ultra_replacements.py.
+#
+# Every direct pin is EXACT and is the version the pipeline was verified with. uv.lock pins the rest
+# (transitive deps, with hashes). Change a pin only in an env-bump commit that re-locks
+# (`uv lock`), regenerates the contract (`python tools/release/write_env_contract.py`) and re-runs
+# the regression comparison (PACKAGING_PLAN.md section 11).
 dependencies = [
-    "numpy>=1.24",
-    "opencv-python-headless>=4.8",
-    "pillow>=10.0",
-    "pyyaml>=6.0",
-    "scipy>=1.11",
-    "psutil>=5.9",
-    "shapely>=2.0",
+    "numpy==2.4.4",
+    "opencv-python-headless==5.0.0.93",
+    "pillow==12.2.0",
+    "pyyaml==6.0.3",
+    "scipy==1.17.1",
+    "psutil==7.2.2",
+    "shapely==2.1.2",
+    # Model installer: fetches the pinned default models from the Hugging Face Hub (lm3 models install).
+    "huggingface_hub==0.36.0",
+    # Server: the browser GUI is the primary interface, so it is part of every install.
+    "fastapi==0.141.1",
+    "uvicorn==0.52.0",
+    "python-multipart==0.0.32",
+    "sse-starlette==3.4.6",
+    # ECT stage
+    "ect==1.3.0",
+    "h5py==3.16.0",
+    "matplotlib==3.11.1",
+    # Postprocessing tools (mask -> STL, collage): small wheels on every target.
+    "trimesh==4.12.2",
+    "mapbox_earcut==2.0.0",
 ]
 
 [project.optional-dependencies]
-# GPU-first onnxruntime for NVIDIA boxes; swap for onnxruntime (CPU) / CoreML (macOS) per platform.
-# onnxruntime-gpu is capped below 1.21: 1.28+ is a CUDA-13 build (needs driver >= 580). The CUDA 12
-# runtime libraries its CUDA provider dlopens ship as nvidia-* wheels (exact pins in
-# requirements/requirements-gpu.txt); nothing else on the system is required beyond the driver.
+# HARDWARE: choose exactly one (uv enforces it; see [tool.uv] conflicts). These are the ONLY
+# packages that differ between platforms.
+#
+# gpu: onnxruntime-gpu 1.20.2 is the CUDA 12 / cuDNN 9 build (1.28+ is CUDA 13 and needs driver
+# >= 580). The nvidia-* wheels are exactly the libraries libonnxruntime_providers_cuda.so and cuDNN 9
+# link (ldd), so the only system requirement is the NVIDIA driver; `lm3 doctor` checks its version.
 gpu = [
-    "onnxruntime-gpu>=1.19,<1.21",
-    "pynvml>=11.5",
-    "nvidia-cuda-runtime-cu12==12.4.*",
-    "nvidia-cuda-nvrtc-cu12==12.4.*",
-    "nvidia-cublas-cu12==12.4.*",
-    "nvidia-cudnn-cu12==9.1.*",
-    "nvidia-cufft-cu12==11.2.*",
-    "nvidia-curand-cu12==10.3.*",
+    "onnxruntime-gpu==1.20.2; sys_platform != 'darwin'",
+    "nvidia-ml-py==13.610.43; sys_platform != 'darwin'",       # provides the `pynvml` module
+    "nvidia-cuda-runtime-cu12==12.4.127; sys_platform != 'darwin'",
+    "nvidia-cuda-nvrtc-cu12==12.4.127; sys_platform != 'darwin'",
+    "nvidia-cublas-cu12==12.4.5.8; sys_platform != 'darwin'",
+    "nvidia-cudnn-cu12==9.1.0.70; sys_platform != 'darwin'",
+    "nvidia-cufft-cu12==11.2.1.3; sys_platform != 'darwin'",
+    "nvidia-curand-cu12==10.3.5.147; sys_platform != 'darwin'",
 ]
-cpu = ["onnxruntime>=1.19"]
-macos = ["onnxruntime>=1.19"]   # macOS wheel exposes CoreMLExecutionProvider
-server = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9", "sse-starlette>=2.0"]
-dev = ["pytest>=8.0", "ruff>=0.5"]
+cpu = ["onnxruntime==1.20.1"]
+macos = ["onnxruntime==1.20.1; sys_platform == 'darwin'"]   # the macOS wheel exposes CoreMLExecutionProvider
+# Kept as an EMPTY alias: the server packages are now base dependencies, but `.[cpu,dev,server,test]`
+# style installs written before the fold (CI, docs) must still resolve. Remove with the CI rewrite.
+server = []
+# ruff is pinned EXACTLY: docs/verification/RUFF_BASELINE.txt was recorded with 0.12.1, and every
+# ruff release adds rules, so a floating ruff turns the lint ratchet red with "new" debt nobody wrote.
+# Bump it only together with a deliberately regenerated baseline.
+dev = ["pytest>=8.0", "ruff==0.12.1"]
 # Everything CI needs to RUN the suite and the gates. `dev` was not enough: fastapi's base
 # dependency does not pull httpx -- it lives in fastapi's own optional extras -- and
 # `starlette.testclient.TestClient` imports it at construction, so `.[cpu,dev,server]` still failed
@@ -58,13 +85,72 @@ dev = ["pytest>=8.0", "ruff>=0.5"]
 test = [
     "pytest>=8.0",
     "pytest-xdist>=3.5",
-    "ruff>=0.5",
+    "ruff==0.12.1",                  # see `dev`: the lint baseline is tied to this exact version
     "httpx>=0.27",
+    # Starlette 1.x moved TestClient to httpx2 while retaining an httpx fallback for
+    # older installations. Keep both so the unbounded supported FastAPI/Starlette
+    # range is testable at either end.
+    "httpx2>=2.0",
     "build>=1.2",
-    # tomllib is stdlib only from 3.11, and LM3 supports 3.10 (`requires-python = ">=3.10"`), which
-    # CI tests. Without this, tests/test_version_identity.py fails at COLLECTION on the 3.10 leg.
-    "tomli>=2.0; python_version < '3.11'",
+    # tests/test_version_identity.py imports setuptools.find_packages to check the package finder.
+    # pip-made venvs happen to contain setuptools; uv-made ones do not, so it has to be declared.
+    "setuptools>=68",
 ]
+
+# DEVELOPMENT ONLY -- never shipped. Locked in uv.lock so it is reproducible, but no user instruction,
+# Dockerfile, wheelhouse or user-facing CI leg installs it. It is what the ultralytics-parity tests,
+# tools/verification/ab_ultralytics_vs_ultra_rep.py and the experiments need:
+#     uv sync --frozen --extra gpu --group full
+# ultralytics depends on opencv-python, which installs the SAME `cv2/` directory as production's
+# opencv-python-headless. With both present, removing the group (going back to production) deletes
+# cv2 out from under the headless package -- found on 2026-10-07. [tool.uv] override-dependencies
+# removes opencv-python from the resolution entirely, so ultralytics uses the headless cv2 and dev and
+# production run one OpenCV build. Linux only (the lab box); the PyTorch cu124 index has no macOS wheels.
+# NEVER run ultralytics on a CPU device in this environment: its ONNX backend `pip install`s the CPU
+# onnxruntime over onnxruntime-gpu (check_requirements). See PACKAGING_PLAN.md section 13.
+[dependency-groups]
+full = [
+    "torch==2.6.0; sys_platform == 'linux'",
+    "torchvision==0.21.0; sys_platform == 'linux'",
+    "ultralytics==8.4.107; sys_platform == 'linux'",
+    "onnx==1.22.0; sys_platform == 'linux'",
+]
+
+[tool.uv]
+# The uv version, the Python patch and the supported platforms are part of the release contract.
+# tools/release/versions.env is the single source; tests/test_release_identity.py checks agreement.
+required-version = "==0.12.23"
+python-preference = "only-managed"
+# Resolve ONLY for the supported targets, and refuse to lock if any package lacks a wheel for one of
+# them -- a missing wheel is a lock-time error here, never an install-time surprise on a user's box.
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+# opencv-python (ultralytics' dependency) is never installed: it shares the cv2/ directory with
+# opencv-python-headless, and uninstalling either deletes the other's files. See [dependency-groups].
+override-dependencies = ["opencv-python; sys_platform == 'never'"]
+conflicts = [
+    [{ extra = "gpu" }, { extra = "cpu" }],
+    [{ extra = "gpu" }, { extra = "macos" }],
+    [{ extra = "cpu" }, { extra = "macos" }],
+]
+
+# The PyTorch index serves ONLY the dev group; user resolutions never touch it.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu124", group = "full" }]
+torchvision = [{ index = "pytorch-cu124", group = "full" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [project.scripts]
 machine3 = "leafmachine3.machine3:main"
@@ -91,6 +177,8 @@ exclude = ["leafmachine3_backup*", "leafmachine3.egg-info*"]
 # browser UI is not optional: it is the entire interface for the loopback and SSH-tunnelled cluster
 # deployments, so an installed LM3 without it serves 404 at "/".
 leafmachine3 = [
+    "_env_contract.json",          # what a correct production install holds; read by `lm3 doctor`
+    "modelhub/models.lock.yaml",   # the pinned default-model registry read by `lm3 models`
     "core/schema.sql",
     "server/ui/*",
     "server/ui/css/*",

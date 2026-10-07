@@ -18,26 +18,49 @@ that keeps the throughput-optimal plan fitting the GPU's VRAM budget; it needs n
 weights, so it never touches user data -- it only measures and writes the YAML.
 
 CLI:  ``python -m leafmachine3.setup [--optimize] [--quick] [--force] [--calibrate] [--tmp DIR]``
-GUI:  the Electron "Hardware Setup" panel button -> ``POST /v1/setup``.
+GUI:  the Electron "Hardware Setup" panel button -> ``POST /v1/setup``, which under
+      ``LM3_RUNTIME_V2`` spawns THIS module as an ``lm3-setup`` subprocess instead of calling
+      :func:`run_setup` on a server thread (plan section 2.13).
+
+Three plan contracts land in this module, all behind ``LM3_RUNTIME_V2``. They are on by default
+since the runtime cutover; ``LM3_RUNTIME_V2=0`` selects the one-release compatibility path:
+
+* **Setup is a root activity** (:func:`hardware_setup_activity`). Its record requires ``config``
+  and ``hardware{destination_path}`` and deliberately carries NO project block (invariant 6):
+  tuning the machine is not work on anybody's specimens, and a project block here would make the
+  GUI switch its project history to ``_lm3_calibration``.
+* **Setup requires a resolved config** (:func:`resolve_setup_config`, section 2.13). ``run_setup``
+  dereferences ``cfg`` unconditionally -- ``_fingerprint(cfg)``, ``_chosen_gpu_indices(cfg)`` --
+  so the server passing ``None`` for a missing settings file surfaced as an ``AttributeError`` in
+  an opaque job error. A missing config is now a named, precise failure.
+* **The calibration child gets a provisional profile** (:func:`_write_provisional_profile`,
+  section 2.2). ``run_setup`` writes the real profile only after the measurement returns, so the
+  child used to find no profile, run a second full sweep inside itself, and perturb the very VRAM
+  figure being measured.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
+import json
 import logging
 import multiprocessing as mp
 import os
 import platform
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Iterator, Optional, Sequence
 
 import yaml
 
 from leafmachine3 import __version__ as _pkg_version
 from leafmachine3.core import paths
+from leafmachine3.core.runtime._types import Activity, Launcher, RuntimeBusyError
+from leafmachine3.core.runtime.execution import root_activity, runtime_v2_enabled
 
 log = logging.getLogger("leafmachine3.setup")
 
@@ -116,7 +139,7 @@ class Fingerprint:
     driver: str
     ort_version: str
     ort_providers: list
-    model_hashes: dict              # {stage_key: "sha256:..."} -> rerun if a model changed
+    model_hashes: dict              # {stage_key: "sha256:<content>"}; legacy "sig:size:mtime"
     lm3_version: str
 
 
@@ -140,6 +163,187 @@ class HardwareSettings:
 # --------------------------------------------------------------------------- #
 # Public entry points
 # --------------------------------------------------------------------------- #
+#: What ``lm3-setup`` exits with when the profile could not be written, or when a calibration the
+#: caller explicitly asked for failed. Distinct from ``2`` (a usage/config error the user can fix by
+#: retyping the command) and from :data:`EXIT_CODE_BUSY` (another root holds the deployment).
+EXIT_CODE_SETUP_FAILED = 1
+#: Usage: a stated intent that cannot be satisfied -- a ``--config`` naming a file that is not there.
+EXIT_CODE_CONFIG = 2
+
+
+class SetupConfigError(RuntimeError):
+    """Setup was asked to profile a machine without a usable config (plan section 2.13).
+
+    A named error rather than the ``AttributeError`` this used to be. Model hashes, enabled stages,
+    ``compute.devices`` and the scratch location all come from configuration, so a profile built
+    without one describes a machine the user is not going to run -- and the ``None`` the server
+    passed for a missing settings file reached ``_fingerprint(cfg)`` before anything noticed.
+    """
+
+
+def resolve_setup_config(config: str | os.PathLike[str] | None = None) -> tuple[Path, Any]:
+    """Resolve THE canonical settings file for a setup run and load it (section 2.13).
+
+    Returns ``(path, Config)``. Raises :class:`SetupConfigError` naming the path it looked for --
+    never ``None``, and never a bare ``AttributeError`` three frames deeper. This is the function
+    the server calls instead of ``Config.load(...) if job.cfg_path.is_file() else None``.
+
+    ``Config`` is imported lazily on purpose: this module is also imported by status probes that
+    only want :func:`hardware_profile_path`, and they should not pay for the config machinery.
+    """
+    from leafmachine3.core.config import Config
+
+    try:
+        cfg_path = paths.settings_path(config)
+    except paths.PathsError as exc:
+        raise SetupConfigError(str(exc)) from exc
+    if not cfg_path.is_file():
+        raise SetupConfigError(
+            f"hardware setup needs a settings file and there is none at {cfg_path}; "
+            f"create it, or pass --config / set {paths.ENV_SETTINGS}"
+        )
+    try:
+        return cfg_path, Config.load(str(cfg_path))
+    except SetupConfigError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - an unreadable config is still a config problem
+        raise SetupConfigError(f"could not load {cfg_path}: {exc}") from exc
+
+
+@contextlib.contextmanager
+def hardware_setup_activity(
+    cfg: Any,
+    *,
+    config_path: str | os.PathLike[str] | None = None,
+    launcher: Launcher | str = Launcher.CLI,
+    **kwargs: Any,
+) -> Iterator[Any]:
+    """Own the deployment for the duration of a hardware-setup run (sections 2.2, 3.2).
+
+    THE place ``hardware_setup`` becomes a root activity. Every entry point that starts setup as
+    its own top-level work -- the ``lm3-setup`` CLI below, and the section 2.13 subprocess the
+    server spawns -- goes through here, so there is one acquisition point rather than one per
+    caller.
+
+    Deliberately NOT used by :func:`ensure_hardware_profile`. That path runs inside a ``pipeline``
+    root that already holds the lease, and calls ``run_setup(calibrate=False)`` in-process, so it
+    spawns nothing and needs no lease of its own. Acquiring a second one there would refuse the
+    run it is trying to serve.
+
+    Yields a :class:`~leafmachine3.core.runtime.execution.DisabledActivity` -- every method a no-op
+    -- when ``LM3_RUNTIME_V2`` is off, so callers never grow a branch around the flag.
+    """
+    _require_cfg(cfg)
+    kwargs.setdefault("hardware_destination", hardware_profile_path(cfg))
+    with root_activity(
+        Activity.HARDWARE_SETUP,
+        cfg=cfg,
+        config_path=config_path or getattr(cfg, "source_path", None),
+        launcher=launcher,
+        **kwargs,
+    ) as activity:
+        yield activity
+
+
+def setup_argv(
+    *,
+    config: str | os.PathLike[str] | None = None,
+    optimize: bool = True,
+    quick: bool = False,
+    force: bool = False,
+    calibrate: bool = False,
+    tmp: str | os.PathLike[str] | None = None,
+    allow_calibration_fallback: bool = False,
+    events: str | os.PathLike[str] | None = None,
+) -> list[str]:
+    """The command line for the section 2.13 ``lm3-setup`` subprocess.
+
+    Exposed for the server: GUI hardware setup must stop running ``run_setup`` on a request thread
+    (``app.py``'s ``run_in_threadpool``), because §3.3's "Stop terminates the retained root process
+    group" would then mean killing the server and every unrelated request it is serving. The server
+    builds this argv, spawns it with :func:`setup_popen_kwargs`, and keeps the handle.
+
+    ``events`` names the server-private append-only JSONL progress log (section 2.13). It is chosen
+    over a live pipe because it survives a server or UI disconnect, cannot fill and stall the
+    subprocess, and can be replayed on reconnect.
+
+    ``sys.executable -m leafmachine3.setup`` rather than the bare ``lm3-setup`` console script: the
+    console script is only on PATH for an installed distribution, and the server must be able to
+    spawn setup from a development checkout too.
+    """
+    argv = [sys.executable, "-m", "leafmachine3.setup"]
+    if config is not None:
+        argv += ["--config", str(config)]
+    if optimize:
+        argv.append("--optimize")
+    if quick:
+        argv.append("--quick")
+    if force:
+        argv.append("--force")
+    if calibrate:
+        argv.append("--calibrate")
+    if allow_calibration_fallback:
+        argv.append("--allow-calibration-fallback")
+    if tmp is not None:
+        argv += ["--tmp", str(tmp)]
+    if events is not None:
+        argv += ["--events", str(events)]
+    return argv
+
+
+def setup_popen_kwargs() -> dict[str, Any]:
+    """``Popen`` keywords that give setup its OWN process group (section 2.13).
+
+    So that Stop can kill the tuning tree -- setup and the calibration child it spawns, which runs
+    in the same group -- WITHOUT killing the server. Without this the setup subprocess shares the
+    server's group and a ``killpg`` aimed at the tree takes the server down with it.
+
+    These are ordinary keywords, not inheritance allowlists, so they merge cleanly with whatever
+    :func:`~leafmachine3.core.runtime.launch.compose_launch` contributes. The caller still owns
+    ``stdout``/``stderr``: setup's console output belongs in a server-private log, never in the
+    run directory (section 2.4).
+    """
+    if os.name == "nt":
+        # CREATE_NEW_PROCESS_GROUP, spelled from the module rather than as 0x00000200 so it is
+        # obvious what it is; a Job object is the Windows equivalent of the POSIX group kill and
+        # belongs to whoever implements Stop.
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)}
+    return {"start_new_session": True}
+
+
+def jsonl_progress(path: str | os.PathLike[str]) -> ProgressCB:
+    """A ``on_progress`` callback that appends one JSON object per event to ``path``.
+
+    The section 2.13 event log. Append-only and line-delimited so a reader can tail it, replay it
+    from the start, and never see a half-written record; flushed per line so a UI reconnecting
+    mid-sweep sees everything that has happened rather than everything that has been buffered.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    def emit(phase: str = "", message: str = "", **extra: Any) -> None:
+        record = {"t": time.time(), "phase": str(phase), "message": str(message), **extra}
+        try:
+            with target.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, default=str) + "\n")
+                fh.flush()
+        except OSError:  # noqa: BLE001 - progress reporting must never abort a setup run
+            log.debug("could not append to %s", target, exc_info=True)
+
+    return emit
+
+
+def _require_cfg(cfg: Any) -> Any:
+    """Section 2.13's guard, in one place because three entry points need the same one."""
+    if cfg is None:
+        raise SetupConfigError(
+            "hardware setup requires a resolved config: model hashes, enabled stages, "
+            "compute.devices and the scratch location all come from it. Resolve the canonical "
+            "settings path with resolve_setup_config() instead of passing None."
+        )
+    return cfg
+
+
 def ensure_hardware_profile(cfg: Any) -> Path:
     """Bind a hardware profile onto ``cfg``, auto-running LM3_Setup on first use.
 
@@ -151,6 +355,17 @@ def ensure_hardware_profile(cfg: Any) -> Path:
     The path comes from :func:`hardware_profile_path`, so it is the same file whatever directory
     the run was launched from -- and resolving it here is also what performs the one-release
     legacy adopt, before the "is it missing?" question is asked.
+
+    **This is not a subactivity and must not become one.** It is called from inside a ``pipeline``
+    root that already holds the deployment lease, and the ``run_setup`` it triggers defaults to
+    ``calibrate=False``, so it spawns nothing: the auto-setup simply runs under the lease its
+    caller is holding. The activity taxonomy agrees -- ``CHILD_PARENT_ACTIVITY`` allows exactly one
+    subactivity, ``calibration_pipeline`` under a ``hardware_setup`` root, so a ``hardware_setup``
+    child of a ``pipeline`` root does not exist (section 2.2).
+
+    In a calibration child this whole function is a no-op by construction: the parent exported
+    ``LM3_HARDWARE`` pointing at the provisional profile, so ``hw_path.exists()`` is true and the
+    second full sweep section 2.2 describes never starts.
     """
     migrate_legacy_profile(cfg)          # controlled entry point: adopt once, here
     hw_path = hardware_profile_path(cfg)
@@ -162,21 +377,45 @@ def ensure_hardware_profile(cfg: Any) -> Path:
         run_setup(cfg, optimize=True)
     else:
         try:
-            if _load(hw_path).fingerprint != _fingerprint(cfg):
-                log.warning(
-                    "hardware / driver / models changed since the last LM3_Setup -- this run uses the "
-                    "EXISTING profile at %s; rerun `python -m leafmachine3.setup` to re-tune when "
-                    "convenient", hw_path
-                )
+            profile = _load(hw_path)
         except Exception as exc:  # noqa: BLE001 - a malformed profile must not abort the run
             log.warning("could not read %s (%s) -- rebuilding profile", hw_path, exc)
             run_setup(cfg, optimize=True, force=True)
+        else:
+            _report_profile_drift(cfg, hw_path, profile)
 
     try:
         cfg.bind_hardware(_load(hw_path))
     except Exception as exc:  # noqa: BLE001 - never let profile binding crash a run
         log.warning("could not bind %s (%s) -- proceeding without a tuned profile", hw_path, exc)
     return hw_path
+
+
+def _report_profile_drift(cfg: Any, hw_path: Path, profile: "HardwareSettings") -> None:
+    """Name what changed since ``profile`` was tuned; rewrite legacy model entries that still match.
+
+    Advisory only. Only an UNREADABLE profile triggers a rebuild (the caller's job); a problem here
+    -- an unhashable model, an unexpected fingerprint -- is logged and the run continues on the
+    existing profile. A profile with no recorded fingerprint (the provisional profile a calibration
+    child is pointed at, or a hand-made one) has nothing to compare against and is left alone.
+    """
+    if not profile.fingerprint.os:
+        return
+    try:
+        diffs, upgrades = compare_fingerprints(profile.fingerprint, _fingerprint(cfg), cfg)
+        if upgrades:
+            profile.fingerprint.model_hashes.update(upgrades)
+            _write(hw_path, profile)
+            log.info("hardware profile %s: recorded content hashes for %s (unchanged models; the "
+                     "profile predates content fingerprints)", hw_path, ", ".join(sorted(upgrades)))
+        if diffs:
+            log.warning(
+                "changed since the last LM3_Setup: %s. This run uses the EXISTING profile at %s; "
+                "rerun `python -m leafmachine3.setup` to re-tune when convenient",
+                "; ".join(diffs), hw_path
+            )
+    except Exception as exc:  # noqa: BLE001 - the drift check must never cost a run its profile
+        log.warning("could not compare %s with this machine (%s); using it as is", hw_path, exc)
 
 
 def run_setup(
@@ -188,6 +427,8 @@ def run_setup(
     calibrate: bool = False,
     tmp_override: str | None = None,
     on_progress: ProgressCB | None = None,
+    activity: Any = None,
+    allow_calibration_fallback: bool = False,
 ) -> Path:
     """Profile the machine and (re)write this deployment's hardware profile.
 
@@ -199,15 +440,35 @@ def run_setup(
     per-worker cost replaces the heuristic estimate. That costs a few minutes, so it is
     opt-in; without it, any measurement from a previous calibration is carried forward
     rather than discarded.
+
+    ``activity`` is the ``hardware_setup`` root handle this run is already executing under, from
+    :func:`hardware_setup_activity`. It is what lets the calibration child inherit the lease
+    instead of contending for one. This function does NOT acquire a lease of its own, because its
+    other caller -- :func:`ensure_hardware_profile` -- runs inside a ``pipeline`` root that is
+    already holding it, and a second acquisition there would refuse the run it is serving.
+
+    Requested calibration that fails raises :class:`~leafmachine3.setup.calibrate.CalibrationError`
+    (plan section 2.2), unless ``allow_calibration_fallback`` -- the user's explicit opt-in to
+    heuristic estimates. The profile is still written first, so the sweep's work is not thrown
+    away along with the measurement; the exception is re-raised afterwards.
+
+    Raises :class:`SetupConfigError` when ``cfg`` is ``None`` (section 2.13).
     """
+    _require_cfg(cfg)
     migrate_legacy_profile(cfg)          # controlled entry point: adopt once, here
     hw_path = hardware_profile_path(cfg)
     fingerprint = _fingerprint(cfg)
     if hw_path.exists() and not force:
         try:
-            if _load(hw_path).fingerprint == fingerprint:
+            profile = _load(hw_path)
+            diffs, upgrades = compare_fingerprints(profile.fingerprint, fingerprint, cfg)
+            if not diffs:
+                if upgrades:
+                    profile.fingerprint.model_hashes.update(upgrades)
+                    _write(hw_path, profile)
                 log.info("%s is current -- nothing to do (use --force to redo)", hw_path)
                 return hw_path
+            log.info("re-tuning: %s", "; ".join(diffs))
         except Exception:  # noqa: BLE001 - fall through and rewrite a broken file
             pass
 
@@ -230,58 +491,160 @@ def run_setup(
             if optimize and sweep_gpus
             else _heuristic_stage(stage, sweep_gpus)
         )
+    def _assemble(stage_plans: dict[str, dict]) -> HardwareSettings:
+        """The profile object, from whatever stage plans we have. Used twice -- see below."""
+        return HardwareSettings(
+            fingerprint=fingerprint,
+            provider=provider,
+            precision=_best_precision(gpus, provider, cfg),
+            gpus=[asdict(g) for g in gpus],
+            cpu_cores=cpu_cores,
+            ram_gb=ram_gb,
+            tmp_dir=str(tmp_dir),
+            io_workers=io_workers,
+            stages=stage_plans,
+            generated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+        )
+
+    # Section 2.2: the child must not bootstrap itself. The real profile is not written until the
+    # bottom of this function, so a calibration child launched from here would find nothing on disk,
+    # decide it needs a profile, and run a SECOND full sweep inside the measurement. Hand it a
+    # provisional profile built from everything we already know -- same GPU plans, same provider,
+    # unbenchmarked CPU counts -- and its ensure_hardware_profile becomes a no-op.
+    provisional: Path | None = None
+    if calibrate and runtime_v2_enabled():
+        provisional = _write_provisional_profile(
+            hw_path, _assemble({**stages, **_plan_cpu_stages(
+                cfg, io_workers=io_workers, cpu_cores=cpu_cores, tmp_dir=tmp_dir,
+                benchmark=False, on_progress=None)}))
+
     # Real per-worker VRAM beats the heuristic by a wide margin (the estimates over-counted
     # detectors ~5x), so measure when asked and otherwise carry any earlier measurement forward
     # -- a routine re-profile must not silently downgrade measured numbers back to guesses.
-    _apply_vram_measurements(stages, cfg, sweep_gpus, calibrate=calibrate,
-                             on_progress=on_progress, profile_path=hw_path)
-    # CPU stages: light thread-pooled stages get flat io_workers; process-pooled stages
-    # (cpu_parallel="process") get the measured process-scaling knee (so the spawn pool isn't
-    # over-subscribed); disk-write-bound thread stages (io_bound, e.g. the Reporter) get the
-    # measured parallel-write knee (a disk saturates well below cpu_cores-2 concurrent writers).
+    #
+    # A requested calibration that fails is an error (section 2.2), but the sweep above is still
+    # good work: write the profile, THEN re-raise, so a failed measurement does not also cost the
+    # user the tuning that succeeded.
+    calibration_error: BaseException | None = None
+    try:
+        _apply_vram_measurements(stages, cfg, sweep_gpus, calibrate=calibrate,
+                                 on_progress=on_progress, profile_path=hw_path,
+                                 activity=activity, provisional_profile=provisional,
+                                 # Loudness is Step 3 behavior and rides the flag with everything
+                                 # else: with LM3_RUNTIME_V2 off, a failed calibration still
+                                 # degrades to a warning and heuristic estimates, exactly as today.
+                                 strict=(runtime_v2_enabled() and calibrate
+                                         and not allow_calibration_fallback))
+    except _calibration_error() as exc:
+        calibration_error = exc
+    finally:
+        _discard_provisional(provisional)
+
+    stages.update(_plan_cpu_stages(cfg, io_workers=io_workers, cpu_cores=cpu_cores,
+                                   tmp_dir=tmp_dir, benchmark=optimize and not quick,
+                                   on_progress=on_progress))
+
+    _write(hw_path, _assemble(stages))
+    log.info("wrote %s | %d GPU(s) | provider=%s | tmp=%s", hw_path, len(gpus), provider, tmp_dir)
+    if calibration_error is not None:
+        raise calibration_error
+    return hw_path
+
+
+def _plan_cpu_stages(
+    cfg: Any,
+    *,
+    io_workers: int,
+    cpu_cores: int,
+    tmp_dir: Path,
+    benchmark: bool,
+    on_progress: ProgressCB | None,
+) -> dict[str, dict]:
+    """Worker plans for the CPU stages.
+
+    Light thread-pooled stages get flat ``io_workers``; process-pooled stages (``cpu_parallel
+    ="process"``) get the measured process-scaling knee (so the spawn pool isn't over-subscribed);
+    disk-write-bound thread stages (``io_bound``, e.g. the Reporter) get the measured parallel-write
+    knee (a disk saturates well below ``cpu_cores - 2`` concurrent writers).
+
+    ``benchmark`` is what the caller used to spell as ``optimize and not quick`` inline. It is a
+    parameter because the provisional profile needs the same plans WITHOUT paying for the
+    benchmarks: they take real time, and a calibration child does not need a tuned CPU pool to
+    report how much VRAM a detector held.
+    """
     cpu_stages = _cpu_stages(cfg)
     proc_stages = [s for s in cpu_stages if getattr(s, "cpu_parallel", "thread") == "process"]
     io_stages = [s for s in cpu_stages
                  if getattr(s, "io_bound", False) and getattr(s, "cpu_parallel", "thread") != "process"]
     proc_workers = (_benchmark_cpu_workers(cpu_cores, on_progress)
-                    if (optimize and not quick and proc_stages) else max(1, cpu_cores - 2))
+                    if (benchmark and proc_stages) else max(1, cpu_cores - 2))
     # spawn cost of a full process pool; per stage, the batch below which the pool isn't worth it is
     # spawn_overhead / that stage's est_item_seconds (a fast-item stage like ect needs a bigger batch).
-    spawn_s = (_benchmark_spawn_overhead(proc_workers)
-               if (optimize and not quick and proc_stages) else 0.0)
+    spawn_s = _benchmark_spawn_overhead(proc_workers) if (benchmark and proc_stages) else 0.0
     disk_knee, disk_mbps = (_benchmark_disk_writers(_reports_fs_dir(cfg, tmp_dir), on_progress)
-                            if (optimize and not quick and io_stages) else (8, 0.0))
+                            if (benchmark and io_stages) else (8, 0.0))
     # imwrite is buffered (not fsync'd), so the raw probe is pessimistic; a disk-write-bound stage
     # gains from concurrent ENCODE up to a point but over-subscribing the disk thrashes. Clamp the
     # measured knee to the sane 8..16 band (a fast disk -> 16, a slow one -> 8) and never exceed io.
     disk_workers = min(io_workers, max(8, min(16, disk_knee)))
+    plans: dict[str, dict] = {}
     for stage in cpu_stages:
         if getattr(stage, "cpu_parallel", "thread") == "process":
             est = float(getattr(stage, "est_item_seconds", 0.5)) or 0.5
             min_items = max(2, round(spawn_s / est)) if spawn_s else 8
-            stages[stage.key] = {"workers": proc_workers, "cpu_parallel": "process",
-                                 "min_pool_items": min_items, "spawn_overhead_s": round(spawn_s, 1)}
+            plans[stage.key] = {"workers": proc_workers, "cpu_parallel": "process",
+                                "min_pool_items": min_items, "spawn_overhead_s": round(spawn_s, 1)}
         elif getattr(stage, "io_bound", False):
-            stages[stage.key] = {"workers": disk_workers, "io_bound": True,
-                                 "disk_write_mbps": round(float(disk_mbps), 1)}
+            plans[stage.key] = {"workers": disk_workers, "io_bound": True,
+                                "disk_write_mbps": round(float(disk_mbps), 1)}
         else:
-            stages[stage.key] = {"workers": io_workers}
+            plans[stage.key] = {"workers": io_workers}
+    return plans
 
-    profile = HardwareSettings(
-        fingerprint=fingerprint,
-        provider=provider,
-        precision=_best_precision(gpus, provider, cfg),
-        gpus=[asdict(g) for g in gpus],
-        cpu_cores=cpu_cores,
-        ram_gb=ram_gb,
-        tmp_dir=str(tmp_dir),
-        io_workers=io_workers,
-        stages=stages,
-        generated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
-    )
-    _write(hw_path, profile)
-    log.info("wrote %s | %d GPU(s) | provider=%s | tmp=%s", hw_path, len(gpus), provider, tmp_dir)
-    return hw_path
+
+#: Suffix of the provisional profile. It sits beside the real one -- inside the deployment config
+#: directory, which is already user-only -- rather than in the system temp dir, so it cannot be
+#: read or replaced by another user mid-calibration, and so a crash leaves the debris somewhere the
+#: next setup run will find and overwrite it.
+PROVISIONAL_SUFFIX = ".provisional"
+
+
+def _write_provisional_profile(hw_path: Path, profile: HardwareSettings) -> Path | None:
+    """Write the section 2.2 provisional profile and return its path (``None`` if it cannot).
+
+    Best effort by design: failing to write it costs the child a redundant sweep, which is the
+    behavior we have today, and that is not a reason to abort a setup run.
+    """
+    target = hw_path.with_name(hw_path.name + PROVISIONAL_SUFFIX)
+    try:
+        _write(target, profile)
+    except OSError:  # noqa: BLE001 - a redundant nested sweep is a slowdown, not a failure
+        log.warning("could not write the provisional profile at %s -- the calibration child will "
+                    "run its own setup sweep, which perturbs the measurement", target, exc_info=True)
+        return None
+    log.info("provisional hardware profile for the calibration child: %s", target)
+    return target
+
+
+def _discard_provisional(path: Path | None) -> None:
+    """Remove the provisional profile. Never the real one, whatever the caller passed."""
+    if path is None or not path.name.endswith(PROVISIONAL_SUFFIX):
+        return
+    try:
+        path.unlink()
+    except OSError:
+        log.debug("could not remove %s", path, exc_info=True)
+
+
+def _calibration_error() -> type[BaseException]:
+    """``CalibrationError``, imported lazily so this module keeps importing without ``calibrate``.
+
+    ``calibrate`` pulls in the runtime launch machinery, and ``hardware_setup`` is imported by
+    status probes that only want a path.
+    """
+    from leafmachine3.setup.calibrate import CalibrationError
+
+    return CalibrationError
 
 
 # --------------------------------------------------------------------------- #
@@ -356,6 +719,9 @@ def _apply_vram_measurements(
     calibrate: bool,
     on_progress: ProgressCB | None,
     profile_path: Path,
+    activity: Any = None,
+    provisional_profile: Path | None = None,
+    strict: bool = False,
 ) -> None:
     """Fold measured per-worker VRAM into ``stages`` (mutates in place).
 
@@ -363,18 +729,28 @@ def _apply_vram_measurements(
     profile measured. Measured values also drive ``workers_per_gpu`` here so the profile
     itself reads truthfully, even though the run-time allocator recomputes the count from
     live free VRAM anyway.
+
+    With ``strict`` a failed calibration raises
+    :class:`~leafmachine3.setup.calibrate.CalibrationError` instead of returning nothing. That
+    distinction did not previously exist at all: ``calibrate_gpu_stages`` returned ``{}`` for
+    "the run crashed" and for "the run measured nothing", and both fell through the
+    ``if not measured: return`` below into a profile that silently kept its guesses.
     """
     measured: dict[str, dict] = {}
     if calibrate:
         cfg_path = getattr(cfg, "source_path", None)
         if not cfg_path:
-            log.warning("cannot calibrate: config has no source path -- keeping estimates")
+            message = "cannot calibrate: config has no source path"
+            if strict:
+                raise _calibration_error()(message)
+            log.warning("%s -- keeping estimates", message)
         else:
             from leafmachine3.setup.calibrate import calibrate_gpu_stages
 
             gpu = sweep_gpus[0].index if sweep_gpus else None
             measured = calibrate_gpu_stages(cfg_path, gpu_index=gpu, gpu_keys=set(stages),
-                                            on_progress=on_progress)
+                                            on_progress=on_progress, activity=activity,
+                                            hardware_profile=provisional_profile, strict=strict)
     else:
         measured = _previous_measurements(profile_path)
 
@@ -693,34 +1069,114 @@ def _ort_signature() -> tuple[str, list]:
         return "", []
 
 
-def _model_hashes(cfg: Any) -> dict:
-    """Map each model-backed stage to a cheap signature of its artifact(s).
+#: Old profiles recorded each model as "sig:<size>:<mtime>". See compare_fingerprints.
+_LEGACY_SIG = "sig:"
 
-    Uses the config's own stage-artifact resolution and a size/mtime signature (a full
-    sha256 would slow setup for large exports and buys nothing over size+mtime here).
+
+def _stage_model_files(cfg: Any, key: str) -> list[Path]:
+    """The files a stage actually loads -- what its measured worker VRAM depends on.
+
+    A stage's settings name either a model file or, for the ruler ensemble, a directory; for the
+    directory this is the members' exported graphs, their metadata and the shared label map (the
+    same resolution the ensemble itself uses), not the directory inode, whose size and mtime say
+    nothing about the models inside it.
     """
-    hashes: dict[str, str] = {}
     try:
-        # ``Config._stage_artifacts`` is the same resolver used for settings hashing.
-        resolver = getattr(cfg, "_stage_artifacts", None)
-    except Exception:  # noqa: BLE001
-        resolver = None
-    from leafmachine3.core.config import CANONICAL_STAGE_KEYS
+        artifacts = cfg._stage_artifacts(key)
+    except Exception:  # noqa: BLE001 - a stage this config does not describe
+        return []
+    files: list[Path] = []
+    for artifact in artifacts:
+        path = Path(artifact)
+        if path.is_dir():
+            if key == "ruler_classifier":
+                from leafmachine3.inference.ruler_ensemble import ensemble_files  # noqa: PLC0415
 
+                members = _cfg_get(cfg.stage(key), "ensemble_members", None)
+                files += [Path(f) for f in ensemble_files(str(path), members)]
+            else:
+                files += sorted(f for f in path.iterdir() if f.is_file())
+        else:
+            files.append(path)
+    return files
+
+
+def _model_hashes(cfg: Any) -> dict:
+    """``{stage_key: "sha256:<digest>"}`` -- the CONTENT of the files each model-backed stage loads.
+
+    It used to be a size/mtime signature of one artifact. A model re-downloaded from the Hub is
+    byte-identical with a new mtime, so every fresh install was reported as "models changed"; a
+    stage with several files (the ruler ensemble) kept only the last; and a directory artifact
+    signed the directory inode. Content hashes are cached by stat signature (core/digest.py), so
+    only the first run after a model install pays for hashing.
+    """
+    from leafmachine3.core.config import CANONICAL_STAGE_KEYS  # noqa: PLC0415
+    from leafmachine3.core.digest import combined_digest  # noqa: PLC0415
+
+    hashes: dict[str, str] = {}
     for key in CANONICAL_STAGE_KEYS:
-        if resolver is None:
-            continue
-        try:
-            artifacts = resolver(key)
-        except Exception:  # noqa: BLE001
-            artifacts = []
-        for artifact in artifacts:
-            try:
-                st = Path(artifact).stat()
-            except OSError:
-                continue
-            hashes[key] = f"sig:{st.st_size}:{int(st.st_mtime)}"
+        files = _stage_model_files(cfg, key)
+        digest = combined_digest(files) if files else None
+        if digest:
+            hashes[key] = f"sha256:{digest}"
     return hashes
+
+
+def compare_fingerprints(stored: "Fingerprint", current: "Fingerprint",
+                         cfg: Any = None) -> tuple[list[str], dict[str, str]]:
+    """``(differences, upgrades)`` between a profile's fingerprint and this machine's.
+
+    ``differences`` is one readable line per field or stage that changed -- what the stale-profile
+    warning prints, so it can say WHAT changed instead of "hardware / driver / models".
+    ``upgrades`` maps stages whose stored value is a legacy "sig:size:mtime" that still matches by
+    SIZE to their content hash: the old comparison was size + mtime, and mtime is exactly the part
+    that made it cry wolf, so those entries are unchanged models recorded in the old format and can
+    be rewritten as content hashes. A legacy entry whose size differs stays a difference.
+    """
+    diffs: list[str] = []
+    for name in ("os", "cpu", "cpu_cores", "ram_gb", "gpus", "driver", "ort_version", "ort_providers",
+                 "lm3_version"):
+        a, b = getattr(stored, name), getattr(current, name)
+        if a != b:
+            diffs.append(f"{name}: {a} -> {b}")
+    upgrades: dict[str, str] = {}
+    s_models, c_models = stored.model_hashes or {}, current.model_hashes or {}
+    for key in sorted(set(s_models) | set(c_models)):
+        old, new = s_models.get(key), c_models.get(key)
+        if old == new:
+            continue
+        if old is None:
+            diffs.append(f"model {key}: added")
+        elif new is None:
+            diffs.append(f"model {key}: removed")
+        elif str(old).startswith(_LEGACY_SIG):
+            old_size = _legacy_size(old)
+            now_size = _legacy_artifact_size(cfg, key)
+            if old_size is not None and old_size == now_size:
+                upgrades[key] = new
+            else:
+                diffs.append(f"model {key}: changed (size {old_size} -> {now_size} bytes)")
+        else:
+            diffs.append(f"model {key}: changed (content differs)")
+    return diffs, upgrades
+
+
+def _legacy_size(sig: str) -> int | None:
+    try:
+        return int(str(sig).split(":")[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def _legacy_artifact_size(cfg: Any, key: str) -> int | None:
+    """What the OLD signature measured: st_size of the stage's last artifact (file or directory)."""
+    if cfg is None:
+        return None
+    try:
+        artifacts = cfg._stage_artifacts(key)
+        return Path(artifacts[-1]).stat().st_size if artifacts else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _chosen_gpu_indices(cfg: Any) -> list[int]:
@@ -1013,6 +1469,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     hardware-setup CLI explicitly in scope), so this command and a GUI- or CLI-started run agree
     on which settings file and which profile they are talking about no matter where each was
     launched from.
+
+    This is also the process the server spawns for GUI hardware setup (section 2.13): with
+    ``LM3_RUNTIME_V2`` on it takes the ``hardware_setup`` ROOT lease for the whole run, so a
+    concurrent pipeline is refused rather than allowed to race the profile it is about to read.
+
+    Exit codes -- all four distinguishable, because the server has to react differently to each:
+    ``0`` success, :data:`EXIT_CODE_CONFIG` a usage/config error, :data:`EXIT_CODE_SETUP_FAILED`
+    setup ran and failed (a requested calibration that did not measure anything included), and
+    ``RuntimeBusyError.exit_code`` (75) another root already holds the deployment.
     """
     parser = argparse.ArgumentParser(
         prog="lm3-setup", description="Profile this machine and write its LM3 hardware profile."
@@ -1030,32 +1495,68 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--calibrate", action="store_true",
                         help="MEASURE per-worker VRAM by running example images with 1 worker "
                              "(a few minutes) instead of estimating it")
+    parser.add_argument("--allow-calibration-fallback", action="store_true",
+                        help="keep heuristic estimates and exit 0 if --calibrate fails, instead of "
+                             "failing the command")
+    parser.add_argument("--events", default=None,
+                        help="append progress as JSON lines to this file (the server's private "
+                             "setup event log)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    from leafmachine3.core.config import Config
-
     try:
-        cfg_path = paths.settings_path(args.config)
-    except paths.PathsError as exc:
+        cfg_path, cfg = resolve_setup_config(args.config)
+    except SetupConfigError as exc:
         # A stated intent that cannot be satisfied. Report it as a usage error instead of a
         # traceback, and never guess at a different settings file.
         log.error("%s", exc)
-        return 2
+        return EXIT_CODE_CONFIG
     log.info("settings: %s", cfg_path)
-
-    cfg = Config.load(str(cfg_path))
     log.info("hardware profile: %s", hardware_profile_path(cfg))
-    run_setup(
-        cfg,
-        optimize=args.optimize or not args.quick,
-        quick=args.quick,
-        force=args.force,
-        calibrate=args.calibrate,
-        tmp_override=args.tmp,
-    )
+
+    on_progress = jsonl_progress(args.events) if args.events else None
+    try:
+        with hardware_setup_activity(cfg, config_path=cfg_path, launcher=Launcher.CLI) as activity:
+            run_setup(
+                cfg,
+                optimize=args.optimize or not args.quick,
+                quick=args.quick,
+                force=args.force,
+                calibrate=args.calibrate,
+                tmp_override=args.tmp,
+                on_progress=on_progress,
+                activity=activity,
+                allow_calibration_fallback=args.allow_calibration_fallback,
+            )
+    except RuntimeBusyError as busy:
+        # Not this command's fault and not a defect: another root holds the deployment. Exit 75 so
+        # a wrapper can tell "retry this" from "this is broken" (section 2.3).
+        log.error("%s", busy)
+        _emit_setup_event(on_progress, "busy", str(busy))
+        return busy.exit_code
+    except SetupConfigError as exc:
+        log.error("%s", exc)
+        _emit_setup_event(on_progress, "error", str(exc))
+        return EXIT_CODE_CONFIG
+    except _calibration_error() as exc:
+        # Section 2.2: a calibration the user ASKED for and did not get is a failure. The profile
+        # itself was still written, so the message says what was and was not achieved.
+        log.error("%s", exc)
+        log.error("the hardware profile was written with heuristic VRAM estimates; rerun with "
+                  "--allow-calibration-fallback to accept that outcome as success")
+        _emit_setup_event(on_progress, "error", str(exc))
+        return EXIT_CODE_SETUP_FAILED
+    _emit_setup_event(on_progress, "done", "hardware profile written")
     return 0
+
+
+def _emit_setup_event(on_progress: ProgressCB | None, phase: str, message: str) -> None:
+    """Record a terminal event in the section 2.13 log, if there is one. Never fatal."""
+    if on_progress is None:
+        return
+    with contextlib.suppress(Exception):
+        on_progress(phase, message)
 
 
 if __name__ == "__main__":

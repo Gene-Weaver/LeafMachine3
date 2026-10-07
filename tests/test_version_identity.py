@@ -113,7 +113,7 @@ def test_an_installed_wheel_is_a_working_application(tmp_path: Path) -> None:
     interpreter, with the working directory somewhere that has no LM3 checkout in sight.
     """
     try:
-        import build  # noqa: F401
+        import build.__main__  # noqa: F401 - proves ``python -m build`` is executable
     except ImportError:
         pytest.skip("`build` is not installed; CI installs the `test` extra, which provides it")
 
