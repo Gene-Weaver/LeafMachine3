@@ -378,27 +378,44 @@ def ensure_hardware_profile(cfg: Any) -> Path:
     else:
         try:
             profile = _load(hw_path)
-            diffs, upgrades = compare_fingerprints(profile.fingerprint, _fingerprint(cfg), cfg)
-            if upgrades:
-                profile.fingerprint.model_hashes.update(upgrades)
-                _write(hw_path, profile)
-                log.info("hardware profile %s: recorded content hashes for %s (unchanged models; the "
-                         "profile predates content fingerprints)", hw_path, ", ".join(sorted(upgrades)))
-            if diffs:
-                log.warning(
-                    "changed since the last LM3_Setup: %s. This run uses the EXISTING profile at %s; "
-                    "rerun `python -m leafmachine3.setup` to re-tune when convenient",
-                    "; ".join(diffs), hw_path
-                )
         except Exception as exc:  # noqa: BLE001 - a malformed profile must not abort the run
             log.warning("could not read %s (%s) -- rebuilding profile", hw_path, exc)
             run_setup(cfg, optimize=True, force=True)
+        else:
+            _report_profile_drift(cfg, hw_path, profile)
 
     try:
         cfg.bind_hardware(_load(hw_path))
     except Exception as exc:  # noqa: BLE001 - never let profile binding crash a run
         log.warning("could not bind %s (%s) -- proceeding without a tuned profile", hw_path, exc)
     return hw_path
+
+
+def _report_profile_drift(cfg: Any, hw_path: Path, profile: "HardwareSettings") -> None:
+    """Name what changed since ``profile`` was tuned; rewrite legacy model entries that still match.
+
+    Advisory only. Only an UNREADABLE profile triggers a rebuild (the caller's job); a problem here
+    -- an unhashable model, an unexpected fingerprint -- is logged and the run continues on the
+    existing profile. A profile with no recorded fingerprint (the provisional profile a calibration
+    child is pointed at, or a hand-made one) has nothing to compare against and is left alone.
+    """
+    if not profile.fingerprint.os:
+        return
+    try:
+        diffs, upgrades = compare_fingerprints(profile.fingerprint, _fingerprint(cfg), cfg)
+        if upgrades:
+            profile.fingerprint.model_hashes.update(upgrades)
+            _write(hw_path, profile)
+            log.info("hardware profile %s: recorded content hashes for %s (unchanged models; the "
+                     "profile predates content fingerprints)", hw_path, ", ".join(sorted(upgrades)))
+        if diffs:
+            log.warning(
+                "changed since the last LM3_Setup: %s. This run uses the EXISTING profile at %s; "
+                "rerun `python -m leafmachine3.setup` to re-tune when convenient",
+                "; ".join(diffs), hw_path
+            )
+    except Exception as exc:  # noqa: BLE001 - the drift check must never cost a run its profile
+        log.warning("could not compare %s with this machine (%s); using it as is", hw_path, exc)
 
 
 def run_setup(
