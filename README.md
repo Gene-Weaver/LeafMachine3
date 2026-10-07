@@ -187,29 +187,33 @@ uv run lm3 models install --force --yes        # re-downloads the models if veri
 
 If none of that helps, delete the `.venv` folder and repeat step 3.
 
-## Install
+## Install notes
 
-> The uv route in [Setup with Verification Steps](#setup-with-verification-steps) is the supported one. A
-> pip-built environment does not match `uv.lock`, so `machine3` and `lm3 serve` refuse to start in it
-> (exit 78) unless `LM3_STARTUP_GATE=0` is set. The pip instructions below are kept for reference.
+The supported install is [Setup with Verification Steps](#setup-with-verification-steps), with uv. An
+environment built any other way (pip, poetry, conda) does not match `uv.lock`, so `machine3` and
+`lm3 serve` refuse to start in it (exit 78) unless `LM3_STARTUP_GATE=0` is set. The runtime needs
+**no torch and no ultralytics**: every model is an exported end2end ONNX graph run by onnxruntime.
 
-Pinned, reproducible (recommended) — see **[INSTALL.md](INSTALL.md)** for the full guide (extras,
-poetry). The runtime needs **no torch and no ultralytics**: every model is an exported end2end ONNX
-graph driven by onnxruntime (`leafmachine3/inference/ultra_replacements.py`).
+**NVIDIA GPUs.** The `gpu` variant brings the CUDA 12 runtime libraries as Python packages, so the
+only system requirement is an NVIDIA driver ≥ 525.60.13 (Linux) / 528.33 (Windows); check yours with
+`nvidia-smi`. To run on one GPU, set `CUDA_VISIBLE_DEVICES`
+(e.g. `CUDA_VISIBLE_DEVICES=1 machine3 --config LM3_settings.yaml`).
+
+**Alternate models.** Published non-default models install only on request, and the command prints
+the settings lines that select them:
 
 ```bash
-python -m venv .venv_LM3 && .venv_LM3/bin/pip install -U pip wheel setuptools
-.venv_LM3/bin/pip install -r requirements/requirements-gpu.txt     # NVIDIA GPU (default)
-.venv_LM3/bin/pip install -r requirements/requirements-cpu.txt     # CPU only
-.venv_LM3/bin/pip install -r requirements/requirements-macos.txt   # macOS (MPS + CoreML)
+lm3 models install --list-alternates
+lm3 models install --model specimen_segmenter=yolo26x_seg_1280
 ```
 
-Or the flexible extras: `pip install -e ".[gpu]"` (`cpu`/`macos` variants too). The GPU extra pulls the
-CUDA 12 runtime libraries as `nvidia-*` wheels; the only system requirement is an NVIDIA driver
-≥ 525.60.13 (Linux) / 528.33 (Windows). `onnxruntime-gpu` must stay < 1.21 (1.28+ is a CUDA-13 build).
+The specimen segmenter is chosen by name: `modules.specimen_segmenter.model.key` (for example
+`unetpp_effb7_1024`, `birefnet_hr_swinl_1024`, `yolo26x_seg_1280`) decides how each sheet is
+prepared for the model, and `model.path` must point at that model's file.
 
-Models are **not** committed. Place exported artifacts under `models/<stage>/` (or symlink the
-training-repo exports); paths are set in `LM3_settings.yaml`.
+**Docker / HPC.** Set `LM3_MODELS_DIR` to a persistent, mounted folder and prefetch on a node with
+network access: `lm3 models install --dest "$LM3_MODELS_DIR" --yes`. Compute jobs then run with the
+same `LM3_MODELS_DIR` and never touch the network; `lm3 models verify` confirms the folder.
 
 ## Run
 
@@ -339,4 +343,10 @@ leafmachine3/
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+LeafMachine3 is free software under the **GNU General Public License v3.0** — see
+[LICENSE](LICENSE). As an additional term under section 7(b) of that license, copies and derivative
+works must keep the author attribution in [NOTICE](NOTICE).
+
+`leafmachine3/inference/ultra_replacements.py` ports code from Ultralytics and remains under the
+AGPL-3.0 (see NOTICE). Model weights are not in this repository; each published model's license is
+on its Hugging Face model card.

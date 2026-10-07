@@ -272,7 +272,7 @@ def test_shipped_settings_yaml_exposes_every_export_file_as_a_toggle():
     import pathlib
     import yaml
     root = pathlib.Path(__file__).resolve().parents[1]
-    for name in ("LM3_settings.yaml", "LM3_settings.orig.yaml"):
+    for name in ("LM3_settings.yaml",):
         cfg = yaml.safe_load((root / name).read_text())
         data = cfg.get("report", {}).get("data")
         assert data is not None, f"{name} has no report.data block, so the CSV bundle is unsettable"

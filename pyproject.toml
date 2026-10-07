@@ -16,7 +16,7 @@ description = "LeafMachine3 — herbarium specimen image analysis pipeline (runt
 readme = "README.md"
 # Exactly one interpreter line, uv-managed (see .python-version and tools/release/versions.env).
 requires-python = ">=3.11,<3.12"
-license = { text = "MIT" }
+license = { text = "GPL-3.0-only" }
 authors = [{ name = "William Weaver", email = "willwe@umich.edu" }]
 keywords = ["herbarium", "computer-vision", "segmentation", "phenology", "botany"]
 

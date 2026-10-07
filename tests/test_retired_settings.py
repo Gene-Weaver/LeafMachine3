@@ -44,7 +44,7 @@ def test_the_shipped_default_settings_carry_no_retired_key():
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[1]
-    for name in ("LM3_settings.yaml", "LM3_settings.orig.yaml"):
+    for name in ("LM3_settings.yaml",):
         assert Config.load(repo / name).retired_settings() == [], name
 
 

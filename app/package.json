@@ -16,7 +16,7 @@
     "validate:config": "electron-builder --linux --win --mac --dir --publish never"
   },
   "author": "LeafMachine3",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "devDependencies": {
     "electron": "43.4.1",
     "electron-builder": "26.15.3"

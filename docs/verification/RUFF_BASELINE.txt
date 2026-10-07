@@ -55,8 +55,6 @@
 2 E741 leafmachine3/setup/timing.py
 1 E401 tests/manual/deadlock_fault_injection.py
 1 F401 tests/manual/deadlock_fault_injection.py
-1 E702 tests/rotated_bbox_comparision/compare_methods.py
-1 F841 tests/rotated_bbox_comparision/compare_methods.py
 2 E702 tests/test_db.py
 5 E402 tests/test_executor.py
 1 E702 tests/test_generate_leaf_collage.py

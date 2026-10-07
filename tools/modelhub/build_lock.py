@@ -29,7 +29,7 @@ LOCK = HERE.parents[1] / "leafmachine3" / "modelhub" / "models.lock.yaml"
 NAMESPACE = "phyloforfun"
 
 #: action -> list of (repo_id, dest_dir, dest rules). ``dest`` is relative to the models root and
-#: MUST match the relative ``models/...`` paths in LM3_settings.orig.yaml.
+#: MUST match the relative ``models/...`` paths in LM3_settings.yaml.
 #: ``files`` maps a repo path to (dest, format). Formats: onnx | torchscript | pytorch | meta.
 #: ``meta`` files are always installed; the others are selected with --formats (default: onnx).
 #: Provenance files are marked optional: installed, but their absence is not "missing" (the stage runs
@@ -67,7 +67,7 @@ DEFAULTS: dict[str, dict] = {
                   "torchscript/model.torchscript": ("leaf_segmenter/model.torchscript", "torchscript"),
                   "pytorch/best.pt": ("leaf_segmenter/best.pt", "pytorch"),
                   "training_metadata.json": ("leaf_segmenter/training_metadata.json", "meta")}}]},
-    # Destination keeps the file name LM3_settings.orig.yaml already points at, so no settings change.
+    # Destination keeps the file name LM3_settings.yaml already points at, so no settings change.
     "specimen_segmenter": {"units": [{
         "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__unetpp_effb7_1024",
         "files": {"onnx/model.onnx": ("specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", "onnx"),

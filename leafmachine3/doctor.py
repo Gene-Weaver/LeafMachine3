@@ -262,7 +262,7 @@ def check_platform(env: Env, variant: str) -> Check:
         ok = ", ".join(f"{p} {m}" for p, m in sorted(SUPPORTED[variant]))
         return Check(4, "platform", FAIL, f"{env.sys_platform} {env.machine} is not supported for the "
                      f"{variant} variant (supported: {ok})",
-                     "see INSTALL.md, Supported platforms")
+                     "see README.md, Setup with Verification Steps")
     return Check(4, "platform", OK, f"{env.sys_platform} {env.machine}")
 
 

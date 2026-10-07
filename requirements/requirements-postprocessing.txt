@@ -1,6 +1,0 @@
-# Optional dependencies for leafmachine3.postprocessing tools (NOT needed for the main pipeline).
-# generate_stl_from_mask: mask PNG -> 3D-printable .stl (watertight extrusion of polygons-with-holes).
-#   .venv_LM3/bin/pip install -r requirements/requirements-postprocessing.txt
-trimesh>=4.0
-shapely>=2.0
-mapbox_earcut>=1.0

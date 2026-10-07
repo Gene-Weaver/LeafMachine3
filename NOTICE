@@ -1,0 +1,35 @@
+LeafMachine3
+Copyright (C) 2026 William Weaver / University of Michigan
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License version 3 as published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License (the LICENSE file) for more details.
+
+
+Additional term under section 7(b) of the GNU General Public License version 3
+-------------------------------------------------------------------------------
+
+Every conveyed copy and every derivative work of this program must preserve this NOTICE file and
+the following author attribution, in its source and in any "Appropriate Legal Notices" it
+displays:
+
+    LeafMachine3 by William Weaver, University of Michigan -- https://leafmachine.org
+
+Scientific publications that use LeafMachine3 are asked to cite:
+Weaver, W. N. (2026) LeafMachine3. https://leafmachine.org
+
+
+Third-party code
+----------------
+
+leafmachine3/inference/ultra_replacements.py ports parts of Ultralytics 8.4.107
+(https://github.com/ultralytics/ultralytics), Copyright Ultralytics Inc., licensed under the
+GNU Affero General Public License version 3 (https://ultralytics.com/license). That file remains
+under the AGPL-3.0. Section 13 of the GPL-3.0 permits combining it with this program; the AGPL's
+requirements for interaction over a network apply to the combination.
+
+Model weights are not part of this repository. Each published model carries its own license on its
+Hugging Face model card.

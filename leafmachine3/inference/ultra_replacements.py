@@ -1,3 +1,6 @@
+# Ports code from Ultralytics 8.4.107 (https://github.com/ultralytics/ultralytics),
+# Copyright Ultralytics Inc., AGPL-3.0 License (https://ultralytics.com/license).
+# This file remains under the AGPL-3.0; see NOTICE.
 """Pure-onnxruntime replacement for the Ultralytics ``YOLO(...).predict`` path LM3 uses at inference.
 
 Imported as ``ultra_rep``. Every exported LM3 YOLO26 model (plant / archival detectors, leaf
