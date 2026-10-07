@@ -14,15 +14,15 @@ executed on the Linux build host).
 2. **Until an item is ticked on real hardware, the correct wording is "implemented but not yet
    natively validated" — never "passed."** A result from a fake, a cross-build, or a CI job that has
    not run is not evidence.
-3. **Check the gate column before testing anything.** Several items describe behavior that does not
-   exist yet. Testing them today produces a "failure" that is just the plan not having happened.
+3. **Check the gate column before testing anything.** `5b` is implemented in the current tree but
+   still needs this native qualification; `PKG` requires a native installer build.
 
 ## Gate legend
 
 | Gate | Meaning |
 |---|---|
 | **NOW** | Testable against the current `main.js`. |
-| **5b** | Requires plan Step 5b (deployment-scoped single-instance lock, `/healthz` identity + deployment key + ownership mode, connection-descriptor auth, named distinct port errors, removal of the kill-attached-server policy). **Not implemented — do not test yet.** |
+| **5b** | Step 5b is implemented and unit-tested on Linux; run this row on native Windows/macOS before calling it passed. |
 | **PKG** | Requires a real signed/notarized installer to exist. Nothing on this Linux host can produce one. |
 
 ---
@@ -34,7 +34,7 @@ executed on the Linux build host).
 | ☐ | PKG | A Windows machine builds `npm run dist:win` | `dist/LeafMachine3-3.0.0-x64-setup.exe` and `…-x64-portable.exe` are produced. **Never done: the Linux host fails this target on missing `wine`.** |
 | ☐ | PKG | A Mac builds `npm run dist:mac` with `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID` (or the API-key trio) set | `dist/LeafMachine3-3.0.0-{x64,arm64}.dmg` and `.zip`, signed and notarized. **Never done: no Mac was involved.** |
 | ☐ | PKG | Windows code signing is configured | A `signtoolOptions` or `azureSignOptions` block exists in `electron-builder.yml`. **There is none today** — installers will be unsigned. |
-| ☐ | NOW | An LM3 Python environment exists on the test machine and its interpreter path is known | Needed for every "owned server" item — see the `LM3_PYTHON` note in §7. |
+| ☐ | NOW | The LM3 backend wheel is installed | Its activated environment, `lm3` command on `PATH`, `LM3_PYTHON`, or `LM3_ROOT` gives Electron a supported backend launcher. |
 
 ---
 
@@ -49,14 +49,9 @@ executed on the Linux build host).
 | ☐ | PKG | mac | Open the `.dmg` | Window shows the app on the left and an `/Applications` alias on the right; drag-to-install works. |
 | ☐ | PKG | mac | Launch from `/Applications` | App opens; Dock icon is the leaf icon; menu bar reads "LeafMachine3". |
 | ☐ | PKG | mac | Both architectures | Repeat on Apple silicon **and** on an Intel Mac. `LSMinimumSystemVersion` is 12.0, so also confirm the oldest macOS you intend to support. |
-| ☐ | NOW | both | First launch with no LM3 server running | See §7 — with default settings the packaged app **cannot** start a server and will show "Cannot start LeafMachine3". That is current expected behavior, not a bug in the installer. |
+| ☐ | NOW | both | First launch with no LM3 server running | With the backend discoverable, Electron starts `lm3 serve` (or the selected Python module), verifies its instance/deployment identity, and loads the UI. With no backend installed, the error names the supported installation/override choices. |
 
-## 2. Single-instance behavior — **Step 5b, NOT IMPLEMENTED**
-
-> `main.js` does **not** call `app.requestSingleInstanceLock()` today. That call is Step 5b's, and it
-> was deliberately left out of the Electron 43 upgrade and out of packaging. **Do not test this
-> section before Step 5b lands** — launching twice today will open two windows, and that is the
-> current design, not a regression.
+## 2. Single-instance behavior — **Step 5b implemented; native acceptance pending**
 
 | ✔ | Gate | Item | Expected result |
 |---|---|---|---|
@@ -79,11 +74,8 @@ executed on the Linux build host).
 
 ## 4. Closing an attached GUI must not kill the server or the run — **Step 5b**
 
-> **Current behavior is the opposite, deliberately.** Today `main.js` escalates
-> `POST /v1/shutdown` → `SIGTERM` → `SIGKILL` against *any* server it is bound to, including one it
-> merely attached to. That was measured on the packaged Linux artifact (see `ELECTRON_PACKAGING.md`
-> §4.3). Step 5b's exit gate deletes this policy. **Do not test this section before Step 5b lands —
-> it will fail by design.**
+The old kill-attached-server policy is gone. Control authority is now only the retained child
+handle of a server this Electron process launched; a PID from `/healthz` never authorizes a signal.
 
 | ✔ | Gate | Item | Expected result |
 |---|---|---|---|
@@ -99,15 +91,12 @@ executed on the Linux build host).
 | ✔ | Gate | Item | Expected result |
 |---|---|---|---|
 | ☐ | NOW | Launch the GUI so it **spawns** the server, then quit | The server exits; the port is free; `netstat`/`lsof` shows no listener; no orphaned Python process. |
-| ☐ | NOW | Quit while a run is active | The UI's Close button confirms first ("Close LeafMachine3?"), stops and checkpoints the job, then quits. Reopening and pressing Start LM3 resumes it. |
+| ☐ | NOW | Quit while a run is active | The Close dialog says the job **keeps running**. Electron closes without calling `/v1/run/stop`; reopen it to observe the same run. Stop is a separate explicit action. |
 | ☐ | NOW | `LM3_KEEP_SERVER=1`, then quit | The spawned server is left running on purpose. |
 | ☐ | NOW | Kill the GUI process hard (Task Manager / Force Quit / `kill -9`) | The owned server notices via its `LM3_OWNER_PID` watchdog and exits by itself within a bounded time. Nothing is left holding the port. |
 | ☐ | NOW | Immediately relaunch after each of the above | The new launch starts a *fresh* server rather than silently adopting a stale one running old code. |
 
-## 6. Two distinct port errors — **Step 5b**
-
-> Today `main.js` produces one generic message ("the LM3 server exited … Is something else already
-> on http://host:port?"). Step 5b requires two **named, distinguishable** errors.
+## 6. Two distinct port errors — **Step 5b implemented; native acceptance pending**
 
 | ✔ | Gate | Item | Expected result |
 |---|---|---|---|
@@ -133,10 +122,10 @@ Both platforms routinely produce these paths and both have historically broken o
 
 ## 8. Windows process-tree handling
 
-`main.js`'s shutdown path is POSIX-only: `process.kill(-pid, sig)` to signal a process *group*, plus
-`SIGTERM`/`SIGKILL` escalation. **Windows has no process groups and no signals**, and
-`detached: true` means something different there. A CUDA-loaded LM3 server spawns children; if the
-tree is not killed as a unit, those children survive and hold the GPU.
+Windows has no POSIX process groups. Server-managed pipeline/setup children therefore use a native
+Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; Electron also arms the owned server's parent
+watchdog. The native tests below must prove the composed tree actually dies rather than trusting
+the Linux fake or the source code.
 
 | ✔ | Gate | Item | Expected result |
 |---|---|---|---|

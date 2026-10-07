@@ -4,6 +4,7 @@
   "description": "LeafMachine3 desktop app -- an Electron shell around the local LM3 server UI.",
   "main": "main.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "electron .",
     "start:nosandbox": "electron . --no-sandbox",
     "pack": "electron-builder --dir --publish never",
