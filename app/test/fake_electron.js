@@ -9,14 +9,25 @@
 const path = require("node:path");
 const Module = require("node:module");
 
-/** Put `exports` in front of `require("electron")` for anything resolving from `fromDir`. */
+/** Answer `require("electron")` with `exports` for any module loaded from `fromDir`.
+ *
+ * This intercepts the request itself instead of planting `exports` in require.cache under the real
+ * package's resolved path. The old way had to RESOLVE the real `electron` package first, which exists
+ * only after `npm install` downloads Electron -- so in a fresh clone the resolve threw inside boot(),
+ * the promise the test awaited never settled, and node:test hung until the 300 s subprocess timeout.
+ * A unit test of main.js must not need a 100 MB Electron download. The returned function restores
+ * the loader.
+ */
 function installFakeElectron(fromDir, exports) {
-  const resolved = Module.createRequire(path.join(fromDir, "main.js")).resolve("electron");
-  require.cache[resolved] = {
-    id: resolved, filename: resolved, path: path.dirname(resolved),
-    loaded: true, children: [], paths: [], exports,
+  const root = path.resolve(fromDir) + path.sep;
+  const originalLoad = Module._load;
+  Module._load = function fakeElectronLoad(request, parent, isMain) {
+    if (request === "electron" && parent && parent.filename && parent.filename.startsWith(root)) {
+      return exports;
+    }
+    return originalLoad.call(this, request, parent, isMain);
   };
-  return () => { delete require.cache[resolved]; };
+  return () => { Module._load = originalLoad; };
 }
 
 function makeFakeElectron({ lock = true, appData = "/tmp/lm3-fake-appdata", messageBoxResponse = 1 } = {}) {
