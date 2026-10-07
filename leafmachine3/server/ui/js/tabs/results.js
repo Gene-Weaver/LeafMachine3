@@ -53,6 +53,14 @@ const S = {
   run: null,             // the selected run summary
   view: "media",         // "media" | "db"
 
+  /* The runtime half of the picker (GET /v1/runs/-/selector). `activeRef` is non-null ONLY when
+     the deployment lease is held and the record is compatible -- it is the one field this tab may
+     read as "a run is happening right now" (section 2.6). `selector` keeps the honesty block
+     (`enabled`/`compatible`/`message`) so an unavailable registry is said, not guessed at. */
+  selector: null,
+  activeRef: null,
+  lastRef: null,
+
   media: null,           // GET /media payload for S.run
   category: null,        // category id currently listed
   includeWorking: false, // show the "working" intermediate folders
@@ -68,6 +76,13 @@ const S = {
 
   loaded: false,         // initResults() has run
   available: false,      // hasResults() answer
+
+  /* Whether the WINDOW is paused on a historical selection, as last reported by the top bar on
+     `lm3:runtime`. This tab never decides it (the top bar owns `view.mode`, invariant 7); it is
+     mirrored here only so the follow badge describes the window's real mode instead of inferring
+     "paused" from "the row on screen is not the active run", which is also true for this tab's
+     own default selection. */
+  followPaused: false,
 };
 
 /** Live DOM references, filled by build(). */
@@ -89,13 +104,10 @@ function runHasOutput(r) {
 /**
  * Normalize one run summary.
  *
- * TWO backend modules publish GET /v1/runs — progress_api's run list and
- * results_api's — and app.py mounts progress_api FIRST, so that is the payload
- * this tab actually receives. It names its fields differently (`run_name`, no
- * `id`, `db_path` instead of `has_db`), which left every downstream call
- * fetching /v1/runs/undefined/... Both shapes are accepted here instead of
- * betting on the mount order; results_api's `{run}` parameter resolves a run
- * NAME as happily as its own hashed id, so the name is a safe fallback key.
+ * results_api is now the SOLE publisher of GET /v1/runs (section 5, "one `GET /v1/runs` owned by
+ * results_api"); progress_api's duplicate is gone. The alternate spellings below are kept anyway
+ * because this tab also normalizes rows that come from the runtime registry through
+ * `/v1/runs/-/selector`, where a run that is still `starting` has a name and no directory yet.
  */
 function normalizeRun(r) {
   const name = r.name || r.run_name || "";
@@ -265,6 +277,72 @@ export function initResults(root) {
 }
 
 
+/**
+ * Is this run row the ACTIVE run?
+ *
+ * `id` alone is not enough. `_record_ref` (results_api.py) publishes `id: null` while the run
+ * directory is not yet discoverable -- "a run that acquired the lease seconds ago has a record
+ * before it has a ledger" -- and `row.id === null` is false for every row, so an id-only test
+ * reports the live run as historical for exactly as long as it is `starting`. The record always
+ * carries `run_id` and `run_name`, so match on those too: same three fields the `lm3:runtime`
+ * listener already uses to find the row for a reference.
+ */
+function isActiveRun(run) {
+  const active = S.activeRef;
+  if (!active || !run) return false;
+  if (active.id && run.id === active.id) return true;
+  if (active.run_id && run.run_id === active.run_id) return true;
+  return Boolean(active.run_name && run.name === active.run_name);
+}
+
+/**
+ * Tell the window which run it is describing.
+ *
+ * Choosing the ACTIVE run resumes follow-active (`ref: null`); choosing any other run pauses it.
+ * The top bar owns `view.mode`, so this reports a choice rather than making one -- one place
+ * decides, every tab follows, which is what stops the tabs from describing different runs.
+ *
+ * ONLY an explicit user action may reach here with a run. Invariant 7 and section 2.6 make a
+ * historical selection an EXPLICIT pause, and the top bar treats any non-null ref as one: a ref
+ * announced for this tab's own mount-time default would pin the whole window -- status, logs and
+ * console included -- onto a finished run, and `applyRuntime` only un-pins a selection that IS the
+ * new active run, so a CLI run starting afterwards would never take the window back. That is the
+ * Step 6 exit gate ("opening the GUI during any CLI run immediately shows that run") inverted by
+ * the renderer itself.
+ */
+function announceSelection(run) {
+  const isActive = isActiveRun(run);
+  const ref = isActive || !run ? null : {
+    source: "history",
+    live: false,
+    run_id: run.run_id || null,
+    activity: run.activity || "pipeline",
+    state: run.state || null,
+    run_name: run.name,
+    run_dir: run.path || run.run_dir || null,
+    artifact_dir: run.path || run.run_dir || null,
+    db_path: run.db_path || null,
+    log_path: run.log_path || null,
+    input_dirs: [],
+    config_path: null,
+  };
+  document.dispatchEvent(new CustomEvent("lm3:select-run", { detail: { ref }, bubbles: true }));
+}
+
+
+/**
+ * Resume follow-active, window-wide.
+ *
+ * The `ref: null` form of the announcement: it can only ever END a pause, never create one, which
+ * is why it is the one announcement a non-user action is allowed to make. Both callers are exactly
+ * that -- the visible "Return to the active run" button when the live run has no row yet, and the
+ * rescan below that finds the picked run gone.
+ */
+function resumeFollowActive() {
+  announceSelection(null);
+}
+
+
 /* ==========================================================================
    SHELL
    ========================================================================== */
@@ -274,7 +352,7 @@ function build(root) {
 
   /* -- run picker + run facts ------------------------------------------- */
   D.runSelect = el("select", {
-    onchange: (e) => selectRun(e.target.value),
+    onchange: (e) => selectRun(e.target.value, { explicit: true }),
     style: { minWidth: "260px", flex: "0 1 340px" },
     title: "Every run directory the server can see, newest first",
   });
@@ -284,11 +362,17 @@ function build(root) {
              fontSize: "12px", marginLeft: "auto" },
   });
 
+  D.followState = el("div", {
+    style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap",
+             fontSize: "12px" },
+  });
+
   const bar = el("div.toolbar.boxed",
     el("span", { style: { fontSize: "11.5px", letterSpacing: ".05em",
                           textTransform: "uppercase", color: "var(--mute)", fontWeight: "650" } },
       "Run"),
     D.runSelect,
+    D.followState,
     el("button.btn.ghost.sm", {
       onclick: () => refresh(),
       title: "Re-scan the output folders and reload this run",
@@ -336,7 +420,20 @@ function renderView() {
    ========================================================================== */
 
 async function loadRuns(refreshServer = false) {
-  const payload = await api.get("/v1/runs", { params: { refresh: refreshServer || undefined } });
+  /* `/v1/runs/-/selector` is `/v1/runs` PLUS which row is live, straight off the runtime registry
+     (section 2.6: the run selector must be able to say which run is the active one, and a
+     filesystem recency guess may not answer that -- invariant 5). A server that predates the
+     route 404s and we fall back to the plain list, in which case nothing is marked live. */
+  let payload = null;
+  try {
+    payload = await api.runSelector({ refresh: refreshServer || undefined });
+  } catch (err) {
+    if (!err || !err.isNotFound) throw err;
+    payload = await api.listRuns({ refresh: refreshServer || undefined });
+  }
+  S.selector = payload && payload.runtime ? payload : null;
+  S.activeRef = (payload && payload.active) || null;
+  S.lastRef = (payload && payload.last) || null;
   S.runs = (Array.isArray(payload && payload.runs) ? payload.runs : []).map(normalizeRun);
 
   const was = S.available;
@@ -362,17 +459,46 @@ async function loadRuns(refreshServer = false) {
 
   if (S.loaded) fillRunSelect();
 
-  // Keep the selection if it survived the rescan, else take the newest.
+  /* Keep the selection if it survived the rescan, else take the newest.
+
+     A selection that did NOT survive -- its directory was deleted, moved or renamed -- is not a
+     tab-local detail. Section 2.6 makes a historical pick a WINDOW-wide pause of follow-active, so
+     if this function quietly re-selects some other run the top bar keeps painting "Viewing a
+     finished run" (with a live Return button) and the Status stream keeps a `db=` for a ledger
+     that is gone, while this tab's own strip says "Following the active run". Two control
+     surfaces describing different runs is exactly what Step 6 exists to remove, so remember the
+     drop and answer for it below. */
+  const prevId = S.run ? S.run.id : null;
   if (S.run) {
     const still = S.runs.find((r) => r.id === S.run.id);
     S.run = still || null;
   }
-  // After "New run" the tab must NOT re-adopt the newest run every time it is
-  // reopened -- the point of the reset is that no project is selected yet.
-  if (!S.run && !S.noAutoSelect) S.run = S.runs.find(runHasOutput) || S.runs[0] || null;
+  const droppedSelection = prevId !== null && S.run === null;
+  /* Default selection follows the ACTIVE run when there is one (`selected_default` is the
+     server's own answer to "which row is this window describing"), and otherwise the newest run
+     with output. Nothing suppresses the default any more: the client-side reset that
+     `noAutoSelect` existed to protect is gone. */
+  if (!S.run) {
+    const preferred = payload && payload.selected_default
+      ? S.runs.find((r) => r.id === payload.selected_default) : null;
+    S.run = preferred || S.runs.find(runHasOutput) || S.runs[0] || null;
+  }
   if (S.loaded) {
-    D.runSelect.value = S.run ? S.run.id : "";
-    renderRunMeta();
+    /* The window may be paused on the run that just vanished, so end that pause rather than move
+       it: the replacement is never announced, because only a person may pin the window to a run
+       (selectRun's `explicit`). Nothing is lost by resuming -- when a run is active,
+       `selected_default` IS that active run, so follow-active shows what this tab just picked. */
+    if (droppedSelection) resumeFollowActive();
+    if (droppedSelection && S.run) {
+      /* And re-select through the one path that also drops the previous run's media/tables/paging
+         state, so the body cannot go on showing a deleted run's contents under a new run's name.
+         Not `explicit`: nobody picked this. */
+      void selectRun(S.run.id);
+    } else {
+      D.runSelect.value = S.run ? S.run.id : "";
+      renderRunMeta();
+      renderFollowState();
+    }
   }
   return S.runs;
 }
@@ -389,11 +515,62 @@ function fillRunSelect() {
   for (const r of S.runs) {
     const when = r.finished_at || r.started_at || "";
     const bits = [r.name];
+    // The live row is named as such. Without it the picker is a list of directories and the one
+    // that is being written RIGHT NOW looks exactly like the twelve that are not. `isActiveRun`
+    // rather than an id match, so a `starting` run (id still null server-side) is named too.
+    if (isActiveRun(r)) bits.push("running now");
     if (r.n_images) bits.push(`${fmtNum(r.n_images)} img`);
     bits.push(r.state);
     if (when) bits.push(String(when).replace("T", " ").replace("Z", ""));
     sel.appendChild(el("option", { value: r.id, title: r.path }, bits.join("  ·  ")));
   }
+}
+
+/**
+ * "Following the active run" / "Viewing a finished run — Return to the active run".
+ *
+ * Section 2.6: a historical selection pauses follow-active EXPLICITLY, with a visible action to
+ * return. The pause is window-wide, not tab-local, so the choice is announced on `lm3:select-run`
+ * and the top bar re-derives `view.mode` from it; the Status tab and the Console re-pin with it.
+ */
+function renderFollowState() {
+  if (!D.followState) return;
+  clear(D.followState);
+  const active = S.activeRef;
+  const following = isActiveRun(S.run);
+  if (!active) {
+    D.followState.appendChild(el("span.dim",
+      S.selector && S.selector.runtime && S.selector.runtime.enabled === false
+        ? "No live run reported by this server."
+        : "No run is active."));
+    return;
+  }
+  if (following) {
+    D.followState.appendChild(el("span.badge.ok", "Following the active run"));
+    return;
+  }
+  const back = el("button.btn.sm.accent", {
+    type: "button",
+    title: `Return to ${active.run_name}, the run that holds this deployment`,
+  }, "↩  Return to the active run");
+  back.addEventListener("click", () => {
+    /* Resume follow-active. When the active run already has a row we select it (that also repaints
+       this tab); while it is still `starting` it has no row to select, so announce the resume form
+       directly -- otherwise the only visible way back would be a dead button (section 2.6 asks for
+       a visible action to return, which means one that works). */
+    const target = S.runs.find(isActiveRun);
+    if (target) void selectRun(target.id, { explicit: true });
+    else resumeFollowActive();
+  });
+  /* Only the top bar knows whether the WINDOW is paused; this tab showing a different row is not
+     itself a pause any more (its default selection is announced to nobody). Say which it is. */
+  append(D.followState, [
+    S.followPaused
+      ? el("span.badge.info", "Follow-active paused")
+      : el("span.badge.dotd", "Showing another run"),
+    el("span.dim", `${active.run_name} is running`),
+    back,
+  ]);
 }
 
 function renderRunMeta() {
@@ -425,13 +602,23 @@ function renderRunMeta() {
   ]);
 }
 
-async function selectRun(runId) {
-  S.noAutoSelect = false;    // an explicit choice ends the post-reset suppression
+/**
+ * Show `runId` in this tab.
+ *
+ * `explicit` says a PERSON picked this run (the selector, the return button). Only then is the
+ * choice announced window-wide, because only an explicit action may pause follow-active
+ * (invariant 7). The two non-user callers -- the mount-time default and the `lm3:runtime`
+ * listener -- stay silent: the first is a default, not a decision, and the second is following a
+ * decision the top bar already made, so echoing it back is at best a no-op.
+ */
+async function selectRun(runId, { explicit = false } = {}) {
   const next = S.runs.find((r) => r.id === runId);
   if (!next) return;
   S.run = next;
   D.runSelect.value = next.id;
   renderRunMeta();
+  if (explicit) announceSelection(next);
+  renderFollowState();
 
   // Everything downstream belongs to the old run.
   S.media = null; S.category = null; S.listing = null;
@@ -1438,21 +1625,30 @@ function copyPageCsv() {
 }
 
 
-/** Drop the selected run so the tab does not keep showing the previous project. */
-document.addEventListener("lm3:newrun", () => {
-  S.run = null;
-  S.media = null;
-  S.category = null;
-  S.listing = null;
-  S.noAutoSelect = true;
-  if (!S.loaded) return;
-  if (D.runSelect) D.runSelect.value = "";
-  if (D.body) {
-    clear(D.body);
-    D.body.appendChild(empty("—", "No run selected",
-      "Start a run, or pick an existing one above."));
-  }
-  if (D.runMeta) clear(D.runMeta);
+/**
+ * Follow the window's run reference.
+ *
+ * Replaces the `lm3:newrun` listener, whose whole job was to un-select a run because the top bar
+ * had client-side "reset" itself. Nothing resets any more: when the window starts describing a
+ * different run -- a CLI run appears, the active run finishes -- the run list is re-read and the
+ * matching row selected. A selection the USER made is left alone; the top bar reports it back
+ * here as the same reference, so this is idempotent for it.
+ */
+document.addEventListener("lm3:runtime", (ev) => {
+  const view = (ev && ev.detail && ev.detail.view) || null;
+  const ref = view ? view.runRef : null;
+  // Mirror, never decide: the badge below reports the top bar's mode rather than guessing it.
+  S.followPaused = !!(view && view.followPaused);
+  if (!S.loaded) { S.run = null; return; }
+  loadRuns().then(() => {
+    if (!ref) return;
+    const match = S.runs.find((r) => (ref.run_id && r.run_id === ref.run_id)
+      || r.name === ref.run_name);
+    // Not `{explicit: true}`: this is following the top bar's decision, not making one. Announcing
+    // it back would turn every runtime frame into a fresh "the user picked a run" pause.
+    if (match && (!S.run || S.run.id !== match.id)) void selectRun(match.id);
+    else renderFollowState();
+  }).catch(() => { /* transient; the next runtime frame retries */ });
 });
 
 export default initResults;

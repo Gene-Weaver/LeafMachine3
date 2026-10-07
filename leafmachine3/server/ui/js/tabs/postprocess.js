@@ -135,6 +135,31 @@ function detailOf(err) {
 
 const tool = (id) => S.tools.find((t) => t.id === id) || null;
 
+/**
+ * The run that currently holds the deployment, as `GET /v1/postprocess/context` reports it.
+ *
+ * Section 2.8: a postprocessor is REFUSED when its target is the active pipeline's run directory,
+ * and allowed against any other completed run. The server is the guard (`check_target_allowed`);
+ * this is only the part that says so before the user presses Run, instead of letting them find out
+ * through a 409 on a tool they configured for two minutes.
+ */
+function activeTarget() {
+  const a = S.context && S.context.active_run;
+  return a && a.artifact_dir ? a : null;
+}
+
+/** Is `path` inside, equal to, or a parent of the active run's artifact directory? */
+function collidesWithActiveRun(path) {
+  const a = activeTarget();
+  if (!a) return false;
+  const target = String(path || "").replace(/\/+$/, "");
+  const active = String(a.artifact_dir || "").replace(/\/+$/, "");
+  if (!target || !active) return false;
+  return target === active
+    || target.startsWith(`${active}/`)
+    || active.startsWith(`${target}/`);
+}
+
 /** The last basename of a path. */
 const baseName = (p) => String(p || "").split("/").filter(Boolean).pop() || String(p || "");
 
@@ -184,17 +209,23 @@ export function isRunning() {
   return Boolean(S.task && S.task.state === "running");
 }
 
-/** Forget the finished tool runs and their output links from the previous project. */
-document.addEventListener("lm3:newrun", () => {
-  if (closeStream) { closeStream(); closeStream = null; }
-  S.task = null;
-  S.taskToolId = null;
-  S.logSeq = 0;
-  S.logLines.length = 0;
-  S.active = {};
+/**
+ * Re-read the tool context whenever the window starts describing a different run.
+ *
+ * The context carries `active_run`, which is what decides whether a target is refused (section
+ * 2.8), so it has to be re-read when the active run changes -- not when a client-side "New run"
+ * reset fired, which is what this listener used to key off. Tool history is NOT thrown away: a
+ * finished tool run belongs to the run it was run against, and a new pipeline run starting
+ * elsewhere is no reason to forget it.
+ */
+document.addEventListener("lm3:runtime", () => {
   if (!S.loaded) return;
-  if (D.runPanel) clear(D.runPanel);
   void reloadTools();
+});
+
+/** The user is setting up the next run; the tool context's next-run target may move with it. */
+document.addEventListener("lm3:prepare-next-run", () => {
+  if (S.loaded) void reloadTools();
 });
 
 export default initPostprocess;
@@ -432,6 +463,21 @@ function renderDetail() {
 
   D.runBtn = el("button.btn.primary.lg", { onclick: () => startRun(t) }, "Run tool");
 
+  /* Section 2.8, said before the attempt rather than after it. The button is NOT disabled from
+     this: the collision test here is a path comparison over one context read, while the server
+     compares realpaths under the lease it can actually see -- so this warns and the server
+     refuses. A client-side guard that silently disabled the button would be a second, weaker
+     implementation of the rule, which is exactly what "standalone tools use the same guard as the
+     HTTP API, not a parallel one" forbids. */
+  const active = activeTarget();
+  const collides = active && (t.target_keys || []).some((k) => collidesWithActiveRun(v[k]));
+  const guard = active ? el(`div.card.${collides ? "warn" : "info"}`, { style: { margin: "0 0 12px" } },
+    el("p", collides
+      ? `“${active.run_name}” is running right now and this tool targets its output folder. `
+        + "The server will refuse it — point the tool at a finished run instead."
+      : `“${active.run_name}” is running. Tools may run against any OTHER finished run; its own `
+        + "output folder is off limits until it ends.")) : null;
+
   const actions = el("div.toolbar.runbar",
     D.runBtn,
     el("button.btn.ghost", {
@@ -470,6 +516,7 @@ function renderDetail() {
       t.outputs_description
         ? el("div.card.info", el("h4", "What this produces"), el("p", t.outputs_description))
         : null,
+      guard,
       form,
       actions,
       el("details.collapse", { style: { marginTop: "10px" } },
@@ -1249,7 +1296,16 @@ async function startRun(t) {
     toast(`${t.name} started`, "ok");
   } catch (err) {
     const d = detailOf(err);
-    if (err.status === 409) {
+    if (err.status === 409 && d.reason === "target_active") {
+      // Section 2.8's refusal: the target IS the run in progress. Name it, and name the rule.
+      toast(d.message
+        || `${d.run_name || "That run"} is active — a tool cannot write into a run in progress.`,
+        "warn", "Target is the active run");
+      void reloadTools();                  // re-read the context so the notice above appears
+    } else if (err.status === 409 && d.reason === "target_locked") {
+      toast(d.message || "Another read/write tool is already working on that run.",
+        "warn", "Run is locked");
+    } else if (err.status === 409) {
       // detail is an OBJECT on 409 — offer to watch the task already running.
       toast(d.message || "That tool is already running", "warn", "Already running");
       if (d.task_id) watchTask(d.task_id, d.tool_id || t.id);

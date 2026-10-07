@@ -61,6 +61,12 @@ FINGERPRINT_VERSION = 1
 
 GOLDEN_PATH = Path(__file__).resolve().parent / "golden" / "mock_pipeline_baseline.json"
 
+#: Files the Step 3 runtime adds to a run directory that the pre-refactor pipeline never produced.
+#: Plan section 3.4 makes the launch manifest MANDATORY, so this is an intended delta -- but it is
+#: named here rather than folded into the golden, so the gate keeps its teeth: with the runtime
+#: enabled the inventory must be the golden PLUS EXACTLY THIS, and any other new file still fails.
+RUNTIME_V2_ADDED_FILES: frozenset[str] = frozenset({"logs/run_manifest.json"})
+
 RUN_NAME = "baseline"
 N_SPECIMENS = 2
 
@@ -353,6 +359,40 @@ def test_baseline_is_reproducible_and_matches_the_golden(
     assert first == golden["fingerprint"], (
         "the mock pipeline no longer matches the recorded pre-refactor baseline "
         f"({GOLDEN_PATH.name}):\n" + _explain(golden["fingerprint"], first, "golden", "now"))
+
+
+def _expected_with_runtime_v2(golden_fingerprint: dict) -> dict:
+    """The golden, adjusted for the files the Step 3 runtime legitimately adds."""
+    expected = json.loads(json.dumps(golden_fingerprint))          # deep copy
+    expected["inventory"] = sorted(set(expected["inventory"]) | RUNTIME_V2_ADDED_FILES)
+    return expected
+
+
+def test_the_baseline_still_holds_with_the_runtime_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gate 60 on the path it actually exists to protect.
+
+    Running this only with ``LM3_RUNTIME_V2`` off proves nothing: off is the configuration in which
+    nothing changed. The comparison that matters is that turning the runtime ON leaves the DB rows,
+    the resume behavior and the output inventory identical EXCEPT for the one file plan section 3.4
+    requires -- so a stray artifact, a renamed report or a changed ledger row is still caught.
+    """
+    if not GOLDEN_PATH.exists():
+        pytest.skip("no golden recorded yet; the flag-off test records it first")
+    golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))["fingerprint"]
+
+    monkeypatch.setenv("LM3_RUNTIME_V2", "1")
+    got = _run_and_fingerprint(tmp_path / "run_v2", monkeypatch)
+
+    manifest_only = set(got["inventory"]) - set(golden["inventory"])
+    assert manifest_only == set(RUNTIME_V2_ADDED_FILES), (
+        "enabling the runtime changed the output inventory by more than the mandatory launch "
+        f"manifest; unexpected additions: {sorted(manifest_only - RUNTIME_V2_ADDED_FILES)}, "
+        f"missing: {sorted(RUNTIME_V2_ADDED_FILES - manifest_only)}")
+    assert got == _expected_with_runtime_v2(golden), (
+        "with the runtime enabled the mock pipeline diverges from the baseline beyond the launch "
+        "manifest:\n" + _explain(_expected_with_runtime_v2(golden), got, "golden+manifest", "now"))
 
 
 def test_resume_after_an_interrupt_adds_no_rows_and_reaches_the_same_fingerprint(

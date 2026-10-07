@@ -63,6 +63,7 @@ _ISOLATED_ENV: tuple[str, ...] = (
     "LM3_DEPLOYMENT_ID",
     "LM3_PORT",
     "LM3_ALLOW_NETWORK_RUNTIME",
+    "LM3_RUNTIME_V2",
     "LM3_SETTINGS",
     "LM3_SETTINGS_PATH",            # legacy alias of LM3_SETTINGS
     "LM3_HARDWARE",
@@ -187,9 +188,25 @@ def _isolate_runtime_environment() -> tuple[Path, bool, dict[str, str | None]]:
     # The two LEGACY aliases are cleared, never set: naming one puts the whole session on the
     # deprecation path, and ``resolve_legacy_env`` warns once per process -- which would burn the
     # latch before the test that asserts on that warning ever runs.
+    # LM3_RUNTIME_V2 is cleared for the same reason and then some: it is the single most
+    # behavior-steering variable in the tree. A developer who exports it in their shell would
+    # otherwise silently run the WHOLE suite down the other path -- including the tests that
+    # characterize flag-off behavior, and including gate 60's pre-refactor comparison. Tests that
+    # want the new runtime turn it on explicitly (monkeypatch.setenv), which is also what makes
+    # "which path did this test exercise?" answerable by reading the test.
     for name in ("LM3_SETTINGS", "LM3_SETTINGS_PATH", "LM3_HARDWARE_SETTINGS", "LM3_RUNS_ROOTS",
-                 "LM3_STATUS_ROOTS", "LM3_POSTPROCESS_ROOTS", "LM3_ALLOW_NETWORK_RUNTIME"):
+                 "LM3_STATUS_ROOTS", "LM3_POSTPROCESS_ROOTS", "LM3_ALLOW_NETWORK_RUNTIME",
+                 ):
         os.environ.pop(name, None)
+
+    # LM3_RUNTIME_V2 is PINNED, not cleared. A test must never depend on what the flag DEFAULTS to:
+    # the default is a product decision that has already changed once (off through Steps 3-7, on
+    # from the cutover), and a suite that inherits it silently reinterprets every flag-off test the
+    # day it moves. Pinning "0" here makes the ambient state explicit and stable; the ~30 tests that
+    # exercise the new runtime set "1" themselves, and gate 60 now runs BOTH paths deliberately.
+    # It also still closes the leak this variable was added to _ISOLATED_ENV for: a developer with
+    # LM3_RUNTIME_V2 exported cannot steer the suite either way.
+    os.environ["LM3_RUNTIME_V2"] = "0"
 
     # Purely a performance carve-out, unrelated to LM3: matplotlib caches its font list under
     # XDG_CACHE_HOME, and a sandboxed cache makes every session rebuild it (~4.5 s). Point it at

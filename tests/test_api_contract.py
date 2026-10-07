@@ -30,18 +30,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests._contract_helpers import (
+    BOOL,
     HEALTHZ_SPEC,
+    INT,
     RUN_RECORD_SPEC,
     RUN_SUMMARY_SPEC,
     RUNS_ENVELOPE_SPEC,
     SETTINGS_SPEC,
     STATUS_SPEC,
+    STR,
     TEST_TOKEN,
     Sandbox,
     assert_every_item_shape,
     assert_json_shape,
     bearer,
     drain_reapers,
+    flattened_app_routes,
     install_fake_spawn,
     isolate_server_paths,
     make_run_dir,
@@ -58,6 +62,24 @@ CONTRACT_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", "/v1/runs"),
     ("GET", "/v1/settings"),
 )
+
+#: ``GET /healthz`` AFTER §4 Step 5b, which added "service, protocol version, instance ID,
+#: deployment key and ownership mode" to the probe body and demoted ``pid`` on the wire (§2.5).
+#: Built by SPREADING the shared ``HEALTHZ_SPEC`` rather than editing it: that helper is imported by
+#: eight suites this file does not own, and spreading keeps the two in step either way -- if the
+#: helper later grows the same keys, the same names resolve to the same types and this literal is a
+#: no-op. The exact key set is the assertion that matters: /healthz is UNAUTHENTICATED, so a key
+#: arriving here undeclared is a field nobody vetted for being a capability.
+HEALTHZ_POST_5B_SPEC: dict[str, tuple] = {
+    **HEALTHZ_SPEC,
+    "service": STR,
+    "protocol_version": INT,
+    "instance_id": STR,
+    "deployment_id": STR,
+    "deployment_key": STR,
+    "ownership_mode": STR,
+    "pid_is_diagnostic_only": BOOL,
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -371,7 +393,7 @@ class TestPreservedContract:
         assert all(isinstance(r, str) for r in body["roots"])
         assert_every_item_shape(body["runs"], RUN_SUMMARY_SPEC, where="GET /v1/runs -> runs")
         assert {r["name"] for r in body["runs"]} == {"run_alpha", "run_beta"}
-        # The stable `id` every other /v1/runs/{id}/... route keys off (app.py:613-615).
+        # The stable `id` every other /v1/runs/{id}/... route keys off (`results_api.run_ref`).
         assert all(r["id"] for r in body["runs"])
         assert len({r["id"] for r in body["runs"]}) == 2
 
@@ -440,23 +462,29 @@ class TestContractThePlanChanges:
     contract named in the docstring -- NOT to restore the old behavior.
     """
 
-    def test_v1_runs_is_registered_twice_and_results_api_wins(self, client: TestClient) -> None:
-        """CHANGES AT §4 Step 4: "Remove the duplicate progress-router ``GET /v1/runs``, keeping the
-        ``results_api`` route, and delete the registration-order workaround at ``app.py:613-615``."
+    def test_v1_runs_is_registered_once_and_owned_by_results_api(self, client: TestClient) -> None:
+        """SATISFIED AT §4 Step 4: "Remove the duplicate progress-router ``GET /v1/runs``, keeping
+        the ``results_api`` route, and delete the registration-order workaround at
+        ``app.py:613-615``." (That citation is quoted verbatim from the plan; the workaround it
+        names is the comment block above the ``include_router`` loop in ``app.create_app``, which
+        now reads "ORDER CARRIES NO MEANING".)
 
         Also §5: "Consolidate: one ``GET /v1/runs`` owned by ``results_api``."
 
-        Two routes answer to the same path today, and only the registration ORDER in
-        ``app.py:613-615`` decides which one a client reaches. Pin both halves: that the duplicate
-        exists, and that ``results_api`` is the winner -- so deleting the loser is provably a no-op
-        for clients, and deleting the WRONG one fails loudly.
+        Both halves have landed: ``progress_api`` no longer defines the path, and the router mount
+        order in ``create_app`` is therefore free of meaning. So the assertion inverts -- a SECOND
+        registration is now the defect, because a duplicate would silently restore an order-decided
+        winner that no comment is guarding any more.
         """
-        routes = [r for r in client.app.routes if getattr(r, "path", None) == "/v1/runs"]
-        assert len(routes) == 2, "the duplicate registration is the thing being removed"
-        modules = [r.endpoint.__module__.rsplit(".", 1)[-1] for r in routes]
-        assert modules == ["results_api", "progress_api"], (
-            "registration order decides the winner; results_api must stay first until the "
-            "progress_api duplicate is deleted"
+        routes = [
+            r for r in flattened_app_routes(client.app)
+            if getattr(r, "path", None) == "/v1/runs"
+        ]
+        assert len(routes) == 1, (
+            "the progress_api duplicate is deleted; two routers must not answer one path"
+        )
+        assert routes[0].endpoint.__module__.rsplit(".", 1)[-1] == "results_api", (
+            "§5: the surviving GET /v1/runs is owned by results_api"
         )
 
     def test_v1_runs_body_is_the_results_api_shape_not_the_progress_api_one(
@@ -562,17 +590,26 @@ class TestContractThePlanChanges:
         console_fh = fake_spawn.calls[0].kwargs["stdout"]
         assert Path(console_fh.name) == logs_dir / "console.log"
 
-    def test_healthz_still_advertises_the_server_pid(self, client: TestClient) -> None:
-        """CHANGES AT §2.5: ``/healthz``'s ``pid`` field "must be removed or explicitly demoted to
-        diagnostic-only", because ``app.py:532-538`` documents it as how an attached client kills a
-        server it does not own -- behavior §1 invariant 12 forbids. §4 Step 5b replaces the body
-        with service, protocol version, instance ID, deployment key and ownership mode.
+    def test_healthz_demotes_the_server_pid_and_publishes_the_deployment_identity(
+        self, client: TestClient
+    ) -> None:
+        """SATISFIED AT §2.5: ``/healthz``'s ``pid`` field "must be removed or explicitly demoted to
+        diagnostic-only", because ``app.py:532-538`` documented it as how an attached client kills a
+        server it does not own -- behavior §1 invariant 12 forbids. §4 Step 5b: "``/healthz``
+        returning service, protocol version, instance ID, **deployment key**, and ownership mode".
+
+        Step 5b has landed, so the assertion inverts. ``pid`` survives, but as a field that SAYS it
+        authorizes nothing, and the identity fields are now required rather than forbidden.
+        ``tests/test_healthz_identity.py`` pins their VALUES; what this pins is the exact key set,
+        because the probe is unauthenticated -- an undeclared key here is a field nobody checked for
+        being a capability.
         """
         body = client.get("/healthz").json()
-        assert_json_shape(body, HEALTHZ_SPEC, where="GET /healthz")
+        assert_json_shape(body, HEALTHZ_POST_5B_SPEC, where="GET /healthz")
         assert body["pid"] > 0
-        assert "deployment_key" not in body
-        assert "instance_id" not in body
+        assert body["pid_is_diagnostic_only"] is True, "§2.5: the demotion is stated ON THE WIRE"
+        assert body["deployment_key"], "§4 Step 5b: the probe names its deployment"
+        assert body["instance_id"], "§2.5 control authority is keyed to this instance"
 
     def test_a_disagreeing_legacy_settings_alias_is_refused_and_a_coherent_one_agrees(
         self, client: TestClient, sandbox: Sandbox, fake_spawn: Any,

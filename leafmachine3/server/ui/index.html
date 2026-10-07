@@ -14,8 +14,12 @@
   <!-- ============ TOP BAR: the global LM3 module progress, outside every tab ============ -->
   <header class="topbar" id="topbar" style="grid-area:topbar"></header>
 
-  <!-- ============ PRIMARY SETTINGS: input / output / temp + Start-Stop ============ -->
-  <section class="primary" id="primarybar" style="grid-area:primary"></section>
+  <!-- ====== NEXT-RUN SETTINGS: input / output / temp / device (invariant 8) ======
+       These fields describe the run you are about to START, never the one in progress: a running
+       job is pinned to the launch manifest written when it began (section 3.4). topbar.js renders
+       the "Next run" label into this section and keeps it accurate from GET /v1/runtime. -->
+  <section class="primary" id="primarybar" style="grid-area:primary"
+           aria-label="Settings for the next run"></section>
 
   <!-- ============================== TABS ============================== -->
   <nav class="tabbar" id="tabbar" style="grid-area:tabbar" role="tablist">
@@ -38,7 +42,9 @@
     <section class="tabpane"        id="pane-postprocess" role="tabpanel"></section>
   </main>
 
-  <!-- ====== PERFORMANCE MONITOR: pinned across the bottom, outside the tabs ====== -->
+  <!-- ====== MACHINE PANEL: performance monitor, pinned across the bottom ======
+       Also where a `hardware_setup` root reports itself (section 2.6): topbar.js inserts a tuning
+       banner as this element's first child and re-attaches it if perfmon.js re-initializes. -->
   <footer class="perfpanel" id="perfpanel" style="grid-area:perf"></footer>
 
   <div class="toasts" id="toasts"></div>

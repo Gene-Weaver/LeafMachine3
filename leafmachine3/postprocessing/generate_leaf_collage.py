@@ -24,6 +24,10 @@ Standalone postprocessing tool -- NOT part of the pipeline. Configure in ``postp
         --config postprocessing_settings.yaml --run-dir <run> --primary-mask <mask.png> \
         --layout grid --style mask --color 255 255 255 --max-dim-px 10000
 
+The CLI runs under plan section 2.8's postprocessing guard (:func:`cli_target_guard`): it refuses
+a run a pipeline is writing right now, and serializes itself against any other read/write tool on
+the same finished run. Both are inert until ``LM3_RUNTIME_V2`` is on.
+
 Heavy deps (cv2, numpy) are imported lazily so the module imports without them.
 """
 from __future__ import annotations
@@ -33,6 +37,8 @@ import logging
 import math
 import os
 import re
+import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -1385,6 +1391,98 @@ def _color_from_cli(tokens):
         return tokens[0] if len(tokens) == 1 else list(tokens)
 
 
+# -- section 2.8: the postprocessing concurrency guard -------------------------------
+#: This tool's id in the postprocessing registry -- the key both the HTTP layer and this CLI
+#: identify themselves by, so both reach the SAME ``Tool`` entry (its ``target_keys``, its
+#: ``access="read_write"``) rather than two descriptions of one tool that can drift apart.
+TOOL_ID = "generate_leaf_collage"
+
+#: Exit code for a section 2.8 refusal. Deliberately NOT 75: section 2.3 reserves 75 for "the root
+#: lease is held, retry later", and a supervisor that reads 75 may legitimately re-run -- which is
+#: exactly the wrong response to "you aimed a writer at a live run". Not 2 either, which argparse
+#: already owns for a usage error.
+EXIT_TARGET_REFUSED = 3
+
+
+def _refusal_types() -> tuple:
+    """The exception types a section 2.8 refusal arrives as, or ``()`` when there is no server pkg.
+
+    Evaluated lazily -- an ``except`` clause's expression only runs when an exception is actually
+    propagating -- so the flag-off CLI never imports the server package at all. An empty tuple
+    matches nothing, which is the right answer when there was no guard to refuse anything.
+
+    ``ParamError`` is in the list because under the flag the guard resolves this CLI's targets
+    through the same ``validate_params`` the HTTP route uses, and that is where a path outside
+    :func:`~leafmachine3.server.postprocess_api.allowed_roots` is rejected. That rejection is a
+    refusal of the same kind and deserves the same one-line message, not a traceback.
+    """
+    try:
+        from leafmachine3.server.postprocess_api import ParamError, TargetActive, TargetLocked
+    except Exception:                       # noqa: BLE001 - no server package, so no refusal
+        return ()
+    return (ParamError, TargetActive, TargetLocked)
+
+
+@contextmanager
+def cli_target_guard(run_dir=None, primary_mask=None, output_dir=None):
+    """Hold section 2.8's guard around one CLI invocation; yields the resolved target run dirs.
+
+    Section 2.8's last bullet is "Standalone CLI tools use the same guard as the HTTP API, not a
+    parallel one", so this composes the SHIPPED functions in
+    :mod:`leafmachine3.server.postprocess_api` and re-implements none of the policy:
+
+    * ``validate_params`` -- which is what applies ``resolve_path``/``allowed_roots``, so the CLI's
+      targets are resolved (and realpath'd) exactly the way a request's are. That matters for the
+      comparison itself: ``active_run_target`` realpaths the record's root, and an unresolved
+      target reached through a symlinked output root would never meet it.
+    * ``check_target_allowed`` -- rule 1: refuse when the target IS the live run (or contains it,
+      or is contained by it).
+    * ``_acquire_artifact_locks`` -- rule 2: serialize two ``read_write`` tools on one completed
+      run through the per-run advisory lock in the local deployment runtime registry.
+
+    The lock WRAPS the run instead of being taken and dropped after argument parsing: bullet 5
+    serializes two *writers*, and a lock released before ``run()`` starts serializes nothing.
+
+    Inert unless ``LM3_RUNTIME_V2`` is on (``runtime_v2_enabled`` is the one reader of that flag),
+    so today's shipped behavior is byte-identical -- including path handling, since the server's
+    ``allowed_roots`` sandbox only begins to apply to this CLI under the flag.
+    """
+    from leafmachine3.core.runtime.execution import runtime_v2_enabled
+
+    # Without the flag there is no guard and no import of the server package. Without BOTH a run
+    # and a primary mask there is nothing to guard either: ``run()`` refuses on the missing one
+    # before it reads or writes anything, and its message is the more actionable of the two.
+    if not runtime_v2_enabled() or not run_dir or not primary_mask:
+        yield []
+        return
+
+    from leafmachine3.server import postprocess_api as pp
+
+    params = {"run_dir": str(run_dir), "primary_mask": str(primary_mask)}
+    if output_dir:
+        params["output_dir"] = str(output_dir)
+
+    # If ``postprocess_api`` ever exports the single public wrapper this composition stands in for,
+    # use it -- that is the shape section 2.8 asks for, and delegating keeps the two from drifting.
+    guard = getattr(pp, "guard_cli", None)
+    if guard is not None:
+        with guard(TOOL_ID, params) as targets:
+            yield targets
+        return
+
+    tool = pp.get_tool(TOOL_ID)
+    clean = pp.validate_params(tool, params)
+    targets = pp.check_target_allowed(tool, clean)
+    locks = pp._acquire_artifact_locks(tool, targets)
+    try:
+        yield targets
+    finally:
+        # Every exit path, the crash and the KeyboardInterrupt included: a leaked advisory lock
+        # would wedge this run directory against every later writer for the life of the process.
+        for lock in locks:
+            lock.release()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Arrange a run's best leaf masks into the shape of a primary mask.")
@@ -1488,8 +1586,19 @@ def main(argv=None) -> int:
                                if all(t.lstrip("-").isdigit() for t in args.primary_colors)
                                else list(args.primary_colors))
 
-    results = run(s, run_dir=args.run_dir, primary_mask=args.primary_mask,
-                  output_dir=args.output_dir)
+    # The guard needs the EFFECTIVE targets -- what run() will actually use -- because the yaml
+    # supplies them just as often as the flags do, and a guard that only saw --run-dir would wave
+    # a settings-file run straight through.
+    run_dir = args.run_dir if args.run_dir is not None else s.get("run_dir")
+    primary_mask = args.primary_mask if args.primary_mask is not None else s.get("primary_mask")
+    output_dir = args.output_dir if args.output_dir is not None else s.get("output_dir")
+    try:
+        with cli_target_guard(run_dir, primary_mask, output_dir):
+            results = run(s, run_dir=args.run_dir, primary_mask=args.primary_mask,
+                          output_dir=args.output_dir)
+    except _refusal_types() as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_TARGET_REFUSED
     for r in results:
         print(f"  {Path(r['collage']).name}  {r['size_px'][0]}x{r['size_px'][1]}px  "
               f"leaves={r['n_placed']}/{r['n_passing']}  layout={r['layout']}  "

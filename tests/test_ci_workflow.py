@@ -43,9 +43,16 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CI_YML = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
 _WINDOWS_LEASE_TESTS = _REPO_ROOT / "tests" / "test_runtime_lease_windows.py"
+_WINDOWS_HANDSHAKE_TESTS = _REPO_ROOT / "tests" / "test_server_handshake.py"
 
-# The Step 2 deliverable list of section 4: the runtime primitives and the path resolver they sit
-# on. The platform job must run these and only these -- "in isolation" is the exit gate's word.
+# What the platform job must cover. Step 2's primitives and the path resolver they sit on, PLUS
+# Step 3's handshake: gate 17 is "the launch handshake and process-tree Stop pass on Windows CI,
+# not only the lock adapter", and the handshake is the piece with a genuinely different Windows
+# implementation (STARTUPINFOEX handle allowlist instead of pass_fds, a job object instead of a
+# process group). A list of Step 2 files alone leaves gate 17 unmet however green it runs.
+#
+# "In isolation" still binds: named files only, never a bare `tests/` target, because a whole-suite
+# run on a fresh runner drowns the platform signal in optional-dependency noise.
 _STEP_2_PRIMITIVE_TESTS = (
     "tests/test_runtime_lease.py",
     "tests/test_runtime_lease_windows.py",
@@ -58,10 +65,19 @@ _STEP_2_PRIMITIVE_TESTS = (
     "tests/test_settings_path_unification.py",
 )
 
-# The pair that cannot run anywhere but a real Windows kernel. Gate 27 lives or dies on these.
+#: Step 3's platform-sensitive surface. Separate from the tuple above so a reader can see which
+#: gate each group answers.
+_STEP_3_PLATFORM_TESTS = (
+    "tests/test_runtime_launch.py",
+    "tests/test_runtime_execution.py",
+    "tests/test_server_handshake.py",
+)
+
+# The checks that cannot run anywhere but a real Windows kernel. Gates 17/27 live or die on these.
 _REAL_WIN32_TESTS = (
-    "test_the_real_allowlist_is_a_startupinfo",
-    "test_the_real_surface_acquires_and_releases",
+    (_WINDOWS_LEASE_TESTS, "test_the_real_allowlist_is_a_startupinfo"),
+    (_WINDOWS_LEASE_TESTS, "test_the_real_surface_acquires_and_releases"),
+    (_WINDOWS_HANDSHAKE_TESTS, "test_the_real_windows_job_object_stops_root_and_grandchild"),
 )
 
 
@@ -131,12 +147,17 @@ def test_ci_covers_windows_and_macos_as_well_as_linux(workflow: dict[str, Any]) 
     assert job["strategy"].get("fail-fast") is False
 
 
-def test_the_platform_job_runs_exactly_the_step_2_primitives_in_isolation(
+def test_the_platform_job_runs_the_step_2_primitives_and_the_step_3_handshake_in_isolation(
     workflow: dict[str, Any],
 ) -> None:
-    """'In isolation' is the exit gate's own word. A bare ``pytest -q`` here would fail on a fresh
-    runner for reasons that have nothing to do with the platform (the ``No module named 'ect'``
-    family), making the signal unreadable."""
+    """'In isolation' is the exit gate's own word: named files, never a bare ``tests/`` target,
+    because a whole-suite run on a fresh runner drowns the platform signal in optional-dependency
+    noise (the ``No module named 'ect'`` family).
+
+    The Step 3 files are here because gate 17 asks for the handshake and process-tree Stop on
+    Windows CI specifically, and those have a different Windows implementation from the POSIX one --
+    which is the entire reason the plan refuses to let a Linux result stand in for them.
+    """
     job = _platform_job(workflow)
     candidates = _steps_running(job, "pytest")
     assert candidates, "the platform job runs no pytest at all"
@@ -146,6 +167,10 @@ def test_the_platform_job_runs_exactly_the_step_2_primitives_in_isolation(
 
     for path in _STEP_2_PRIMITIVE_TESTS:
         assert path in command, f"the platform job does not run {path}"
+    for path in _STEP_3_PLATFORM_TESTS:
+        assert path in command, (
+            f"the platform job does not run {path}; gate 17 asks for the launch handshake on "
+            f"Windows CI, not only the lock adapter")
     # No bare directory target: that is what makes the run 'isolated' rather than a whole suite.
     assert not re.search(r"(?<![\w/])tests/?(?:\s|$)", command), (
         "the platform job targets all of tests/; the exit gate asks for the primitives in isolation"
@@ -193,10 +218,8 @@ def test_the_platform_job_installs_no_heavy_extras_but_does_install_the_server(
 # --- gate 27: the real Win32 surface must EXECUTE, not skip -------------------------------------
 
 
-def test_the_windows_leg_names_the_two_real_win32_tests(workflow: dict[str, Any]) -> None:
-    """A fake cannot establish that the real ``CreateEventW`` behaves like the model. These two are
-    the only tests in the tree that touch the genuine object manager, so gate 27's 'verified against
-    the Windows adapter itself' reduces to: did these two run?"""
+def test_the_windows_leg_names_the_real_win32_tests(workflow: dict[str, Any]) -> None:
+    """A fake cannot establish event semantics or that a Job Object kills a real descendant."""
     job = _platform_job(workflow)
     guards = [
         s
@@ -205,13 +228,14 @@ def test_the_windows_leg_names_the_two_real_win32_tests(workflow: dict[str, Any]
     ]
     assert len(guards) == 1, "expected exactly one windows-only step asserting the real Win32 surface"
     command = _flat(str(guards[0]["run"]))
-    for name in _REAL_WIN32_TESTS:
-        assert f"tests/test_runtime_lease_windows.py::{name}" in command
+    for source, name in _REAL_WIN32_TESTS:
+        node = f"tests/{source.name}::{name}"
+        assert node in command, f"the Windows guard does not run {node}"
 
 
 def test_the_windows_leg_fails_if_the_real_win32_tests_skip(workflow: dict[str, Any]) -> None:
     """pytest exits 0 on a skip, so naming the node ids is necessary but not sufficient: without an
-    explicit check the job stays green while the two tests quietly skip and prove nothing. The step
+    explicit check the job stays green while the tests quietly skip and prove nothing. The step
     must therefore inspect the outcome, not just the exit code."""
     job = _platform_job(workflow)
     (guard,) = [
@@ -224,7 +248,7 @@ def test_the_windows_leg_fails_if_the_real_win32_tests_skip(workflow: dict[str, 
         "the windows guard step does not check for skips; a skipif that silently skips would leave "
         "gate 27 unproven with a green tick"
     )
-    assert "2 passed" in run, "the windows guard step does not assert both tests actually ran"
+    assert "3 passed" in run, "the windows guard step does not assert all native tests actually ran"
     # The grep guards are only load-bearing under a shell that stops on error and honors pipefail.
     assert guard.get("shell") == "bash"
 
@@ -232,10 +256,10 @@ def test_the_windows_leg_fails_if_the_real_win32_tests_skip(workflow: dict[str, 
 def test_the_named_real_win32_tests_still_exist_under_those_names(workflow: dict[str, Any]) -> None:
     """Node ids in YAML are unchecked strings: rename a test and the Windows leg would collect
     nothing (pytest exit 4) or, worse, drift out of sync with what the plan thinks is covered."""
-    source = _WINDOWS_LEASE_TESTS.read_text(encoding="utf-8")
-    for name in _REAL_WIN32_TESTS:
+    for path, name in _REAL_WIN32_TESTS:
+        source = path.read_text(encoding="utf-8")
         assert re.search(rf"^def {re.escape(name)}\(", source, re.MULTILINE), (
-            f"{name} no longer exists; ci.yml still names it"
+            f"{name} no longer exists in {path.name}; ci.yml still names it"
         )
 
 

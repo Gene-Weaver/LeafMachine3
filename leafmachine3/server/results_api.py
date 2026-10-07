@@ -50,7 +50,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any, Callable, Iterable, Iterator, Optional
 
 from leafmachine3.core import paths
 from leafmachine3.core.paths import PathsError
@@ -64,6 +64,10 @@ RUNS_CACHE_TTL_S = float(os.environ.get("LM3_RUNS_CACHE_TTL_S", "5"))
 MEDIA_CACHE_TTL_S = float(os.environ.get("LM3_MEDIA_CACHE_TTL_S", "8"))
 SCAN_MAX_DEPTH = int(os.environ.get("LM3_RUNS_SCAN_DEPTH", "5"))
 QUERY_TIMEOUT_S = float(os.environ.get("LM3_DB_QUERY_TIMEOUT_S", "10"))
+
+#: Version of the run-REFERENCE shape (:func:`run_ref`) that ``GET /v1/runs/-/selector`` returns.
+#: Bumped only when a field changes meaning; new optional fields do not bump it.
+RUN_REF_SCHEMA_VERSION = 1
 
 MEDIA_LIST_DEFAULT = 200
 MEDIA_LIST_MAX = 2000
@@ -464,11 +468,13 @@ def run_roots() -> list[Path]:
     for extra in _EXTRA_ROOTS:
         _push(extra)
 
-    # LM3_RUNS_ROOTS, then the configured project.output.dir -- section 3.1 row 5, resolved by the
-    # canonical resolver so a relative output dir hangs off the settings FILE. Read straight off
-    # disk each time so saving the Settings tab immediately changes what the Results tab can see.
+    # Section 3.1 row 5, in order and resolved by the canonical resolver: LM3_RUNS_ROOTS, then the
+    # ACTIVE and LAST runtime output roots, then the configured project.output.dir (relative values
+    # hang off the settings FILE). Read straight off disk each time so saving the Settings tab --
+    # or starting a run from the CLI -- immediately changes what the Results tab can see.
     try:
-        for root in paths.runs_roots(env=_env(), settings_file=_settings_file(),
+        for root in paths.runs_roots(env=_env(), runtime_roots=runtime_roots(),
+                                     settings_file=_settings_file(),
                                      settings_output_dir=_settings_output_dir()):
             _push(root)
     except PathsError as exc:                                # a broken env must not empty the tab
@@ -523,6 +529,331 @@ def _settings_output_dir() -> Optional[str]:
     except Exception as exc:                                 # noqa: BLE001 - never fail discovery
         log.debug("could not read project.output.dir (%s)", exc)
         return None
+
+
+# --------------------------------------------------------------------------- #
+# The runtime registry, read as an OBSERVER (sections 3.1 row 5, 2.5, 2.9)
+# --------------------------------------------------------------------------- #
+# Everything here READS ``<deployment runtime dir>/active.json`` and ``last.json``. It never writes
+# a record, never acquires or probes for the purpose of acquiring, and never signals anything:
+# control authority is a retained live child handle (section 2.5) and belongs to ``metrics_api``.
+# What the Results tab needs from the registry is exactly two facts -- where the run happening RIGHT
+# NOW writes (so it appears in the history list while it runs, whoever launched it), and which row
+# of that list it is (so the renderer can offer "follow the active run" instead of guessing from
+# mtime). Both are read-only, and both are gated on ``LM3_RUNTIME_V2`` because a registry that
+# nothing writes yet must not change what this tab shows.
+
+
+def _env_quiet() -> Any:
+    """:func:`_env`, but a broken/absent ``server.app`` degrades to the raw environment.
+
+    Discovery must never raise: an unreadable environment should cost the runtime roots, not the
+    whole Results tab.
+    """
+    try:
+        return _env()
+    except Exception as exc:                                 # noqa: BLE001 - never fail discovery
+        log.debug("could not fold the server environment (%s)", exc)
+        return os.environ
+
+
+def _runtime_v2() -> bool:
+    """THE feature-flag read for this module.
+
+    ``execution.runtime_v2_enabled`` is the one helper (Step 3); this module does not grow its own
+    ``os.environ`` check. Imported lazily to avoid a module-import cycle. A broken runtime is not
+    translated to ``False``: doing so would make Results disagree with Start about which runtime is
+    active, and would silently restore filesystem guessing under the safety-default cutover.
+    """
+    from leafmachine3.core.runtime.execution import runtime_v2_enabled
+
+    return bool(runtime_v2_enabled(_env_quiet()))
+
+
+def _deployment_dir() -> Optional[Path]:
+    """``<runtime base>/<canonical deployment key>``, or ``None`` when it cannot be resolved.
+
+    ``check_filesystem=False``: refusing a network-backed runtime directory (section 3.1) is the
+    ACQUISITION path's job, and it fails there loudly. A reader that refused as well would empty
+    the Results tab for a deployment that is running perfectly well behind
+    ``LM3_ALLOW_NETWORK_RUNTIME=1``.
+    """
+    try:
+        return paths.deployment_runtime_dir(env=_env_quiet(), create=False, check_filesystem=False)
+    except Exception as exc:                                 # noqa: BLE001 - never fail discovery
+        log.debug("could not resolve the deployment runtime directory (%s)", exc)
+        return None
+
+
+@dataclass(frozen=True)
+class RuntimeView:
+    """What the registry says, bounded to what a HISTORY view is allowed to conclude.
+
+    ``record`` is whatever ``active.json`` holds, whatever its classification; ``active`` is that
+    same record only when it is ``LIVE`` (the lease is held and the record is non-terminal). The two
+    differ for an ABANDONED record -- a run whose writer died -- and the difference matters: its
+    output directory still belongs in the history roots, but it is not a live run and the renderer
+    must not offer to follow or stop it.
+    """
+
+    enabled: bool                                # LM3_RUNTIME_V2
+    deployment_dir: Optional[Path] = None
+    record: Any = None                           # RuntimeRecord | None -- active.json, as published
+    active: Any = None                           # RuntimeRecord | None -- only when LIVE
+    last: Any = None                             # RuntimeRecord | None -- last.json
+    lease_held: bool = False
+    compatible: bool = True
+    classification: Optional[str] = None
+    message: Optional[str] = None
+
+
+def runtime_view(*, lease_probe: Optional[Callable[[], bool]] = None) -> RuntimeView:
+    """Read the deployment registry. Never raises, never writes, never acquires.
+
+    ``lease_probe`` is injectable for the caller that already knows the answer (``metrics_api``
+    holds the child handle) and for tests; the default asks the platform lease adapter, which opens
+    its own descriptor, takes a SHARED lock and lets go.
+
+    Child records are deliberately NOT read (``include_children=False``): a ``calibration_pipeline``
+    child writes into a scratch directory under the run name ``_lm3_calibration``, and section 2.2
+    is explicit that the UI must never mistake it for the user's project.
+    """
+    if not _runtime_v2():
+        return RuntimeView(enabled=False)
+
+    deployment_dir = _deployment_dir()
+    if deployment_dir is None or not deployment_dir.is_dir():
+        return RuntimeView(enabled=True, deployment_dir=deployment_dir)
+
+    try:
+        from leafmachine3.core.runtime import records as _records
+        from leafmachine3.core.runtime._types import RecordClassification
+
+        snapshot = _records.read_runtime(
+            deployment_dir, lease_probe=lease_probe, include_children=False,
+        )
+    except Exception as exc:                                 # noqa: BLE001 - never fail discovery
+        log.debug("could not read the runtime registry at %s (%s)", deployment_dir, exc)
+        return RuntimeView(enabled=True, deployment_dir=deployment_dir)
+
+    record = snapshot.record
+    live = snapshot.compatible and snapshot.classification is RecordClassification.LIVE
+    return RuntimeView(
+        enabled=True,
+        deployment_dir=deployment_dir,
+        record=record,
+        active=record if live else None,
+        last=_read_last_record(deployment_dir),
+        lease_held=bool(snapshot.active),
+        compatible=bool(snapshot.compatible),
+        classification=snapshot.classification.value if snapshot.classification else None,
+        message=snapshot.message,
+    )
+
+
+def _read_last_record(deployment_dir: Path) -> Any:
+    """``last.json``, sanitized, or ``None`` when it is absent, malformed or from a newer build.
+
+    ``RecordStore.read_last()`` is the writer-scoped twin of this: a store is constructed with the
+    ``run_id`` whose writes it is allowed to make, and a server observing somebody else's
+    deployment has no such id. Same three steps, same sanitize, no fabricated ownership.
+    """
+    try:
+        from leafmachine3.core.runtime import records as _records
+
+        payload, error = _records.read_json_file(deployment_dir / paths.LAST_RECORD_FILENAME)
+        if payload is None or error is not None:
+            return None
+        return _records.sanitize_record(_records.record_from_dict(payload))
+    except Exception as exc:                                 # noqa: BLE001 - never fail discovery
+        log.debug("could not read last.json in %s (%s)", deployment_dir, exc)
+        return None
+
+
+def _output_root(run_dir: Any) -> Optional[Path]:
+    """The directory a run's own directory sits IN -- i.e. a ``project.output.dir``-shaped root.
+
+    ``None`` for anything that is not an absolute path with a real parent. The filesystem root is
+    refused explicitly: a record naming ``/run`` would otherwise hand the scanner ``/`` and a
+    five-level walk of the whole machine.
+    """
+    if not run_dir:
+        return None
+    try:
+        path = Path(str(run_dir))
+    except (OSError, ValueError):
+        return None
+    if not path.is_absolute():                               # records store absolute paths
+        return None
+    parent = path.parent
+    if parent == path or str(parent) == path.anchor:
+        return None
+    return parent
+
+
+def runtime_roots(*, lease_probe: Optional[Callable[[], bool]] = None) -> list[Path]:
+    """Section 3.1 row 5, slot 2: the output roots named by the ACTIVE and LAST root records.
+
+    Three paths per record, because section 2.10 gives a run three storage roles and they are the
+    same directory only in in-place mode: ``run_dir`` (browsable), ``artifact_dir`` (persistent
+    project storage) and ``active_state_dir`` (node-local scratch, where a STAGED run's live
+    ledger actually is). Their PARENTS are the roots; the scanner finds the run inside.
+
+    ``record``, not ``active``: a run whose writer died is not live, but its output is still
+    history and the tab that lists finished runs should keep finding it.
+
+    A ``hardware_setup`` root contributes nothing -- it has no project block at all (invariant 6).
+    """
+    view = runtime_view(lease_probe=lease_probe)
+    roots: list[Path] = []
+    for record in (view.record, view.last):
+        project = getattr(record, "project", None)
+        if project is None:
+            continue
+        for candidate in (project.run_dir, project.artifact_dir, project.active_state_dir):
+            root = _output_root(candidate)
+            if root is not None and root not in roots:
+                roots.append(root)
+    return roots
+
+
+# --------------------------------------------------------------------------- #
+# Run references -- the one shape the renderer selects a run BY
+# --------------------------------------------------------------------------- #
+
+def _ref(
+    *,
+    source: str,
+    run_name: str,
+    run_dir: str,
+    ref_id: Optional[str] = None,                            # the wire field is "id"
+    run_id: Optional[str] = None,
+    db_path: Optional[str] = None,
+    activity: Optional[str] = None,
+    state: Optional[str] = None,
+    live: bool = False,
+) -> dict:
+    return {
+        "schema_version": RUN_REF_SCHEMA_VERSION,
+        "source": source,
+        "id": ref_id,
+        "run_id": run_id,
+        "run_name": run_name,
+        "run_dir": run_dir,
+        "db_path": db_path,
+        "activity": activity,
+        "state": state,
+        "live": live,
+    }
+
+
+def run_ref(run: Run, *, source: str = "history") -> dict:
+    """The reference shape for a run discovered on disk. ``id`` is what every ``/v1/runs/{run}``
+    route keys off, so a selector row is directly usable as a link target."""
+    return _ref(
+        source=source,
+        ref_id=run.id,
+        run_name=run.name,
+        run_dir=str(run.path),
+        db_path=str(run.db_path) if run.db_path else None,
+    )
+
+
+def _record_ref(record: Any, *, source: str, live: bool, by_path: dict[str, Run]) -> Optional[dict]:
+    """The reference shape for a runtime record, joined to the discovered run when there is one.
+
+    ``id`` is ``None`` when the run directory is not (yet) discoverable -- a run that acquired the
+    lease seconds ago has a record before it has a ledger. That is the honest answer: the renderer
+    can name and follow the run without being handed a ``/v1/runs/{id}`` link that would 404.
+    """
+    project = getattr(record, "project", None)
+    if record is None or project is None:                    # hardware_setup: no project, no ref
+        return None
+    if live:
+        db_path = project.active_db_path                     # the ledger the run is writing NOW
+    else:
+        db_path = project.archived_db_path or project.active_db_path
+    match = by_path.get(_key(project.run_dir)) or by_path.get(_key(project.active_state_dir))
+    return _ref(
+        source=source,
+        ref_id=match.id if match is not None else None,
+        run_id=record.run_id,
+        run_name=project.run_name,
+        run_dir=project.run_dir,
+        db_path=db_path,
+        activity=record.activity.value,
+        state=record.state.value,
+        live=live,
+    )
+
+
+def _key(path: Any) -> str:
+    """A comparison key for two spellings of one directory (symlinked scratch, ``..``, ``~``)."""
+    try:
+        return str(Path(str(path)).expanduser().resolve())
+    except (OSError, ValueError):
+        return str(path)
+
+
+def run_selector(
+    *,
+    refresh: bool = False,
+    limit: int = 0,
+    lease_probe: Optional[Callable[[], bool]] = None,
+) -> dict:
+    """Payload for ``GET /v1/runs/-/selector`` -- the history list plus who is live.
+
+    This exists because ``GET /v1/runs`` has a frozen key set (its envelope and row shapes are
+    pinned as a preserved contract) and the Step 6 renderer needs three things that are not in it:
+    which row is the run happening right now, which row is the most recent finished run, and a
+    stable reference shape it can hand to the other tabs as ``view.runRef``.
+
+    ``runtime`` is the honesty block: with the flag off, or the registry unreadable, or a record
+    written by a newer LM3 (section 2.9), ``active: null`` means UNKNOWN, not idle -- and the
+    renderer must say so rather than render an idle machine.
+    """
+    view = runtime_view(lease_probe=lease_probe)
+    runs = discover_runs(refresh=refresh)
+    by_path = {_key(run.path): run for run in runs}
+
+    active_ref = _record_ref(view.active, source="runtime-active", live=True, by_path=by_path)
+    last_ref = _record_ref(view.last, source="runtime-last", live=False, by_path=by_path)
+
+    marked: dict[str, dict] = {}
+    for ref in (active_ref, last_ref):                       # active wins a tie: it is the live one
+        if ref is not None and ref["id"] and ref["id"] not in marked:
+            marked[ref["id"]] = ref
+
+    rows = [marked.get(run.id) or run_ref(run) for run in runs]
+    if limit and limit > 0:
+        rows = rows[:limit]
+
+    default = None
+    for ref in (active_ref, last_ref):
+        if ref is not None and ref["id"]:
+            default = ref["id"]
+            break
+    if default is None and rows:
+        default = rows[0]["id"]
+
+    return {
+        "t": round(time.time(), 3),
+        "schema_version": RUN_REF_SCHEMA_VERSION,
+        "n": len(rows),
+        "roots": [str(p) for p in (_RUNS_CACHE.roots or run_roots())],
+        "runs": rows,
+        "active": active_ref,
+        "last": last_ref,
+        "follow": "active" if active_ref else ("last" if last_ref else None),
+        "selected_default": default,
+        "runtime": {
+            "enabled": view.enabled,
+            "lease_held": view.lease_held,
+            "compatible": view.compatible,
+            "classification": view.classification,
+            "message": view.message,
+        },
+    }
 
 
 @dataclass
@@ -676,7 +1007,15 @@ def _run_state(db_path: Optional[Path]) -> dict:
 
 
 def list_runs(*, refresh: bool = False) -> dict:
-    """Payload for ``GET /v1/runs``."""
+    """Payload for ``GET /v1/runs`` -- the ONE run listing (section 4 Step 4).
+
+    The envelope is a frozen contract: exactly ``t``/``n``/``roots``/``runs``, with ``n`` equal to
+    ``len(runs)``. Nothing is added here for the Step 6 renderer -- "which of these rows is the run
+    happening right now" is answered by ``/v1/runs/-/selector``, which also takes the ``?limit=``
+    the deleted progress-router duplicate honored. (Deliberately NOT added to this route: the
+    duplicate's own contract test uses "ignores ?limit=" as the fingerprint of which router
+    answered, so honoring it here would break that test for a reason unrelated to the deletion.)
+    """
     runs = discover_runs(refresh=refresh)
     return {
         "t": round(time.time(), 3),
@@ -1531,6 +1870,13 @@ def router(dependencies: Optional[list] = None) -> Any:
     def get_runs(refresh: bool = False) -> dict:
         return list_runs(refresh=refresh)
 
+    # The literal is TWO segments, so it cannot be shadowed by -- and cannot shadow -- ``/{run}``,
+    # which matches one. A run directory may legally be named anything, so a one-segment literal
+    # such as ``/_selector`` would quietly make a run of that name unreachable by name.
+    @api.get("/-/selector", dependencies=deps)
+    def get_run_selector(refresh: bool = False, limit: int = 0) -> dict:
+        return run_selector(refresh=refresh, limit=limit)
+
     @api.get("/{run}", dependencies=deps)
     def get_run(run: str) -> dict:
         return _run(run).summary()
@@ -1643,7 +1989,9 @@ def router(dependencies: Optional[list] = None) -> Any:
 
 __all__ = [
     "Run", "ResultsError",
+    "RuntimeView",
     "router", "add_run_root", "run_roots", "discover_runs", "resolve_run", "list_runs",
+    "runtime_view", "runtime_roots", "run_ref", "run_selector",
     "media_index", "media_categories", "media_list", "safe_path",
     "thumbnail", "clear_thumbs", "file_kind", "media_type_of", "category_label", "category_blurb",
     "db_tables", "db_table", "run_query",
