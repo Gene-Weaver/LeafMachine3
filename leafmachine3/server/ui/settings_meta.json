@@ -1127,7 +1127,8 @@
     "max": 2048,
     "step": 32,
     "important": false,
-    "group": "Specimen Segmenter"
+    "group": "Specimen Segmenter",
+    "retired": true
   },
   "modules.specimen_segmenter.conf": {
     "label": "Mask threshold",

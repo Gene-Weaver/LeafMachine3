@@ -22,7 +22,6 @@ project:
     #   <path>  -> <path>/<run_name>/_tmp_original  (put them on a fast/large scratch disk instead,
     #              e.g. "/scratch" or "/mnt/nvme/lm3_tmp"; falls back to the run dir if unwritable)
     tmp_dir: "auto"
-    keep_tmp: false                     # (cleanup not implemented yet -- copies are always kept)
   run_mode:
     overwrite: false
     restart: []                         # [] resume | "all" | ["leaf_segmenter", ...]
@@ -53,6 +52,9 @@ naming:
   mask_full_prefix: "MaskFull"          # full-image masks:      <stem>__MaskFull-<friendly>
   landmark_prefix: "LM"                 # per-leaf landmark overlay: <stem>__LM-<friendly>__x_y_x_y
   petiole_prefix: "PET"                 # per-leaf petiole overlay:  <stem>__PET-<friendly>__x_y_x_y
+  seg_rgb_prefix: "SEGRGB"              # per-crop RGB cutouts (must differ from seg_prefix)
+  mask_rgb_full_prefix: "MaskRGBFull"   # full-image RGB cutouts (must differ from mask_full_prefix)
+  bilateral_prefix: "BSYM"              # per-leaf bilateral-symmetry QC panels
   friendly_names:                       # real class name -> friendly name used in filenames
     # archival
     Ruler: ruler
@@ -240,6 +242,7 @@ modules:
     num_dirs: 360                       # ECT angular directions (and threshold count)
     bound_radius: 1.0                   # shapes scaled to this unit-circle radius
     palette: "viridis"                  # matplotlib colormap for the radial + Cartesian ECT visuals
+    apply_log_to_visual_for_bold_color: false  # log-scale before coloring (pictures only; the .h5 is unchanged)
     radial_viz: true                    # Leaf_Data/Oriented_Leaf_Radial_ECT/*.png (polar)
     cartesian_viz: true                 # Leaf_Data/Oriented_Leaf_ECT/*.png (matrix)
     radial_overlay_viz: true            # Leaf_Data/Oriented_Leaf_Radial_ECT_Overlay/*.png (polar + outline)
@@ -263,6 +266,17 @@ report:
     draw_labels: true               # draw the class-name label centered in each box
     draw_confidence: true           # append the confidence score to the label
     draw_cf_banner: true            # print the derived CF (px/cm) banner on the sheet
+    insert_cf_in_rulers: false      # lay a 1 cm and a 1 inch bar (drawn at the sheet CF) on a raft over each ruler
+    insert_cf_exterior: false       # append a checkerboard of 1 cm squares outside the top and left edges
+    cf_scalebar:                    # styling for the two options above (colors are RGB)
+      cm_color: [0, 255, 255]       # 1 cm bar
+      inch_color: [0, 255, 0]       # 1 inch bar
+      raft_color: [255, 255, 255]   # solid backing behind both bars
+      brim: 3                       # px of raft showing around and between the bars
+      bar_thickness: 10             # px across the ruler at the reference resolution (scales; shrinks to fit)
+      exterior_cells: 2             # exterior checkerboard thickness, in 1 cm squares
+      exterior_light: [255, 255, 255]  # light squares and the margin behind them
+      exterior_dark: [0, 0, 0]      # dark squares
     # per-GROUP box drawing. Detections split into three groups you style independently:
     #   leaf     = Leaf_WHOLE / Leaf_PARTIAL (drawn as rotated min-bboxes when box_style: rotated)
     #   plant    = every other PlantDetector class (Flower, Seed_Fruit, Bud, Leaflet, ...)
@@ -401,7 +415,6 @@ report:
   crops:
     enabled: true
     classes: "all"                      # "all", or a list of real class names e.g. [Ruler, Label]
-    source: "working"                   # working (matches detector crops) | original (full-res)
   # ---- leaf products:  ---------------------
   # Five products per leaf, each written in a non-oriented (Original/) and an upright, tip-up
   # (Oriented/) form under reports/. Masks/cutouts are fitted tight to the mask; the bbox crop is
@@ -419,6 +432,7 @@ report:
       lamina_mask: true                 # Lamina_Mask/          <stem>__SEG-lamina__x_y_x_y.png   (holes removed)
       lamina_petiole_mask: true         # LaminaPetiole_Mask/   <stem>__SEG-laminaPetiole__x_y_x_y.png
       lamina_holes_mask: true           # Lamina_Holes_Mask/    <stem>__SEG-laminaHoles__x_y_x_y.png  (solid silhouette)
+      lamina_petiole_holes_mask: false  # LaminaPetiole_Holes_Mask/ (opt-in; ECT turns it on when it needs it)
       lamina_rgb: true                  # Lamina_RGB/           <stem>__RGB-lamina__x_y_x_y.jpg
       lamina_petiole_rgb: true          # LaminaPetiole_RGB/    <stem>__RGB-laminaPetiole__x_y_x_y.jpg
       lamina_holes_rgb: true            # Lamina_Holes_RGB/     <stem>__RGB-laminaHoles__x_y_x_y.jpg  (holes=(10,10,10))

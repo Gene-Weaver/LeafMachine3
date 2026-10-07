@@ -281,9 +281,22 @@ def test_every_setting_has_metadata(meta, leaf_paths):
 
 
 def test_no_metadata_for_settings_that_do_not_exist(meta, leaf_paths):
+    """Every documented setting must exist -- except ones explicitly marked ``"retired": true``.
+
+    A retired key keeps its entry on purpose: an older settings file that still carries it renders
+    a row that explains the retirement instead of a guessed label with no help text.
+    """
     known = set(leaf_paths)
-    stale = sorted(k for k in meta if k != "_sections" and k not in known)
+    stale = sorted(k for k, v in meta.items()
+                   if k != "_sections" and k not in known and not (isinstance(v, dict) and v.get("retired")))
     assert not stale, f"settings_meta.json documents settings that no longer exist: {stale}"
+
+
+def test_retired_settings_say_so_and_are_not_in_the_default_file(meta, leaf_paths):
+    retired = [k for k, v in meta.items() if isinstance(v, dict) and v.get("retired")]
+    for key in retired:
+        assert "retired" in meta[key]["label"].lower(), f"{key} is retired but its label does not say so"
+        assert key not in set(leaf_paths), f"{key} is retired but the default settings still set it"
 
 
 def test_every_setting_routes_to_a_section(sections, leaf_paths):
