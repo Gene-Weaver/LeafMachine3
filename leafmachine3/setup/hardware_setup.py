@@ -139,7 +139,7 @@ class Fingerprint:
     driver: str
     ort_version: str
     ort_providers: list
-    model_hashes: dict              # {stage_key: "sha256:..."} -> rerun if a model changed
+    model_hashes: dict              # {stage_key: "sha256:<content>"}; legacy "sig:size:mtime"
     lm3_version: str
 
 
@@ -377,11 +377,18 @@ def ensure_hardware_profile(cfg: Any) -> Path:
         run_setup(cfg, optimize=True)
     else:
         try:
-            if _load(hw_path).fingerprint != _fingerprint(cfg):
+            profile = _load(hw_path)
+            diffs, upgrades = compare_fingerprints(profile.fingerprint, _fingerprint(cfg), cfg)
+            if upgrades:
+                profile.fingerprint.model_hashes.update(upgrades)
+                _write(hw_path, profile)
+                log.info("hardware profile %s: recorded content hashes for %s (unchanged models; the "
+                         "profile predates content fingerprints)", hw_path, ", ".join(sorted(upgrades)))
+            if diffs:
                 log.warning(
-                    "hardware / driver / models changed since the last LM3_Setup -- this run uses the "
-                    "EXISTING profile at %s; rerun `python -m leafmachine3.setup` to re-tune when "
-                    "convenient", hw_path
+                    "changed since the last LM3_Setup: %s. This run uses the EXISTING profile at %s; "
+                    "rerun `python -m leafmachine3.setup` to re-tune when convenient",
+                    "; ".join(diffs), hw_path
                 )
         except Exception as exc:  # noqa: BLE001 - a malformed profile must not abort the run
             log.warning("could not read %s (%s) -- rebuilding profile", hw_path, exc)
@@ -436,9 +443,15 @@ def run_setup(
     fingerprint = _fingerprint(cfg)
     if hw_path.exists() and not force:
         try:
-            if _load(hw_path).fingerprint == fingerprint:
+            profile = _load(hw_path)
+            diffs, upgrades = compare_fingerprints(profile.fingerprint, fingerprint, cfg)
+            if not diffs:
+                if upgrades:
+                    profile.fingerprint.model_hashes.update(upgrades)
+                    _write(hw_path, profile)
                 log.info("%s is current -- nothing to do (use --force to redo)", hw_path)
                 return hw_path
+            log.info("re-tuning: %s", "; ".join(diffs))
         except Exception:  # noqa: BLE001 - fall through and rewrite a broken file
             pass
 
@@ -1039,34 +1052,114 @@ def _ort_signature() -> tuple[str, list]:
         return "", []
 
 
-def _model_hashes(cfg: Any) -> dict:
-    """Map each model-backed stage to a cheap signature of its artifact(s).
+#: Old profiles recorded each model as "sig:<size>:<mtime>". See compare_fingerprints.
+_LEGACY_SIG = "sig:"
 
-    Uses the config's own stage-artifact resolution and a size/mtime signature (a full
-    sha256 would slow setup for large exports and buys nothing over size+mtime here).
+
+def _stage_model_files(cfg: Any, key: str) -> list[Path]:
+    """The files a stage actually loads -- what its measured worker VRAM depends on.
+
+    A stage's settings name either a model file or, for the ruler ensemble, a directory; for the
+    directory this is the members' exported graphs, their metadata and the shared label map (the
+    same resolution the ensemble itself uses), not the directory inode, whose size and mtime say
+    nothing about the models inside it.
     """
-    hashes: dict[str, str] = {}
     try:
-        # ``Config._stage_artifacts`` is the same resolver used for settings hashing.
-        resolver = getattr(cfg, "_stage_artifacts", None)
-    except Exception:  # noqa: BLE001
-        resolver = None
-    from leafmachine3.core.config import CANONICAL_STAGE_KEYS
+        artifacts = cfg._stage_artifacts(key)
+    except Exception:  # noqa: BLE001 - a stage this config does not describe
+        return []
+    files: list[Path] = []
+    for artifact in artifacts:
+        path = Path(artifact)
+        if path.is_dir():
+            if key == "ruler_classifier":
+                from leafmachine3.inference.ruler_ensemble import ensemble_files  # noqa: PLC0415
 
+                members = _cfg_get(cfg.stage(key), "ensemble_members", None)
+                files += [Path(f) for f in ensemble_files(str(path), members)]
+            else:
+                files += sorted(f for f in path.iterdir() if f.is_file())
+        else:
+            files.append(path)
+    return files
+
+
+def _model_hashes(cfg: Any) -> dict:
+    """``{stage_key: "sha256:<digest>"}`` -- the CONTENT of the files each model-backed stage loads.
+
+    It used to be a size/mtime signature of one artifact. A model re-downloaded from the Hub is
+    byte-identical with a new mtime, so every fresh install was reported as "models changed"; a
+    stage with several files (the ruler ensemble) kept only the last; and a directory artifact
+    signed the directory inode. Content hashes are cached by stat signature (core/digest.py), so
+    only the first run after a model install pays for hashing.
+    """
+    from leafmachine3.core.config import CANONICAL_STAGE_KEYS  # noqa: PLC0415
+    from leafmachine3.core.digest import combined_digest  # noqa: PLC0415
+
+    hashes: dict[str, str] = {}
     for key in CANONICAL_STAGE_KEYS:
-        if resolver is None:
-            continue
-        try:
-            artifacts = resolver(key)
-        except Exception:  # noqa: BLE001
-            artifacts = []
-        for artifact in artifacts:
-            try:
-                st = Path(artifact).stat()
-            except OSError:
-                continue
-            hashes[key] = f"sig:{st.st_size}:{int(st.st_mtime)}"
+        files = _stage_model_files(cfg, key)
+        digest = combined_digest(files) if files else None
+        if digest:
+            hashes[key] = f"sha256:{digest}"
     return hashes
+
+
+def compare_fingerprints(stored: "Fingerprint", current: "Fingerprint",
+                         cfg: Any = None) -> tuple[list[str], dict[str, str]]:
+    """``(differences, upgrades)`` between a profile's fingerprint and this machine's.
+
+    ``differences`` is one readable line per field or stage that changed -- what the stale-profile
+    warning prints, so it can say WHAT changed instead of "hardware / driver / models".
+    ``upgrades`` maps stages whose stored value is a legacy "sig:size:mtime" that still matches by
+    SIZE to their content hash: the old comparison was size + mtime, and mtime is exactly the part
+    that made it cry wolf, so those entries are unchanged models recorded in the old format and can
+    be rewritten as content hashes. A legacy entry whose size differs stays a difference.
+    """
+    diffs: list[str] = []
+    for name in ("os", "cpu", "cpu_cores", "ram_gb", "gpus", "driver", "ort_version", "ort_providers",
+                 "lm3_version"):
+        a, b = getattr(stored, name), getattr(current, name)
+        if a != b:
+            diffs.append(f"{name}: {a} -> {b}")
+    upgrades: dict[str, str] = {}
+    s_models, c_models = stored.model_hashes or {}, current.model_hashes or {}
+    for key in sorted(set(s_models) | set(c_models)):
+        old, new = s_models.get(key), c_models.get(key)
+        if old == new:
+            continue
+        if old is None:
+            diffs.append(f"model {key}: added")
+        elif new is None:
+            diffs.append(f"model {key}: removed")
+        elif str(old).startswith(_LEGACY_SIG):
+            old_size = _legacy_size(old)
+            now_size = _legacy_artifact_size(cfg, key)
+            if old_size is not None and old_size == now_size:
+                upgrades[key] = new
+            else:
+                diffs.append(f"model {key}: changed (size {old_size} -> {now_size} bytes)")
+        else:
+            diffs.append(f"model {key}: changed (content differs)")
+    return diffs, upgrades
+
+
+def _legacy_size(sig: str) -> int | None:
+    try:
+        return int(str(sig).split(":")[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def _legacy_artifact_size(cfg: Any, key: str) -> int | None:
+    """What the OLD signature measured: st_size of the stage's last artifact (file or directory)."""
+    if cfg is None:
+        return None
+    try:
+        artifacts = cfg._stage_artifacts(key)
+        return Path(artifacts[-1]).stat().st_size if artifacts else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _chosen_gpu_indices(cfg: Any) -> list[int]:

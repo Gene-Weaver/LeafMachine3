@@ -61,6 +61,43 @@ def _renormalize(probs: np.ndarray) -> np.ndarray:
     return np.divide(probs, s, out=np.zeros_like(probs), where=s > 0)
 
 
+def resolve_members(members: Optional[Sequence[str]]) -> list[tuple[str, str]]:
+    """``[(vote key, member dir name), ...]`` in the fixed tie-break order (x224 first).
+
+    Maps optional config member-dir names onto that ordering. The ONE implementation: the ensemble
+    loads exactly these, and the hardware profile fingerprints exactly these (ensemble_files).
+    """
+    if not members:
+        return list(_DEFAULT_MEMBERS)
+    provided = {str(m): str(m) for m in members}
+    resolved: list[tuple[str, str]] = []
+    for key, default_dir in _DEFAULT_MEMBERS:
+        match = next(
+            (d for d in provided if d == default_dir
+             or (key.startswith("dino") and "dino" in d.lower())
+             or (key == "x224" and "26x" in d.lower())
+             or (key == "n224" and "26n" in d.lower())),
+            default_dir,
+        )
+        resolved.append((key, match))
+    return resolved
+
+
+def ensemble_files(models_dir: str, members: Optional[Sequence[str]] = None) -> list[str]:
+    """Every file the ensemble reads: each member's exported/model.onnx + metadata.json, and the
+    shared label map. What a change to the ensemble means, for the hardware profile."""
+    files = []
+    for _key, dir_name in resolve_members(members):
+        member = os.path.join(models_dir, dir_name)
+        files += [os.path.join(member, "exported", "model.onnx"), os.path.join(member, "metadata.json")]
+    for candidate in (os.path.join(models_dir, "splits", "label_map.json"),
+                      os.path.join(models_dir, "label_map.json")):
+        if os.path.isfile(candidate):
+            files.append(candidate)
+            break
+    return files
+
+
 def _load_label_map(models_dir: str) -> list[str]:
     """Load the shared ordered class list from the first label_map.json we can find."""
     candidates = [
@@ -217,23 +254,7 @@ class RulerEnsemble:
 
     def _load(self, members: Optional[Sequence[str]]) -> None:
         self.classes = _load_label_map(self.models_dir)
-        # Map optional config member-dir names onto the fixed (key -> dir) ordering,
-        # keeping x224 first for tie-breaking.
-        member_map = list(_DEFAULT_MEMBERS)
-        if members:
-            provided = {str(m): str(m) for m in members}
-            resolved: list[tuple[str, str]] = []
-            for key, default_dir in _DEFAULT_MEMBERS:
-                match = next(
-                    (d for d in provided if d == default_dir
-                     or (key.startswith("dino") and "dino" in d.lower())
-                     or (key == "x224" and "26x" in d.lower())
-                     or (key == "n224" and "26n" in d.lower())),
-                    default_dir,
-                )
-                resolved.append((key, match))
-            member_map = resolved
-        for key, dir_name in member_map:
+        for key, dir_name in resolve_members(members):
             self._members[key] = _Member(
                 os.path.join(self.models_dir, dir_name), self.providers, self.classes
             )
