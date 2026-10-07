@@ -110,6 +110,9 @@ def machine3(
         dirs = build_dirs(cfg)                       # working set, _tmp, crops, reports, logs, db
         start_logging(dirs, cfg)
         log.info("LM3 start | out=%s | restart=%s", dirs.root, cfg.restart)
+        for key, why in cfg.retired_settings():      # once per run, not once per specimen
+            log.warning("settings: %s is no longer used (%s); remove it from %s", key, why,
+                        getattr(cfg, "source_path", "your settings file"))
 
         # Section 3.4, and it has to be here: build_dirs() has just settled ``tmp`` (only a
         # successful mkdir decides it), start_logging() has opened the log the manifest sits beside,

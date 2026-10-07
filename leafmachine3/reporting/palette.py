@@ -20,10 +20,6 @@ RGB = tuple[int, int, int]
 # Overlay keys removed in the move to per-group (leaf/plant/archival) border+fill styling. An old
 # config that still sets these is warned about once at load, since the behavior now lives under
 # report.overlay.groups and the old keys would otherwise be silently ignored.
-_REMOVED_OVERLAY_KEYS = (
-    "draw_boxes_archival", "draw_boxes_plant", "line_width_archival", "line_width_plant",
-)
-
 # -- built-in fallback defaults (verbatim LeafMachine2 palette) --------------------
 ARCHIVAL: dict[str, RGB] = {
     "Ruler": (255, 0, 70), "Barcode": (0, 137, 65), "Colorcard": (242, 255, 0),
@@ -135,13 +131,8 @@ class OverlayStyle:
     def from_config(cls, cfg) -> "OverlayStyle":
         """Build from a parsed config's ``report.overlay`` mapping (dict-like or dot-access)."""
         ov = _get(cfg, "report", "overlay") or {}
-        stale = [k for k in _REMOVED_OVERLAY_KEYS if _getk(ov, k, None) is not None]
-        if stale:
-            log.warning(
-                "report.overlay keys %s are no longer used; box border/fill is now configured "
-                "per-group under report.overlay.groups (leaf / plant / archival). Ignoring them.",
-                stale,
-            )
+        # Retired overlay keys (draw_boxes_*, line_width_*) are ignored; machine3 warns once per run
+        # (core.config.RETIRED_SETTINGS).
         classes: dict[str, tuple[RGB, bool]] = {
             name: (rgb, True) for name, rgb in _DEFAULTS.items()   # start from LM2 defaults
         }

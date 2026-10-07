@@ -323,6 +323,19 @@ def builtin_defaults() -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Config
 # --------------------------------------------------------------------------- #
+
+#: Settings LM3 no longer reads, and why. A file that still carries one is warned ONCE per run, by
+#: machine3, naming the key and the file -- not at every use (the Reporter used to warn once per
+#: specimen) and not inside Config.load(), which the server calls on every settings request.
+RETIRED_SETTINGS: dict[str, str] = {
+    "project.output.keep_tmp": "_tmp_original holds the downsampled copies the Reporter reads, so it is never deleted",
+    "report.crops.source": "crops are always cut from the working image, the frame every measurement is made in",
+    "report.overlay.draw_boxes_archival": "box border/fill is configured per group under report.overlay.groups",
+    "report.overlay.draw_boxes_plant": "box border/fill is configured per group under report.overlay.groups",
+    "report.overlay.line_width_archival": "line widths are configured per group under report.overlay.groups",
+    "report.overlay.line_width_plant": "line widths are configured per group under report.overlay.groups",
+}
+
 class Config:
     """The merged, validated LeafMachine3 configuration."""
 
@@ -603,6 +616,19 @@ class Config:
                 continue
             hasher.update(f"|{artifact}:{st.st_size}:{int(st.st_mtime)}".encode("utf-8"))
         return hasher.hexdigest()
+
+    def retired_settings(self) -> list[tuple[str, str]]:
+        """``[(dotted key, why)]`` for every :data:`RETIRED_SETTINGS` key this file still sets. Pure."""
+        found = []
+        for dotted, why in RETIRED_SETTINGS.items():
+            node: Any = self._raw
+            for part in dotted.split("."):
+                node = node.get(part) if hasattr(node, "get") else None
+                if node is None:
+                    break
+            if node is not None:
+                found.append((dotted, why))
+        return found
 
     def _stage_artifacts(self, key: str) -> list[str]:
         """Resolved model file(s) / dir referenced by a stage (for hashing)."""
