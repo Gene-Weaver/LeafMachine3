@@ -13,7 +13,7 @@
   section 13. The training stacks stay in their own environments per `DEPLOYMENT_PLAN.md` section 5.
 - **Implementation state (2026-10-07):** Phases A and B are DONE on branch `packaging-uv-doctor`,
   which also carries the consolidated runtime / GUI / Electron / data-export work and the specimen
-  model keys. Not merged to `master`. The patched ONNX exports are published and pinned (section
+  model keys. Merged to `main` on 2026-10-07. The patched ONNX exports are published and pinned (section
   14). Phase C (INSTALL.md, deleting requirements/, uv-based CI) is next.
 - **Goal:** zero wiggle room. A user who follows the instructions for their platform gets the exact
   environment the release was tested with, or an explicit failure during installation that names the
