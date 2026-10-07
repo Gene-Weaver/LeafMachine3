@@ -113,6 +113,36 @@ def test_settings_hash_changes_with_config(tmp_path: Path) -> None:
     assert cfg_a.stage_settings_hash("leaf_segmenter") == hash_a  # stable / deterministic
 
 
+def _reporter_hash(tmp_path: Path, report: dict) -> str:
+    return Config.load(
+        _write(tmp_path, {"modules": {"reporter": {"enabled": True}}, "report": report})
+    ).stage_settings_hash("reporter")
+
+
+def test_reporter_settings_hash_covers_the_report_block(tmp_path: Path) -> None:
+    """``modules.reporter`` holds only ``enabled`` -- every real knob lives under ``report``.
+
+    Hashing the module block alone made all of them invisible to drift detection: switching an
+    export on for a finished run left the stage ``done``, so the Reporter never re-ran and the new
+    folder simply never appeared, with nothing logged and no error raised.
+    """
+    off = {"masks": {"Binary_Masks__Specimen_Inverse": False}}
+    on = {"masks": {"Binary_Masks__Specimen_Inverse": True}}
+    assert _reporter_hash(tmp_path, off) != _reporter_hash(tmp_path, on)
+    assert _reporter_hash(tmp_path, on) == _reporter_hash(tmp_path, on)     # deterministic
+    # a non-toggle knob counts too: the pixels change, so the written files are stale either way
+    assert (_reporter_hash(tmp_path, {"masks": {"inverse_fill": "white"}})
+            != _reporter_hash(tmp_path, {"masks": {"inverse_fill": [255, 0, 0]}}))
+
+
+def test_report_block_does_not_leak_into_other_stages(tmp_path: Path) -> None:
+    """Only the Reporter opts in; a report edit must not invalidate the inference stages."""
+    mods = {"modules": {"leaf_segmenter": {"enabled": True, "conf": 0.3}}}
+    a = Config.load(_write(tmp_path, {**mods, "report": {"masks": {"inverse_fill": "white"}}}))
+    b = Config.load(_write(tmp_path, {**mods, "report": {"masks": {"inverse_fill": "black"}}}))
+    assert a.stage_settings_hash("leaf_segmenter") == b.stage_settings_hash("leaf_segmenter")
+
+
 def test_resolve_path_absolutizes(tmp_path: Path) -> None:
     cfg = Config.load(_write(tmp_path, {"compute": {"mock": True}}))
     assert Path(cfg.resolve_path("/etc/hosts")).is_absolute()

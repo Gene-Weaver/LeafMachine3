@@ -1,21 +1,25 @@
 # LeafMachine3 runtime — CPU only (any platform, no NVIDIA GPU).
-# Same package versions as the GPU pin, with the CPU torch build + plain onnxruntime (CPUExecutionProvider).
+# Same package versions as the GPU pin with plain onnxruntime (CPUExecutionProvider).
 # Set compute.devices: "cpu" (or run on a host with no GPU) in LM3_settings.yaml; inference is slow.
-# Derived from the tested GPU combo — versions cross-platform except the torch build.
+# No torch, no ultralytics (see requirements-gpu.txt).
 #
 #   python -m venv .venv_LM3_cpu
 #   .venv_LM3_cpu/bin/pip install -U pip wheel setuptools
 #   .venv_LM3_cpu/bin/pip install -r requirements/requirements-cpu.txt
---extra-index-url https://download.pytorch.org/whl/cpu
 
 numpy==2.4.4
 opencv-python-headless==5.0.0.93
 pillow==12.2.0
 PyYAML==6.0.3
+scipy==1.17.1
+psutil==7.2.2
+shapely==2.1.2                     # ECT outline simplification (main pipeline, not just postprocessing)
 
 onnxruntime==1.20.1                # CPU build
-torch==2.6.0+cpu
-torchvision==0.21.0+cpu
-ultralytics==8.4.107
 
 -e .
+
+# ECT stage (Euler Characteristic Transform per oriented leaf)
+ect==1.3.0
+h5py==3.16.0
+matplotlib==3.11.1

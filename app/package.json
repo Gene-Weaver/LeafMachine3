@@ -1,0 +1,25 @@
+{
+  "name": "lm3-desktop",
+  "version": "3.0.0",
+  "description": "LeafMachine3 desktop app -- an Electron shell around the local LM3 server UI.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:nosandbox": "electron . --no-sandbox",
+    "pack": "electron-builder --dir --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:mac:unsigned": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac -c.mac.hardenedRuntime=false -c.mac.notarize=false --publish never",
+    "dist:all": "electron-builder --linux --win --mac --publish never",
+    "validate:config": "electron-builder --linux --win --mac --dir --publish never"
+  },
+  "author": "LeafMachine3",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "43.4.1",
+    "electron-builder": "26.15.3"
+  },
+  "homepage": "https://github.com/Gene-Weaver/LeafMachine3",
+  "desktopName": "leafmachine3.desktop"
+}

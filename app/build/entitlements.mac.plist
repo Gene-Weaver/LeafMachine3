@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Chromium's V8 writes and then executes JIT pages. Without these three the renderer
+         crashes immediately under the hardened runtime. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- main.js spawns the LM3 server as a child process with a modified environment
+         (LM3_SERVER_TOKEN, LM3_OWNER_PID). The hardened runtime strips DYLD_* and refuses
+         environment-carrying exec without this. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!-- The Python interpreter and the many .so/.dylib files under the LM3 virtualenv are not
+         signed by this team. Library validation would refuse to load them into the child. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Loopback HTTP to the LM3 server (client) and the server itself when this shell owns it
+         (server). Only enforced under the App Sandbox, which this app does not use; kept so the
+         intent is explicit and so a future sandboxed build does not silently lose networking. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- Users point LM3 at image directories anywhere on disk. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

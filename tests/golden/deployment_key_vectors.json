@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "purpose": "Contract artifact shared by leafmachine3.core.paths.canonical_deployment_key and the Electron single-instance key. Both implementations MUST reproduce every 'canonical' value byte for byte; a disagreement produces a directory/lock mismatch that no later test can catch.",
+  "algorithm": "canonical = ascii_slug(raw)[:32] + '-' + sha256(raw utf-8 bytes).hexdigest()[:8]; ascii_slug maps ASCII A-Z to lowercase by adding 0x20, keeps ASCII a-z and 0-9, turns EVERYTHING else (every non-ASCII code point included) into '-', collapses runs of '-', then strips leading and trailing '-'. Never casefold(), never NFKC.",
+  "notes": [
+    "raw=null means LM3_DEPLOYMENT_ID is unset, which is the raw literal 'default'.",
+    "An empty slug keeps the literal separator, so the canonical value starts with '-'.",
+    "rejected_by_env vectors are still canonicalized here; the startup check is separate.",
+    "'slug' is the UNTRUNCATED ascii_slug output; the canonical value uses slug[:32]."
+  ],
+  "vectors": [
+    {
+      "name": "unset",
+      "raw": null,
+      "effective_raw": "default",
+      "slug": "default",
+      "canonical": "default-37a8eec1",
+      "rejected_by_env": false,
+      "note": "LM3_DEPLOYMENT_ID unset means the raw literal 'default'. Nothing else."
+    },
+    {
+      "name": "default",
+      "raw": "default",
+      "effective_raw": "default",
+      "slug": "default",
+      "canonical": "default-37a8eec1",
+      "rejected_by_env": false,
+      "note": "Setting it explicitly is identical to leaving it unset, port included."
+    },
+    {
+      "name": "gpu0",
+      "raw": "gpu0",
+      "effective_raw": "gpu0",
+      "slug": "gpu0",
+      "canonical": "gpu0-8b938a01",
+      "rejected_by_env": false,
+      "note": "The documented two-GPU split from section 2.1."
+    },
+    {
+      "name": "gpu1",
+      "raw": "gpu1",
+      "effective_raw": "gpu1",
+      "slug": "gpu1",
+      "canonical": "gpu1-aee77262",
+      "rejected_by_env": false,
+      "note": "Its partner; the two must not collide."
+    },
+    {
+      "name": "uppercase",
+      "raw": "GPU0",
+      "effective_raw": "GPU0",
+      "slug": "gpu0",
+      "canonical": "gpu0-67691332",
+      "rejected_by_env": false,
+      "note": "ASCII A-Z lowercased by adding 0x20 -- slug matches gpu0, hash does not."
+    },
+    {
+      "name": "mixed_case_words",
+      "raw": "Lab Bench 2",
+      "effective_raw": "Lab Bench 2",
+      "slug": "lab-bench-2",
+      "canonical": "lab-bench-2-7791367d",
+      "rejected_by_env": false,
+      "note": "Spaces become '-' and runs collapse."
+    },
+    {
+      "name": "path_separator_posix",
+      "raw": "a/b",
+      "effective_raw": "a/b",
+      "slug": "a-b",
+      "canonical": "a-b-c14cddc0",
+      "rejected_by_env": false,
+      "note": "A '/' must never reach the filesystem as a path component."
+    },
+    {
+      "name": "path_separator_windows",
+      "raw": "a\\b",
+      "effective_raw": "a\\b",
+      "slug": "a-b",
+      "canonical": "a-b-c62016d0",
+      "rejected_by_env": false,
+      "note": "A backslash is separator-equivalent on Windows."
+    },
+    {
+      "name": "dot_dot",
+      "raw": "..",
+      "effective_raw": "..",
+      "slug": "",
+      "canonical": "-5ec1f7e7",
+      "rejected_by_env": false,
+      "note": "Slugs to empty, so the literal formula yields '-<hash8>'."
+    },
+    {
+      "name": "traversal",
+      "raw": "../../etc/passwd",
+      "effective_raw": "../../etc/passwd",
+      "slug": "etc-passwd",
+      "canonical": "etc-passwd-3754d6cb",
+      "rejected_by_env": false,
+      "note": "Traversal is neutralized by the slug and pinned by the hash."
+    },
+    {
+      "name": "leading_trailing_separators",
+      "raw": "--gpu0--",
+      "effective_raw": "--gpu0--",
+      "slug": "gpu0",
+      "canonical": "gpu0-919d0cce",
+      "rejected_by_env": false,
+      "note": "Leading/trailing '-' are stripped after collapsing."
+    },
+    {
+      "name": "colon_and_pipe",
+      "raw": "gpu:0|1",
+      "effective_raw": "gpu:0|1",
+      "slug": "gpu-0-1",
+      "canonical": "gpu-0-1-00cac8de",
+      "rejected_by_env": false,
+      "note": "Every other ASCII punctuation becomes '-'."
+    },
+    {
+      "name": "unicode_sharp_s",
+      "raw": "ß",
+      "effective_raw": "ß",
+      "slug": "",
+      "canonical": "-cd3a7e92",
+      "rejected_by_env": false,
+      "note": "casefold('ß') == 'ss' but toLowerCase is 'ß'; every non-ASCII byte becomes '-'."
+    },
+    {
+      "name": "unicode_sharp_s_word",
+      "raw": "Straße",
+      "effective_raw": "Straße",
+      "slug": "stra-e",
+      "canonical": "stra-e-58a3778c",
+      "rejected_by_env": false,
+      "note": "The exact case that rules casefold() out for cross-language use."
+    },
+    {
+      "name": "unicode_cjk",
+      "raw": "实验室",
+      "effective_raw": "实验室",
+      "slug": "",
+      "canonical": "-ba8681d2",
+      "rejected_by_env": false,
+      "note": "CJK is non-ASCII, so the slug is empty and the hash separates it."
+    },
+    {
+      "name": "unicode_emoji",
+      "raw": "gpu😀",
+      "effective_raw": "gpu😀",
+      "slug": "gpu",
+      "canonical": "gpu-c3be3891",
+      "rejected_by_env": false,
+      "note": "Astral-plane input: Python iterates code points, JS must iterate the same."
+    },
+    {
+      "name": "unicode_lookalike",
+      "raw": "gpuа",
+      "effective_raw": "gpuа",
+      "slug": "gpu",
+      "canonical": "gpu-c633c55f",
+      "rejected_by_env": false,
+      "note": "Cyrillic 'a' looks like ASCII 'a' but is a different namespace."
+    },
+    {
+      "name": "over_length",
+      "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "effective_raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "canonical": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-e33cdf9c",
+      "rejected_by_env": false,
+      "note": "Slug truncated to 32 characters; the hash still covers all 40."
+    },
+    {
+      "name": "over_length_distinct",
+      "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "effective_raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "canonical": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-c0f8bd4d",
+      "rejected_by_env": false,
+      "note": "Truncation must not merge two different raw values."
+    },
+    {
+      "name": "over_length_mixed",
+      "raw": "deployment-for-the-really-long-lab-bench-name-42",
+      "effective_raw": "deployment-for-the-really-long-lab-bench-name-42",
+      "slug": "deployment-for-the-really-long-lab-bench-name-42",
+      "canonical": "deployment-for-the-really-long-l-0e9381e9",
+      "rejected_by_env": false,
+      "note": "A realistic over-length name."
+    },
+    {
+      "name": "empty",
+      "raw": "",
+      "effective_raw": "",
+      "slug": "",
+      "canonical": "-e3b0c442",
+      "rejected_by_env": true,
+      "note": "Rejected by raw_deployment_id() at startup; the pure canonicalization is still pinned."
+    },
+    {
+      "name": "whitespace_only",
+      "raw": "   ",
+      "effective_raw": "   ",
+      "slug": "",
+      "canonical": "-0aad7da7",
+      "rejected_by_env": true,
+      "note": "Also rejected at startup, for the same reason."
+    },
+    {
+      "name": "slug_empty",
+      "raw": "///",
+      "effective_raw": "///",
+      "slug": "",
+      "canonical": "-732c4e97",
+      "rejected_by_env": false,
+      "note": "Not whitespace, so it is accepted; it slugs to empty and keeps the leading '-'."
+    }
+  ]
+}

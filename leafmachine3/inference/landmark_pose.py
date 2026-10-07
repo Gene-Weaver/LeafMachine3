@@ -1,6 +1,6 @@
 """Leaf-landmark pose inference (yolo26x-pose, 31-kpt mid15_pet5).
 
-Wraps the exported pose model via Ultralytics AutoBackend. The model is trained on leaf crops
+Wraps the exported pose model via ``ultra_rep`` (pure onnxruntime). The model is trained on leaf crops
 with a WHITE_PAD_FRAC white border, so ``predict`` re-adds that border, runs inference, then
 subtracts the offset → keypoints come back in the INPUT crop's pixel frame (as if the padding
 were never added). Feed it a plant-detector leaf crop, NOT a raw herbarium sheet.
@@ -19,13 +19,13 @@ class LeafLandmarkPose:
     """Exported yolo26x-pose backend that returns per-leaf named keypoints (crop frame)."""
 
     def __init__(self, model_path, conf: float = 0.25, iou: float = 0.45, imgsz=640,
-                 device=None, white_pad: float = WHITE_PAD_FRAC):
-        from ultralytics import YOLO
+                 device=None, white_pad: float = WHITE_PAD_FRAC, providers=None):
+        from leafmachine3.inference import ultra_replacements as ultra_rep
 
         self.model_path = str(model_path)
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"landmark pose model not found: {self.model_path}")
-        self.model = YOLO(self.model_path, task="pose")
+        self.model = ultra_rep.YOLO(self.model_path, task="pose", providers=providers)
         self.conf, self.iou, self.imgsz, self.device = conf, iou, imgsz, device
         self.white_pad = float(white_pad)
 
@@ -60,7 +60,7 @@ class LeafLandmarkPose:
         kp = getattr(res[0], "keypoints", None)
         if kp is None or kp.data is None:
             return []
-        data = kp.data.cpu().numpy()                      # (n_leaves, 31, 3): x, y, conf (padded frame)
+        data = np.asarray(kp.data)                        # (n_leaves, 31, 3): x, y, conf (padded frame)
         leaves = []
         for inst in data:
             leaf = {}

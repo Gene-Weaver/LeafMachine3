@@ -5,21 +5,34 @@
 #   .venv_LM3/bin/pip install -U pip wheel setuptools
 #   .venv_LM3/bin/pip install -r requirements/requirements-gpu.txt
 #
-# NOTE: pip's DEFAULT torch is now a CUDA-13 build (needs driver >= 580). Driver 560 tops out at
-# CUDA 12.6, so we pin the cu124 torch from the PyTorch index below. onnxruntime-gpu 1.20.1 is a
-# CUDA-12 / cuDNN-9 build; the executor puts the venv's bundled nvidia/*/lib on LD_LIBRARY_PATH so
-# ORT binds CUDAExecutionProvider (compute.onnxruntime.ld_library_path: auto).
---extra-index-url https://download.pytorch.org/whl/cu124
+# No torch, no ultralytics: every model is an exported end2end ONNX graph driven by onnxruntime
+# through leafmachine3.inference.ultra_replacements. The CUDA 12 runtime libraries the
+# onnxruntime-gpu CUDA provider dlopens (cuBLAS/cuBLASLt, cudart, cuDNN 9, cuFFT, cuRAND, NVRTC)
+# come from the nvidia-* wheels below; machine3 puts their lib/ dirs on LD_LIBRARY_PATH before
+# workers spawn (compute.onnxruntime.ld_library_path: auto). Driver >= 525.60.13 (Linux) /
+# 528.33 (Windows) is the only system requirement.
+# onnxruntime-gpu is capped below 1.21: 1.28+ is a CUDA-13 build (needs driver >= 580).
 
 numpy==2.4.4
-opencv-python-headless==5.0.0.93   # ultralytics also pulls opencv-python; both provide cv2 (harmless)
+opencv-python-headless==5.0.0.93
 pillow==12.2.0
 PyYAML==6.0.3
+scipy==1.17.1
+psutil==7.2.2
+shapely==2.1.2                     # ECT outline simplification (main pipeline, not just postprocessing)
 
-onnxruntime-gpu==1.20.1            # CUDA 12 / cuDNN 9 build (NOT the default cu13 1.28)
-pynvml==13.0.1                     # GPU probe + VRAM planning
-torch==2.6.0+cu124
-torchvision==0.21.0+cu124
-ultralytics==8.4.107              # YOLO() AutoBackend drives the .onnx / .pt detector + seg + pose
+onnxruntime-gpu==1.20.2            # CUDA 12 / cuDNN 9 build (NOT the default cu13 1.28)
+pynvml==13.0.1                     # GPU probe + VRAM planning (shim over nvidia-ml-py)
+nvidia-cuda-runtime-cu12==12.4.127
+nvidia-cuda-nvrtc-cu12==12.4.127
+nvidia-cublas-cu12==12.4.5.8
+nvidia-cudnn-cu12==9.1.0.70
+nvidia-cufft-cu12==11.2.1.3
+nvidia-curand-cu12==10.3.5.147
 
 -e .                               # the leafmachine3 package itself (editable)
+
+# ECT stage (Euler Characteristic Transform per oriented leaf)
+ect==1.3.0
+h5py==3.16.0
+matplotlib==3.11.1

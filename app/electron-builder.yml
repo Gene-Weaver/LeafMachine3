@@ -1,0 +1,165 @@
+# electron-builder configuration for the LeafMachine3 desktop shell.
+#
+# See app/ELECTRON_PACKAGING.md for what has and has not been exercised. Short version:
+# the Linux targets were built and smoke-tested on the Ubuntu 22.04 host this file was written
+# on; the Windows and macOS stanzas below were schema-validated only and have never been run.
+#
+# This packages the SHELL (main.js + preload.js), not the LM3 Python runtime. The shell locates
+# a Python interpreter at run time; see "Packaged layout" in ELECTRON_PACKAGING.md.
+
+appId: org.leafmachine.lm3
+productName: LeafMachine3
+copyright: Copyright (c) 2026 LeafMachine3
+
+directories:
+  buildResources: build
+  output: dist
+
+# Everything the shell needs at run time, and nothing else. There are zero production
+# dependencies, so node_modules (electron + electron-builder, both devDependencies) is not
+# copied into the bundle.
+files:
+  - main.js
+  - preload.js
+  - package.json
+
+asar: true
+compression: normal
+# No native modules anywhere in the tree; skipping the rebuild saves a pointless node-gyp pass.
+npmRebuild: false
+# Artifact names must stay filesystem-safe on all three platforms; productName has no spaces.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+# ----------------------------------------------------------------------------------------------
+# Linux -- BUILT AND SMOKE-TESTED on this host.
+# ----------------------------------------------------------------------------------------------
+linux:
+  icon: build/icon.png
+  executableName: leafmachine3
+  category: Science
+  synopsis: LeafMachine3 desktop shell
+  description: >-
+    Desktop shell around the local LeafMachine3 server UI. Starts (or attaches to) an LM3 server
+    on the loopback interface and opens a window on its web interface.
+  maintainer: LeafMachine3 <willwe@umich.edu>
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  # Without desktopName + syncDesktopName the running window's WM_CLASS does not match the
+  # .desktop file, so GNOME/KDE show a generic icon in the dock instead of grouping the window
+  # under the installed app. electron-builder warns about exactly this.
+  syncDesktopName: true
+  # Name/Comment/Categories/StartupWMClass in the generated .desktop file all come from
+  # productName / description / category / desktopName above; only extra keys go here.
+  desktop:
+    entry:
+      Keywords: herbarium;leaf;specimen;morphology;
+
+appImage:
+  # AppImage runs the whole app read-only out of a squashfs mount; nothing in main.js writes
+  # inside the bundle, so this needs no extra configuration.
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+deb:
+  # Chromium's own runtime deps. electron-builder derives most of these, but pinning the list
+  # means a missing library shows up at `dpkg -i` time rather than as a blank window.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+  priority: optional
+
+# ----------------------------------------------------------------------------------------------
+# Windows -- NEVER BUILT. Schema-validated only. See ELECTRON_PACKAGING.md.
+# ----------------------------------------------------------------------------------------------
+win:
+  icon: build/icon.png
+  # arm64 is included because Electron 43 still ships a Windows arm64 build (44 dropped ia32,
+  # not arm64). Drop it from the array if you do not want to ship it.
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+    - target: portable
+      arch: [x64]
+  # No code-signing configuration is present. An unsigned installer raises a SmartScreen
+  # "unrecognized app" prompt. To sign, add a `signtoolOptions` block (certificateFile /
+  # certificatePassword, or certificateSubjectName for a hardware token) or `azureSignOptions`
+  # for Azure Trusted Signing. electron-builder 26 moved these out of the top level of `win`.
+
+nsis:
+  # A per-user install with a visible wizard. perMachine would need elevation, and the LM3
+  # server this shell talks to is a per-user process anyway.
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LeafMachine3
+  # Upgrades must not silently discard a user's LM3 settings; uninstall leaves them behind too.
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+
+portable:
+  # Single .exe, no installer, unpacks to a temp dir on each run. Useful on locked-down lab
+  # machines where users cannot install software.
+  artifactName: ${productName}-${version}-${arch}-portable.${ext}
+
+# ----------------------------------------------------------------------------------------------
+# macOS -- NEVER BUILT, NEVER SIGNED, NEVER NOTARIZED. Requires a real Mac with an Apple
+# Developer ID and credentials. See ELECTRON_PACKAGING.md.
+# ----------------------------------------------------------------------------------------------
+mac:
+  icon: build/icon.png
+  category: public.app-category.education
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  # Required for notarization since macOS 10.14.5. The entitlements below are what make a
+  # hardened-runtime Electron app that spawns an unsigned Python child actually work.
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  # `spctl --assess` during the build is noise; Gatekeeper is verified on a clean machine
+  # after notarization instead (see NATIVE_ACCEPTANCE_CHECKLIST.md).
+  gatekeeperAssess: false
+  # Notarization credentials come from the environment, never from this file:
+  #   APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID
+  # or an App Store Connect API key:
+  #   APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER
+  # A signed-but-unnotarized build will fail here rather than shipping something Gatekeeper
+  # blocks on the user's machine. Use `npm run dist:mac:unsigned` for a local dev build.
+  notarize: true
+  extendInfo:
+    NSHighResolutionCapable: true
+    # macOS 13+ prompts on the first loopback connection; without a usage string the prompt has
+    # no explanation and users deny it.
+    NSLocalNetworkUsageDescription: >-
+      LeafMachine3 connects to its own analysis server running on this computer.
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  contents:
+    - x: 130
+      y: 220
+      type: file
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Never auto-publish. Releases are uploaded deliberately.
+publish: null

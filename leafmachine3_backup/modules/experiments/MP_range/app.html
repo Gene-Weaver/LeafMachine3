@@ -1,0 +1,308 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>MP_range - label 1 cm</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f26; --line: #2c313b; --ink: #e6e9ef; --dim: #8b93a3;
+    --accent: #4fc3f7; --good: #6ee7a0; --warn: #ffb454; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 14px; padding: 8px 14px;
+           background: var(--panel); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+  h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  .sp { flex: 1; }
+  button { background: #262b34; color: var(--ink); border: 1px solid var(--line);
+           border-radius: 6px; padding: 5px 11px; font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { background: #313845; }
+  button:disabled { opacity: .38; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06232e; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #6fd0f9; }
+  #wrap { flex: 1; display: flex; min-height: 0; }
+  #stage { flex: 1; position: relative; overflow: hidden; background: #0d0f12; cursor: crosshair; }
+  canvas { position: absolute; inset: 0; }
+  #lens { position: absolute; top: 12px; right: 12px; width: 190px; height: 190px;
+          border: 1px solid var(--line); border-radius: 50%; pointer-events: none;
+          background: #000; display: none; box-shadow: 0 6px 24px #0009; }
+  aside { width: 260px; flex: 0 0 260px; background: var(--panel); border-left: 1px solid var(--line);
+          display: flex; flex-direction: column; min-height: 0; }
+  .pad { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+  .k { color: var(--dim); }
+  .v { font-variant-numeric: tabular-nums; }
+  .big { font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  ul { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+  li { padding: 5px 12px; border-bottom: 1px solid #22262e; cursor: pointer;
+       display: flex; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+  li:hover { background: #232833; }
+  li.on { background: #2b3543; box-shadow: inset 2px 0 0 var(--accent); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #3d434f; flex: 0 0 auto; }
+  .dot.done { background: var(--good); }
+  .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-size: 11px; }
+  .hint { color: var(--dim); font-size: 11px; }
+  kbd { background: #262b34; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 10px; }
+  .ok { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  #done { padding: 10px 12px; }
+</style>
+
+<header>
+  <h1>MP_range &middot; click two points exactly 1&nbsp;cm apart</h1>
+  <span class="sp"></span>
+  <span class="hint" id="prog"></span>
+  <button id="prev">&larr; Prev</button>
+  <button id="next">Next &rarr;</button>
+  <button id="undo">Undo point</button>
+  <button id="fit">Fit</button>
+  <button id="one">100%</button>
+</header>
+
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <canvas id="lens" width="190" height="190"></canvas>
+  </div>
+  <aside>
+    <div class="pad">
+      <div class="row"><span class="k">px per cm</span><span class="big" id="cf">&mdash;</span></div>
+      <div class="row"><span class="k">megapixels</span><span class="v" id="mp">&mdash;</span></div>
+      <div class="row"><span class="k">pixels</span><span class="v" id="dim">&mdash;</span></div>
+      <div class="row"><span class="k">zoom</span><span class="v" id="z">&mdash;</span></div>
+    </div>
+    <div class="pad">
+      <div class="row"><span class="k">implied sheet</span><span class="v" id="sheet">&mdash;</span></div>
+      <div class="hint" id="verdict">A herbarium sheet is about 28&ndash;32&nbsp;cm wide. If this
+        reads far off that, the two points are not 1&nbsp;cm apart.</div>
+    </div>
+    <div class="pad hint">
+      <kbd>wheel</kbd> zoom &middot; <kbd>drag</kbd> pan &middot; <kbd>click</kbd> place<br>
+      <kbd>n</kbd>/<kbd>p</kbd> next/prev &middot; <kbd>u</kbd> undo &middot; <kbd>f</kbd> fit &middot; <kbd>1</kbd> 100%
+    </div>
+    <ul id="list"></ul>
+    <div id="done"><button id="finish" class="primary" style="width:100%">Finished</button></div>
+  </aside>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const stage = $("#stage"), cv = $("#cv"), ctx = cv.getContext("2d");
+const lens = $("#lens"), lctx = lens.getContext("2d");
+const LENS_MAG = 8;
+
+let images = [], labels = {}, idx = 0;
+let img = null, view = { s: 1, x: 0, y: 0 };     // s = screen px per image px
+let points = [], drag = null, moved = false, cursor = null;
+
+// ---- geometry: image space <-> screen space ------------------------------------
+const toScreen = (p) => [p[0] * view.s + view.x, p[1] * view.s + view.y];
+const toImage  = (x, y) => [(x - view.x) / view.s, (y - view.y) / view.s];
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  cv.width = Math.round(r.width); cv.height = Math.round(r.height);
+  draw();
+}
+
+function fit() {
+  if (!img) return;
+  const s = Math.min(cv.width / img.width, cv.height / img.height) * 0.96;
+  view = { s, x: (cv.width - img.width * s) / 2, y: (cv.height - img.height * s) / 2 };
+  draw();
+}
+
+function zoomAt(cx, cy, factor) {
+  const [ix, iy] = toImage(cx, cy);
+  view.s = Math.max(0.01, Math.min(60, view.s * factor));
+  view.x = cx - ix * view.s;                      // keep the point under the cursor fixed
+  view.y = cy - iy * view.s;
+  draw();
+}
+
+// ---- drawing --------------------------------------------------------------------
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0d0f12";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  if (!img) return;
+  ctx.imageSmoothingEnabled = view.s < 1;          // crisp pixels once we are past 1:1
+  ctx.drawImage(img, view.x, view.y, img.width * view.s, img.height * view.s);
+
+  if (points.length === 2) {
+    const a = toScreen(points[0]), b = toScreen(points[1]);
+    ctx.strokeStyle = "#4fc3f7"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  }
+  points.forEach((p, i) => {
+    const [x, y] = toScreen(p);
+    ctx.strokeStyle = i ? "#6ee7a0" : "#ffb454"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, 6.2832); ctx.stroke();
+    ctx.beginPath();                                // crosshair to the exact pixel
+    ctx.moveTo(x - 12, y); ctx.lineTo(x - 2, y); ctx.moveTo(x + 2, y); ctx.lineTo(x + 12, y);
+    ctx.moveTo(x, y - 12); ctx.lineTo(x, y - 2); ctx.moveTo(x, y + 2); ctx.lineTo(x, y + 12);
+    ctx.stroke();
+  });
+  $("#z").textContent = (view.s * 100).toFixed(0) + "%";
+  drawLens();
+}
+
+function drawLens() {
+  if (!img || !cursor) { lens.style.display = "none"; return; }
+  lens.style.display = "block";
+  const [ix, iy] = toImage(cursor[0], cursor[1]);
+  const half = lens.width / (2 * LENS_MAG);
+  lctx.setTransform(1, 0, 0, 1, 0, 0);
+  lctx.fillStyle = "#000"; lctx.fillRect(0, 0, lens.width, lens.height);
+  lctx.imageSmoothingEnabled = false;
+  lctx.drawImage(img, ix - half, iy - half, 2 * half, 2 * half, 0, 0, lens.width, lens.height);
+  // placed points, mapped into the lens
+  points.forEach((p, i) => {
+    const lx = (p[0] - (ix - half)) * LENS_MAG, ly = (p[1] - (iy - half)) * LENS_MAG;
+    lctx.strokeStyle = i ? "#6ee7a0" : "#ffb454"; lctx.lineWidth = 2;
+    lctx.beginPath(); lctx.arc(lx, ly, 9, 0, 6.2832); lctx.stroke();
+  });
+  const c = lens.width / 2;
+  lctx.strokeStyle = "#ff3b3b"; lctx.lineWidth = 1;
+  lctx.beginPath();
+  lctx.moveTo(c - 14, c); lctx.lineTo(c - 3, c); lctx.moveTo(c + 3, c); lctx.lineTo(c + 14, c);
+  lctx.moveTo(c, c - 14); lctx.lineTo(c, c - 3); lctx.moveTo(c, c + 3); lctx.lineTo(c, c + 14);
+  lctx.stroke();
+}
+
+// ---- readout ---------------------------------------------------------------------
+function readout() {
+  const rec = images[idx];
+  $("#mp").textContent = rec ? rec.mp.toFixed(2) : "—";
+  $("#dim").textContent = rec ? `${rec.width} x ${rec.height}` : "—";
+  if (points.length !== 2) {
+    $("#cf").textContent = "—"; $("#sheet").textContent = "—";
+    $("#verdict").className = "hint";
+    $("#verdict").textContent = points.length === 1
+      ? "One point placed. Click the second, exactly 1 cm away."
+      : "Click the first point.";
+    return;
+  }
+  const d = Math.hypot(points[1][0] - points[0][0], points[1][1] - points[0][1]);
+  $("#cf").textContent = d.toFixed(1);
+  const wcm = rec.width / d, hcm = rec.height / d;
+  $("#sheet").textContent = `${wcm.toFixed(1)} x ${hcm.toFixed(1)} cm`;
+  const plausible = wcm > 20 && wcm < 45 && hcm > 25 && hcm < 60;
+  $("#verdict").className = "hint " + (plausible ? "ok" : "bad");
+  $("#verdict").textContent = plausible
+    ? "Plausible sheet size."
+    : "That is not a herbarium sheet — check the two points are 1 cm apart, not 1 inch or 10 cm.";
+}
+
+// ---- persistence ------------------------------------------------------------------
+async function save() {
+  const rec = images[idx];
+  if (!rec) return;
+  await fetch("/api/label", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: rec.name, points: points.length === 2 ? points : [] }),
+  });
+  if (points.length === 2) {
+    labels[rec.name] = { px_per_cm: Math.hypot(points[1][0] - points[0][0], points[1][1] - points[0][1]) };
+  } else {
+    delete labels[rec.name];
+  }
+  renderList();
+}
+
+function renderList() {
+  const ul = $("#list");
+  ul.innerHTML = "";
+  images.forEach((r, i) => {
+    const li = document.createElement("li");
+    li.className = i === idx ? "on" : "";
+    li.innerHTML = `<span class="dot ${labels[r.name] ? "done" : ""}"></span>` +
+                   `<span class="v">${r.mp.toFixed(1)}</span>` +
+                   `<span class="nm">${r.name}</span>`;
+    li.onclick = () => load(i);
+    ul.appendChild(li);
+  });
+  $("#prog").textContent = `${Object.keys(labels).length} / ${images.length} labeled`;
+  $("#prev").disabled = idx === 0;
+  $("#next").disabled = idx === images.length - 1;
+}
+
+function load(i) {
+  idx = Math.max(0, Math.min(images.length - 1, i));
+  const rec = images[idx];
+  points = (rec.points || []).slice();
+  img = new Image();
+  img.onload = () => { fit(); readout(); };
+  img.src = "/img/" + encodeURIComponent(rec.name);
+  renderList(); readout();
+}
+
+// ---- input --------------------------------------------------------------------------
+stage.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = stage.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.18 : 1 / 1.18);
+}, { passive: false });
+
+stage.addEventListener("mousedown", (e) => { drag = [e.clientX, e.clientY]; moved = false; });
+window.addEventListener("mousemove", (e) => {
+  const r = stage.getBoundingClientRect();
+  cursor = [e.clientX - r.left, e.clientY - r.top];
+  if (drag) {
+    const dx = e.clientX - drag[0], dy = e.clientY - drag[1];
+    if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+    view.x += dx; view.y += dy; drag = [e.clientX, e.clientY];
+  }
+  draw();
+});
+window.addEventListener("mouseup", (e) => {
+  const wasDrag = moved;
+  drag = null; moved = false;
+  if (wasDrag || !img) return;
+  if (!e.target.closest("#stage")) return;
+  const r = stage.getBoundingClientRect();
+  const p = toImage(e.clientX - r.left, e.clientY - r.top);
+  if (p[0] < 0 || p[1] < 0 || p[0] > img.width || p[1] > img.height) return;
+  if (points.length >= 2) points = [];            // a third click starts over
+  points.push([Math.round(p[0] * 100) / 100, Math.round(p[1] * 100) / 100]);
+  images[idx].points = points.slice();
+  draw(); readout(); save();
+});
+stage.addEventListener("mouseleave", () => { cursor = null; drawLens(); });
+
+$("#prev").onclick = () => load(idx - 1);
+$("#next").onclick = () => load(idx + 1);
+$("#fit").onclick = fit;
+$("#one").onclick = () => { const f = 1 / view.s; zoomAt(cv.width / 2, cv.height / 2, f); };
+$("#undo").onclick = () => { points.pop(); images[idx].points = points.slice(); draw(); readout(); save(); };
+$("#finish").onclick = async () => {
+  const n = Object.keys(labels).length;
+  if (n < images.length &&
+      !confirm(`${images.length - n} sheet(s) are still unlabeled. Finish anyway?`)) return;
+  await fetch("/api/finish", { method: "POST", headers: { "Content-Type": "application/json" },
+                               body: JSON.stringify({ finished: true }) });
+  $("#finish").textContent = `Finished — ${n} labeled. You can close this tab.`;
+  $("#finish").disabled = true;
+};
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "n") load(idx + 1);
+  else if (e.key === "p") load(idx - 1);
+  else if (e.key === "u") $("#undo").click();
+  else if (e.key === "f") fit();
+  else if (e.key === "1") $("#one").click();
+});
+window.addEventListener("resize", resize);
+
+(async function init() {
+  const st = await (await fetch("/api/state")).json();
+  images = st.images;
+  for (const [name, rec] of Object.entries(st.labels || {})) {
+    labels[name] = rec;
+    const im = images.find(r => r.name === name);
+    if (im) im.points = rec.points;
+  }
+  resize();
+  const firstUnlabeled = images.findIndex(r => !labels[r.name]);
+  load(firstUnlabeled === -1 ? 0 : firstUnlabeled);
+})();
+</script>

@@ -35,8 +35,10 @@ log = logging.getLogger("leafmachine3.config")
 # appear in ``project.run_mode.restart`` and the keys the ProjectDB seeds
 # ``project_status`` from. Kept in lockstep with ``leafmachine3.pipeline.STAGE_ORDER``.
 CANONICAL_STAGE_KEYS: tuple[str, ...] = (
+    "mp_conversion_factor",
     "archival_detector",
     "plant_detector",
+    "specimen_segmenter",
     "phenology_detector",
     "ruler_classifier",
     "ruler_cf",
@@ -46,13 +48,15 @@ CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "landmark_measurements",
     "leaf_orientation",
     "petiole_width",
+    "bilateral_symmetry",
     "metric_grounding",
     "reporter",
+    "ect",
 )
 
 # Stages that require an exported single-file model artifact when enabled.
-_MODEL_PATH_STAGES: tuple[str, ...] = ("archival_detector", "plant_detector", "leaf_segmenter",
-                                       "landmark_detector")
+_MODEL_PATH_STAGES: tuple[str, ...] = ("mp_conversion_factor", "archival_detector", "plant_detector",
+                                       "specimen_segmenter", "leaf_segmenter", "landmark_detector")
 
 _MISSING = object()
 
@@ -111,6 +115,32 @@ def _plain(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_plain(v) for v in value]
     return value
+
+
+def jsonable(value: Any) -> Any:
+    """Deterministic, JSON-safe projection of a config subtree.
+
+    Stronger than :func:`_plain` in the two ways the plan's launch manifest needs (section 3.4):
+    every mapping comes back with its keys in sorted order, and anything JSON cannot carry --
+    ``Path``, the ``datetime.date`` PyYAML produces for an unquoted ``2026-08-28``, an enum -- is
+    normalized to a string rather than exploding at dump time. Paths go through ``Path`` first so
+    ``runs/`` and ``runs`` cannot fingerprint differently.
+
+    Sorting here as well as at ``json.dumps(sort_keys=True)`` is deliberate: the DICT itself is then
+    already canonical, so a caller that embeds it in a larger structure, hashes ``repr``, or diffs
+    two dumps gets the same answer as the serializer does.
+    """
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(k): jsonable(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(v) for v in value]
+    if isinstance(value, os.PathLike):
+        return str(Path(value))
+    # Anything else (dates, enums, arbitrary objects an override smuggled in) is described, never
+    # dropped: a manifest that silently loses a key is worse than one carrying "2026-08-28".
+    return str(value)
 
 
 def _deep_merge(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
@@ -182,7 +212,14 @@ def builtin_defaults() -> dict[str, Any]:
                 "recursive": True,
                 "image_extensions": [".jpg", ".jpeg", ".png", ".tif", ".tiff"],
             },
-            "output": {"dir": "runs", "tmp_dir": "auto", "keep_tmp": False},
+            # No keep_tmp knob. It was declared for a cleanup that was never implemented, and under the
+            # working-frame contract it must never be: _tmp_original holds the DOWNSAMPLED copies, which
+            # are now the only pixels the Reporter reads. A switch promising to delete them is a footgun.
+            # ``auto``, not ``runs``: plan section 3.5. A relative default would follow rule 1 into
+            # <user-config>/lm3/<deployment>/, i.e. write run outputs into a hidden CONFIG dir.
+            # ``auto`` is <checkout>/runs in a dev checkout and <user-data>/lm3/<deployment>/runs
+            # when installed -- see paths.default_output_dir().
+            "output": {"dir": "auto", "tmp_dir": "auto"},
             "run_mode": {"overwrite": False, "restart": [], "fail_fast": False},
             "logging": {"level": "INFO", "to_file": True, "to_console": True},
         },
@@ -192,11 +229,25 @@ def builtin_defaults() -> dict[str, Any]:
             "mock": False,
             "io_workers": "auto",
             "force_reprobe": False,
+            # Dispatch the biggest WorkItems first so a stage does not finish waiting on one
+            # huge sheet while every other worker idles. Set False to restore raw DB order.
+            "longest_first": True,
             "vram": {
                 "safety_fraction": 0.90,
                 "reserve_mb": 1024,
                 "per_worker_mb": "auto",
-                "max_workers_per_gpu": 6,
+                # A safety rail, not a target: the real count comes from each card's live free
+                # VRAM divided by one worker's measured cost. Kept high enough that VRAM -- not
+                # this number -- is what limits a big card.
+                "max_workers_per_gpu": 16,
+                # OOM breathing room on a MEASURED per-worker figure. Calibration samples one
+                # image set on one card, so a bigger sheet can cost more than was seen; 1.15
+                # buys 15% slack before the allocator commits to a worker count.
+                "headroom_factor": 1.15,
+                # Workers that may warm-load a model at once. Loading strictly one at a time
+                # costs n x load_time of ramp, which makes a short module SLOWER the more
+                # workers it gets. 0 -> unbounded (all n load together).
+                "concurrent_warm_loads": 4,
             },
             "workers": {"default": "auto"},
             "onnxruntime": {
@@ -208,21 +259,35 @@ def builtin_defaults() -> dict[str, Any]:
         },
         "ingest": {"max_working_dim": 3200, "jpg_quality": 100},
         "modules": {
+            "mp_conversion_factor": {"enabled": True},
             "archival_detector": {"enabled": True},
             "plant_detector": {"enabled": True},
+            "specimen_segmenter": {"enabled": True},
             "phenology_detector": {"enabled": True},
             "ruler_classifier": {"enabled": True},
-            "ruler_cf": {"enabled": False},
+            "ruler_cf": {"enabled": True},   # lattice conversion-factor method
             "leaf_segmenter": {"enabled": True},
             "morphology": {"enabled": True},
             "landmark_detector": {"enabled": True},
             "landmark_measurements": {"enabled": True},
             "leaf_orientation": {"enabled": True},
             "petiole_width": {"enabled": True},
+            # Was absent, which made this the ONE stage that defaulted off:
+            # is_enabled() reads `bool(node and node.get("enabled", False))`, so a
+            # missing default is a disabled module. Every settings UI reads the
+            # merged tree and showed it as ON, so a config without this key ran
+            # 16 of 17 stages while reporting 17.
+            "bilateral_symmetry": {"enabled": True},
             "metric_grounding": {"enabled": True},
             "reporter": {"enabled": True},
+            "ect": {"enabled": True},
         },
-        "report": {},
+        # NB: no "report" key. An empty mapping is not a no-op here -- the settings
+        # form walks the merged tree and treats a childless dict as a LEAF, so
+        # `"report": {}` rendered as a free-text row holding "{}" on a fresh
+        # install. Config.report already returns an empty Section when the key is
+        # absent, so nothing needs the placeholder.
+        "timing": {"enabled": False, "sample_interval_s": 0.25},
     }
 
 
@@ -257,7 +322,11 @@ class Config:
         if overrides:
             merged = _deep_merge(merged, overrides)
 
-        return cls(merged)
+        cfg = cls(merged)
+        # Remember where this came from: the VRAM calibrator has to re-launch LM3 as a
+        # subprocess against a derived copy of this same file.
+        object.__setattr__(cfg, "source_path", str(file_path.resolve()))
+        return cfg
 
     # -- top-level nodes ---------------------------------------------------- #
     @property
@@ -284,6 +353,11 @@ class Config:
     def naming(self) -> Section:
         """Crop/mask filename settings (``bbox_prefix``/``seg_prefix``/``friendly_names``)."""
         return self._raw.get("naming", Section())
+
+    @property
+    def timing(self) -> Section:
+        """Run-timing profiler settings (``enabled`` -> reports/Timing/timing.{csv,html})."""
+        return self._raw.get("timing", Section())
 
     # -- stage access ------------------------------------------------------- #
     def stage(self, key: str) -> Section:
@@ -335,11 +409,36 @@ class Config:
 
     # -- path / worker helpers --------------------------------------------- #
     def resolve_path(self, p: str | os.PathLike[str]) -> str:
-        """Absolutize ``p``: expand ``~``; absolute paths pass through; else join CWD."""
+        """Absolutize ``p`` against the SETTINGS FILE that produced this config.
+
+        Plan section 3.5 rule 1: a relative path written in a YAML settings file resolves against the
+        directory containing that file -- never the process CWD. This one method is the seam: input
+        dirs (``core/ingest.py``), artifact validation (``core/validate.py``,
+        ``server/settings_api.py``), model and ``models_dir`` loading (``inference/factory.py``) and
+        the setup scratch probe (``setup/hardware_setup.py``) all route through it, so they cannot
+        drift apart again.
+
+        It used to join ``Path.cwd()``. That made the same YAML mean different files depending on
+        where the launcher happened to be standing, and once Step 1 moved settings resolution to a
+        canonical path it also made ``build_dirs()`` and ``runtime.config_io.resolve_run_paths()``
+        disagree about the run directory inside a single process.
+
+        A relative path with no known settings file raises: rule 6 forbids inventing a base.
+        """
         path = Path(str(p)).expanduser()
         if path.is_absolute():
             return str(path)
-        return str(Path.cwd() / path)
+        source = getattr(self, "source_path", None)
+        if not source:
+            raise ValueError(
+                f"cannot resolve the relative path {str(p)!r}: this Config has no source_path, and "
+                f"LM3 never joins a configured path onto the current working directory "
+                f"(plan section 3.5 rule 6). Load the config with Config.load() or pass an absolute path."
+            )
+        base = Path(source).resolve().parent
+        # normpath, not resolve(): collapse ".." lexically so a migrated "../models/x.onnx" comes
+        # back as a clean absolute path, without following symlinks or requiring the file to exist.
+        return os.path.normpath(str(base / path))
 
     def io_workers(self) -> int:
         """Resolve the ingest / CPU-stage worker count (``auto`` -> tuned or cpu_count-2)."""
@@ -378,26 +477,22 @@ class Config:
             return out
         return []
 
-    def probe_vram_mb(self, stage: Any) -> int:
-        """Best-effort per-worker VRAM budget (MB) for ``stage``.
+    def probe_vram_mb(self, stage: Any) -> int | None:
+        """An EXPLICIT per-worker VRAM override (MB) for ``stage``, or ``None``.
 
-        Prefers an explicit ``compute.vram.per_worker_mb``; otherwise falls back
-        to the tuned profile's measured ``peak_vram_mb`` for the stage, then a
-        conservative default. Used by the executor only when no tuned plan is
-        available and a live probe is not performed.
+        This is only the user's ``compute.vram.per_worker_mb``, taken verbatim -- an escape
+        hatch for when the measurement is wrong. ``None`` means "no override", which hands the
+        decision back to the executor's own chain (measured -> estimated -> default, each with
+        the OOM headroom factor applied).
+
+        It deliberately no longer falls back to the profile's ``peak_vram_mb``: that field is
+        the total across ALL workers, so returning it here as a per-worker cost made the
+        executor fit exactly one worker per GPU no matter how much VRAM was free.
         """
         per_worker = self.compute.get("vram", Section()).get("per_worker_mb", "auto")
-        if isinstance(per_worker, int) and not isinstance(per_worker, bool):
-            return max(1, per_worker)
-        hw = self._hardware
-        key = getattr(stage, "key", None)
-        if hw is not None and key is not None:
-            plan = hw.stage(key)
-            if plan is not None:
-                peak = plan.get("peak_vram_mb")
-                if isinstance(peak, int) and not isinstance(peak, bool):
-                    return max(1, peak)
-        return 4096
+        if isinstance(per_worker, (int, float)) and not isinstance(per_worker, bool):
+            return max(1, int(per_worker))
+        return None
 
     # -- hardware profile --------------------------------------------------- #
     @property
@@ -415,17 +510,46 @@ class Config:
         else:
             self._hardware = HardwareProfile(profile)
 
+    # -- serialization ------------------------------------------------------ #
+    def to_dict(self) -> dict[str, Any]:
+        """The complete EFFECTIVE config -- defaults < YAML < overrides -- as plain JSON data.
+
+        This is what the section 3.4 launch manifest embeds and what config fingerprinting reads,
+        so it must be deterministic: the same ``Config`` produces byte-identical JSON every time.
+        :func:`jsonable` sorts every mapping and normalizes paths to get there.
+
+        It is a deep COPY. Mutating the result cannot reach back into the live config, which is why
+        the manifest writer may hand it straight to ``json.dump`` without a defensive copy.
+
+        ``source_path`` is deliberately not folded in: it describes where the config came from, not
+        what it says, and the manifest carries it separately alongside the file's SHA-256.
+        """
+        return jsonable(self._raw)
+
     # -- settings hashing (resume invalidation) ----------------------------- #
+    #: Stages whose behavior is driven by config OUTSIDE their own ``modules.<key>`` block.
+    #: The Reporter is configured almost entirely by ``report.*`` -- ``modules.reporter`` holds
+    #: nothing but ``enabled`` -- so hashing only that block made every export toggle invisible to
+    #: drift detection: switching one on for a finished run left the stage ``done`` and produced
+    #: nothing, with no error anywhere. Anything listed here is hashed alongside the module block.
+    _EXTRA_HASH_BLOCKS: dict[str, tuple[str, ...]] = {"reporter": ("report",)}
+
     def stage_settings_hash(self, key: str) -> str:
         """Stable hash of a stage's resolved settings plus its model file signature.
 
-        Changing any knob under ``modules.<key>`` -- or replacing the exported
-        model file (its size/mtime) -- yields a different hash, letting the DB
-        invalidate that stage's prior results on resume.
+        Changing any knob under ``modules.<key>`` (plus, for the Reporter, anything under
+        ``report``) -- or replacing the exported model file (its size/mtime) -- yields a different
+        hash, letting the DB invalidate that stage's prior results on resume.
         """
         hasher = hashlib.sha256()
         block = _plain(self.stage(key))
         hasher.update(json.dumps(block, sort_keys=True, default=str).encode("utf-8"))
+        for extra in self._EXTRA_HASH_BLOCKS.get(key, ()):
+            hasher.update(f"|{extra}:".encode("utf-8"))
+            hasher.update(
+                json.dumps(_plain(self._raw.get(extra, Section())), sort_keys=True,
+                           default=str).encode("utf-8")
+            )
         for artifact in self._stage_artifacts(key):
             try:
                 st = Path(artifact).stat()
@@ -534,4 +658,5 @@ def _discover_nvidia_ordinals() -> list[int]:
     return []
 
 
-__all__ = ["Config", "Section", "HardwareProfile", "CANONICAL_STAGE_KEYS", "builtin_defaults"]
+__all__ = ["Config", "Section", "HardwareProfile", "CANONICAL_STAGE_KEYS", "builtin_defaults",
+           "jsonable"]

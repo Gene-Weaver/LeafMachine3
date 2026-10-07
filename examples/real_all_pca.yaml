@@ -1,0 +1,353 @@
+version: 3
+project:
+  run_name: real_all_pca
+  input:
+    dirs:
+    - images
+    recursive: true
+    image_extensions:
+    - .jpg
+    - .jpeg
+    - .png
+    - .tif
+    - .tiff
+  output:
+    dir: ../examples_out
+    tmp_dir: auto
+    keep_tmp: false
+  run_mode:
+    overwrite: false
+    restart: []
+    fail_fast: false
+  logging:
+    level: INFO
+    to_file: true
+    to_console: true
+compute:
+  devices:
+  - 1
+  tensorrt: false
+  mock: false
+  vram:
+    safety_fraction: 0.9
+    reserve_mb: 1024
+    per_worker_mb: auto
+    max_workers_per_gpu: 6
+  workers:
+    default: auto
+    ruler_cf: 8
+  onnxruntime:
+    providers: auto
+    ld_library_path: auto
+    allow_cpu_fallback: true
+  precision: fp16
+ingest:
+  max_working_dim: 3200
+  jpg_quality: 100
+naming:
+  bbox_prefix: BBOX
+  seg_prefix: SEG
+  mask_full_prefix: MaskFull
+  friendly_names:
+    Ruler: ruler
+    Barcode: barcode
+    Colorcard: colorcard
+    Label: label
+    Map: map
+    Envelope: envelope
+    Photo: photo
+    Attached_Item: attachedItem
+    Weights: weights
+    Leaf_WHOLE: leaf
+    Leaf_PARTIAL: leafReject
+    Leaflet: leaflet
+    Seed_Fruit_ONE: fruit
+    Seed_Fruit_MANY: fruitMany
+    Flower_ONE: flower
+    Flower_MANY: flowerMany
+    Bud: bud
+    Specimen: specimen
+    Roots: roots
+    Wood: wood
+    Leaf: leaf
+    Petiole: petiole
+    Hole: hole
+modules:
+  archival_detector:
+    enabled: true
+    model:
+      path: ../models/archival_detector/model.onnx
+      format: onnx
+    imgsz: 1280
+    conf: 0.25
+    iou: 0.6
+    max_det: 100
+    min_box_area: 128
+    classes:
+    - Ruler
+    - Barcode
+    - Colorcard
+    - Label
+    - Map
+    - Envelope
+    - Photo
+    - Attached_Item
+    - Weights
+  plant_detector:
+    enabled: true
+    model:
+      path: ../models/plant_detector/model.onnx
+      format: onnx
+    imgsz: 1280
+    conf: 0.3
+    iou: 0.55
+    max_det: 1000
+    min_box_area: 40
+    classes:
+    - Leaf_WHOLE
+    - Leaf_PARTIAL
+    - Seed_Fruit_ONE
+    - Seed_Fruit_MANY
+    - Flower_ONE
+    - Flower_MANY
+    - Bud
+    - Roots
+    - Wood
+  phenology_detector:
+    enabled: true
+    targets:
+      leaves:
+        min_conf: 0.35
+        min_count: 1
+      flowers:
+        min_conf: 0.4
+        min_count: 1
+      fruits:
+        min_conf: 0.4
+        min_count: 1
+  ruler_classifier:
+    enabled: true
+    models_dir: ../models/ruler_classifier
+    ensemble_members:
+    - yolo26x_cls_224
+    - yolo26n_cls_224
+    - dinov2_frozen_mlp
+    min_conf: 0.35
+  ruler_cf:
+    enabled: false
+    tick:
+      min_units: 3
+    agree_tol: 0.05
+    second_unit:
+      enabled: true
+      cross_tol: 0.03
+    cf_policy: max_quality
+    on_failure: null_cf
+  leaf_segmenter:
+    enabled: true
+    model:
+      path: ../models/leaf_segmenter/model.pt
+      format: pytorch
+    include_partial: false
+    imgsz: 1024
+    conf: 0.3
+    iou: 0.5
+    retina_masks: true
+    max_det: 50
+    mask_storage:
+      format: polygon_xy
+      min_area_px: 64
+  morphology:
+    enabled: true
+    classes:
+    - Leaf
+    method: pca
+    find_minimum_bounding_box: true
+  metric_grounding:
+    enabled: true
+    missing_cf_policy: skip
+    round_ndigits: 4
+  reporter:
+    enabled: true
+report:
+  overlay:
+    enabled: true
+    draw_boxes_archival: true
+    draw_boxes_plant: true
+    box_style: rotated
+    draw_masks: true
+    draw_labels: true
+    draw_confidence: true
+    draw_cf_banner: true
+    alpha: 0.45
+    line_width_archival: 3
+    line_width_plant: 3
+    line_width_mask: 2
+    font_scale: 1.0
+    label_text_color:
+    - 255
+    - 255
+    - 255
+    cf_banner_color:
+    - 255
+    - 255
+    - 255
+    classes:
+      archival:
+        Ruler:
+          color:
+          - 255
+          - 0
+          - 70
+          show: true
+        Barcode:
+          color:
+          - 0
+          - 137
+          - 65
+          show: true
+        Colorcard:
+          color:
+          - 242
+          - 255
+          - 0
+          show: true
+        Label:
+          color:
+          - 0
+          - 0
+          - 255
+          show: true
+        Map:
+          color:
+          - 0
+          - 251
+          - 255
+          show: true
+        Envelope:
+          color:
+          - 163
+          - 0
+          - 89
+          show: true
+        Photo:
+          color:
+          - 255
+          - 205
+          - 220
+          show: true
+        Attached_Item:
+          color:
+          - 255
+          - 172
+          - 40
+          show: true
+        Weights:
+          color:
+          - 140
+          - 140
+          - 140
+          show: true
+      plant:
+        Leaf_WHOLE:
+          color:
+          - 0
+          - 255
+          - 55
+          show: true
+        Leaf_PARTIAL:
+          color:
+          - 0
+          - 255
+          - 250
+          show: true
+        Leaflet:
+          color:
+          - 255
+          - 203
+          - 0
+          show: true
+        Seed_Fruit_ONE:
+          color:
+          - 252
+          - 255
+          - 0
+          show: true
+        Seed_Fruit_MANY:
+          color:
+          - 0
+          - 0
+          - 80
+          show: true
+        Flower_ONE:
+          color:
+          - 255
+          - 52
+          - 255
+          show: true
+        Flower_MANY:
+          color:
+          - 154
+          - 0
+          - 255
+          show: true
+        Bud:
+          color:
+          - 255
+          - 0
+          - 9
+          show: true
+        Specimen:
+          color:
+          - 0
+          - 0
+          - 0
+          show: true
+        Roots:
+          color:
+          - 255
+          - 134
+          - 0
+          show: true
+        Wood:
+          color:
+          - 144
+          - 22
+          - 22
+          show: true
+      segmentation:
+        Leaf:
+          color:
+          - 46
+          - 255
+          - 0
+          show: true
+        Petiole:
+          color:
+          - 255
+          - 0
+          - 150
+          show: true
+        Hole:
+          color:
+          - 200
+          - 0
+          - 255
+          show: true
+  masks:
+    classes:
+    - Leaf
+    background: black
+    subtract_holes: true
+    Binary_Masks_Full_Image: true
+    Binary_Masks: true
+    RGB_Masks_Full_Image: true
+    RGB_Masks: false
+  crops:
+    enabled: true
+    classes: all
+    source: working
+  formats:
+    image_ext: jpg
+    jpg_quality: 100
+    mask_ext: png

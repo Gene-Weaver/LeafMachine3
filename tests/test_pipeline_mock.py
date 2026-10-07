@@ -6,6 +6,7 @@ overlay, then runs it a SECOND time and asserts the run resumes cleanly (no dupl
 """
 from __future__ import annotations
 
+import csv as _csv
 import sqlite3
 from pathlib import Path
 
@@ -34,7 +35,7 @@ def run_env(synthetic_images: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     Pipeline artifacts (DB, crops, overlays) land in ``examples_out/pipeline_mock`` for inspection.
     """
     output_dir = fresh_out_dir("pipeline_mock")
-    cfg = build_mock_config(synthetic_images, output_dir, run_name="e2e")
+    cfg = build_mock_config(synthetic_images, output_dir, run_name="e2e", ruler_classifier_enabled=True)
     cfg_path = tmp_path / "LM3_settings.yaml"
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -127,6 +128,33 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         # every canonical stage reached 'done'
         states = {r["stage_key"]: r["state"] for r in conn.execute("SELECT stage_key, state FROM project_status")}
         assert set(states.values()) == {"done"}
+
+        # mp_conversion_factor (runs first) populated megapixels + the resolution-based CF everywhere
+        mp_rows = list(conn.execute("SELECT original_mp, cf_px_per_cm_predicted_by_mp FROM specimen"))
+        assert mp_rows and all(r["original_mp"] is not None and r["original_mp"] > 0 for r in mp_rows)
+        assert all(r["cf_px_per_cm_predicted_by_mp"] is not None and r["cf_px_per_cm_predicted_by_mp"] > 0
+                   for r in mp_rows)
+
+        # ruler_classifier wrote the per-specimen consensus class onto the specimen (mock -> METRIC_MM)
+        ruler_classes = [r["ruler_class_type"] for r in conn.execute("SELECT ruler_class_type FROM specimen")]
+        assert ruler_classes and all(v == "METRIC_MM" for v in ruler_classes)
+        # ...and pre-made a four-tile squarify collage per Ruler crop (reused by the lattice CF)
+        sq = list(conn.execute("SELECT squarify_path FROM ruler_classification"))
+        assert sq and all(r["squarify_path"] and Path(r["squarify_path"]).exists() for r in sq)
+
+        # ruler_cf lattice stage wrote one image row + per-crop rows per sheet with rulers
+        lat = list(conn.execute("SELECT specimen_id, status, n_ruler_crops FROM ruler_CF_lattice"))
+        assert lat and all(r["status"] in ("published", "withheld", "no_reading", "no_ruler") for r in lat)
+        crop_rows = conn.execute("SELECT COUNT(*) FROM ruler_CF_lattice_crop").fetchone()[0]
+        assert crop_rows >= len(lat)                     # >= one crop row per sheet
+        # gate honoured: cf_px_per_cm is set iff the sheet published (NULL otherwise -> MP fallback)
+        for r in conn.execute("SELECT s.cf_px_per_cm, l.status FROM specimen s "
+                              "JOIN ruler_CF_lattice l USING (specimen_id)"):
+            assert (r["cf_px_per_cm"] is not None) == (r["status"] == "published")
+
+        # ECT stage: at least one oriented leaf got an ECT (loaded from the Reporter's Leaf_Oriented masks)
+        ect_rows = list(conn.execute("SELECT h5_path, mask_includes, num_dirs FROM leaf_ect"))
+        assert ect_rows and all(r["mask_includes"] == "lamina" for r in ect_rows)
     finally:
         conn.close()
 
@@ -149,22 +177,77 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     pp = parse_crop_filename(pet_overlays[0].name)
     assert pp and pp["prefix"] == "PET" and pp["friendly"] == "leaf"
 
-    # leaf products: Original/ + Oriented/ trees, each with bbox + fitted lamina mask + lamina cutout
-    # (mock leaves have no petiole, so the laminaPetiole products are correctly skipped).
+    # per-specimen segmentation overlay lands under Overlay/Overlay_Specimen_Segmentation/
+    spec_overlays = sorted((reports / "Overlay" / "Overlay_Specimen_Segmentation").glob("*__SpecimenSeg.jpg"))
+    assert len(spec_overlays) == 2 and all(p.stat().st_size > 0 for p in spec_overlays)
+
+    # per-sheet lattice ruler-CF QC panels (rebuilt from the stored record) under Overlay/Overlay_Ruler_Lattice/
+    ruler_lat = sorted((reports / "Overlay" / "Overlay_Ruler_Lattice").glob("*__RulerLattice.png"))
+    assert ruler_lat and all(p.stat().st_size > 0 for p in ruler_lat), "no ruler lattice QC overlays"
+
+    # whole-specimen masks land under Specimen_Masks/ (one per specimen); every mask tree --
+    # binary and RGB, full-image, per-crop and whole-specimen -- shares that single parent.
     import cv2 as _cv2
     import numpy as _np
-    for tree in ("Original", "Oriented"):
+    masks_root = reports / "Specimen_Masks"
+    spec_bin = sorted((masks_root / "Binary_Masks_Specimen").glob("*__MaskFull-specimen.png"))
+    spec_rgb = sorted((masks_root / "RGB_Masks_Specimen").glob("*__MaskRGBFull-specimen.jpg"))
+    assert len(spec_bin) == 2 and len(spec_rgb) == 2
+    _sm = _cv2.imread(str(spec_bin[0]), _cv2.IMREAD_GRAYSCALE)
+    assert _sm is not None and (_sm > 0).any()                     # non-empty specimen mask
+
+    # ...and its complement. The binary inverse must partition the sheet with the mask above:
+    # every pixel is in exactly one of them, which is the whole claim the folder name makes.
+    inv_bin = sorted((masks_root / "Binary_Masks_Specimen_Inverse").glob("*__MaskFull-specimenInverse.png"))
+    inv_rgb = sorted((masks_root / "RGB_Masks_Specimen_Inverse").glob("*__MaskRGBFull-specimenInverse.jpg"))
+    assert len(inv_bin) == 2 and len(inv_rgb) == 2, "not-specimen exports missing"
+    _im = _cv2.imread(str(inv_bin[0]), _cv2.IMREAD_GRAYSCALE)
+    assert _im is not None and _im.shape == _sm.shape
+    assert _np.array_equal(_im > 0, _sm == 0), "inverse mask is not the complement of the mask"
+    assert (_im > 0).any() and (_im == 0).any()                    # a real partition, not all-or-nothing
+
+    # the RGB inverse paints the plant out with report.masks.inverse_fill ([255, 0, 0] RGB in the
+    # mock config), so the plant region must come back as RED -- not as the black `background`,
+    # which is the bug this guards (the two colors are separate settings and easy to cross).
+    # Compared as a MEDIAN, not for equality: the file is JPEG, and chroma subsampling rings hard
+    # along a saturated-red silhouette edge (deviations up to 121 there, ~1 in the interior).
+    _ir = _cv2.imread(str(inv_rgb[0]), _cv2.IMREAD_COLOR)          # BGR
+    assert _ir is not None and _ir.shape[:2] == _sm.shape
+    _plant = _sm > 0
+    _med = _np.median(_ir[_plant], axis=0)
+    assert _np.all(_np.abs(_med - _np.array([0, 0, 255])) <= 3), \
+        f"inverse fill color was not applied (median BGR {_med}, wanted [0, 0, 255])"
+    # ...and the sheet OUTSIDE the plant is untouched, or this would be a solid red rectangle
+    assert not _np.all(_np.median(_ir[~_plant], axis=0) == _med)
+
+    # every export is in the DB manifest under its own kind -- that is what --restart deletes by,
+    # so a file on disk with no manifest row would survive a reset and go stale in place.
+    _mc = _connect(db_path)
+    try:
+        for _kind in ("Binary_Masks_Specimen_Inverse", "RGB_Masks_Specimen_Inverse"):
+            _rows = _mc.execute("SELECT path FROM report_manifest WHERE kind = ?",
+                                (f"Specimen_Masks/{_kind}",)).fetchall()
+            assert len(_rows) == 2, f"{_kind}: {len(_rows)} manifest rows, expected 2"
+            assert all(Path(r["path"]).is_file() for r in _rows), f"{_kind}: manifest path missing"
+    finally:
+        _mc.close()
+
+    # leaf products: Leaf_Original/ + Leaf_Oriented/ trees, each with bbox + fitted lamina mask + cutout
+    # (mock leaves have no petiole, so the laminaPetiole products are correctly skipped).
+    # Each product name carries its tree tag (og-/or-), which is what keeps the two trees' files
+    # distinct -- they are otherwise the same stem, prefix and box.
+    for tree, tag in (("Leaf_Original", "og"), ("Leaf_Oriented", "or")):
         base = reports / tree
-        bbox = list((base / "Leaf_BBox").glob("*__BBOX-leaf__*.jpg"))
-        lam_mask = list((base / "Lamina_Mask").glob("*__SEG-lamina__*.png"))
-        lam_rgb = list((base / "Lamina_RGB").glob("*__RGB-lamina__*.jpg"))
-        holes_mask = list((base / "Lamina_Holes_Mask").glob("*__SEG-laminaHoles__*.png"))
-        holes_rgb = list((base / "Lamina_Holes_RGB").glob("*__RGB-laminaHoles__*.jpg"))
+        bbox = list((base / "Leaf_BBox").glob(f"*__{tag}-BBOX-leaf__*.jpg"))
+        lam_mask = list((base / "Lamina_Mask").glob(f"*__{tag}-SEG-lamina__*.png"))
+        lam_rgb = list((base / "Lamina_RGB").glob(f"*__{tag}-RGB-lamina__*.jpg"))
+        holes_mask = list((base / "Lamina_Holes_Mask").glob(f"*__{tag}-SEG-laminaHoles__*.png"))
+        holes_rgb = list((base / "Lamina_Holes_RGB").glob(f"*__{tag}-RGB-laminaHoles__*.jpg"))
         assert bbox and lam_mask and lam_rgb, f"{tree}: missing lamina products"
         assert holes_mask and holes_rgb, f"{tree}: missing laminaHoles products"
         # the mock now emits a petiole, so the laminaPetiole products are present
-        assert list((base / "LaminaPetiole_Mask").glob("*__SEG-laminaPetiole__*.png"))
-        assert list((base / "LaminaPetiole_RGB").glob("*__RGB-laminaPetiole__*.jpg"))
+        assert list((base / "LaminaPetiole_Mask").glob(f"*__{tag}-SEG-laminaPetiole__*.png"))
+        assert list((base / "LaminaPetiole_RGB").glob(f"*__{tag}-RGB-laminaPetiole__*.jpg"))
         m = _cv2.imread(str(lam_mask[0]), _cv2.IMREAD_GRAYSCALE)
         assert m is not None and (m > 0).any()                     # non-empty mask
         # the holes RGB paints holes (10,10,10) so they can be color-thresholded back out
@@ -173,11 +256,13 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     # leaf bbox crops were moved OUT of Crops/ (only non-leaf classes remain there)
     assert not (reports / "Crops" / "RGB__leaf").exists()
 
-    # mask outputs are grouped under Binary_Masks/ and RGB_Masks/ (harmonized with Crops/)
-    full_bin = list((reports / "Binary_Masks" / "Binary_Masks_Full_Image__Leaf").glob("*.png"))
+    # every mask subfolder now sits under the single Specimen_Masks/ parent; the old sibling
+    # Binary_Masks/ and RGB_Masks/ trees must be gone, or consumers would read a stale layout.
+    assert not (reports / "Binary_Masks").exists() and not (reports / "RGB_Masks").exists()
+    full_bin = list((masks_root / "Binary_Masks_Specimen__Leaf").glob("*.png"))
     assert full_bin, "no full-image binary masks"
-    assert list((reports / "RGB_Masks" / "RGB_Masks_Full_Image__Leaf").glob("*.jpg")), "no full-image RGB masks"
-    per_crop_bin = list((reports / "Binary_Masks" / "Binary_Masks__Leaf").glob("*.png"))
+    assert list((masks_root / "RGB_Masks_Specimen__Leaf").glob("*.jpg")), "no full-image RGB masks"
+    per_crop_bin = list((masks_root / "Binary_Masks__Leaf").glob("*.png"))
     assert per_crop_bin, "no per-crop binary masks"
 
     # full-image files carry the MaskFull-<friendly> label; per-crop files carry SEG-<friendly>__coords
@@ -193,6 +278,57 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     a_crop = next((reports / "Crops").rglob("*.jpg"))
     ap = parse_crop_filename(a_crop.name)
     assert ap and ap["prefix"] == "BBOX"
+
+    # Data export: the Reporter's last step turns the whole database into reports/Data/*.csv.
+    # Checked end-to-end here because the export is the one output assembled from EVERY specimen's
+    # rows at once -- a per-file unit test cannot catch a stage that failed to commit.
+    data_dir = reports / "Data"
+    leaf_csv = data_dir / "leaf_measurements.csv"
+    assert leaf_csv.is_file(), "the Reporter did not write reports/Data/leaf_measurements.csv"
+    with leaf_csv.open(newline="", encoding="utf-8") as fh:
+        leaf_rows = list(_csv.DictReader(fh))
+    conn = _connect(db_path)
+    try:
+        n_leaves = conn.execute(
+            "SELECT COUNT(*) FROM leaf_segmentation ls JOIN plant_detection pd USING (detection_id) "
+            "WHERE ls.cls_name = 'Leaf' AND pd.suppressed = 0").fetchone()[0]
+    finally:
+        conn.close()
+    assert len(leaf_rows) == n_leaves, "one CSV row per segmented leaf"
+    # Each row points back at real files by the token the images are named with. Rebuilt with the
+    # same parser the naming contract uses, so this breaks if either side changes its format.
+    tokens = set()
+    for p in (reports / "Leaf_Original" / "Leaf_BBox").glob("*.jpg"):
+        parsed = parse_crop_filename(p.name)
+        assert parsed, f"unparseable leaf product name: {p.name}"
+        tokens.add(parsed["stem"] + "__" + "_".join(str(v) for v in parsed["xyxy"]))
+    assert tokens, "no leaf products to cross-reference"
+    for row in leaf_rows:
+        assert row["leaf_uid"].startswith(row["crop_file_token"] + "__i")
+        assert row["crop_file_token"] in tokens, (
+            f"crop_file_token {row['crop_file_token']!r} matches no exported leaf product")
+    # and the sheet-level roll-up agrees with the per-leaf file it was computed from
+    with (data_dir / "specimen_summary.csv").open(newline="", encoding="utf-8") as fh:
+        summary = list(_csv.DictReader(fh))
+    assert sum(int(r["n_leaf_instances"]) for r in summary) == len(leaf_rows)
+
+    # THE naming contract: every derived file in the run is uniquely named WITHOUT its extension,
+    # so a user can pour the whole reports tree into one directory and lose nothing. Extensions are
+    # stripped before comparing because .png/.jpg twins (a binary mask and its RGB cutout) are
+    # exactly the pairs that used to collide -- they now differ by prefix (SEG/SEGRGB, MaskFull/
+    # MaskRGBFull) rather than by suffix. Failures print the offenders, since the useful question
+    # is always "which two outputs share a token", not "how many".
+    # The one sanctioned exception: Leaf_Data/Coordinates/<...>__ECT__<box>.h5 shares the Cartesian
+    # ECT image's token on purpose (it is coordinate data, not a picture). So the contract is checked
+    # over IMAGES -- if a future .h5-like data export starts colliding with a picture, it shows up here.
+    _IMG = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+    by_base: dict[str, list[str]] = {}
+    for f in reports.rglob("*"):
+        if f.is_file() and f.suffix.lower() in _IMG:
+            by_base.setdefault(f.stem, []).append(str(f.relative_to(reports)))
+    clashes = {b: sorted(v) for b, v in by_base.items() if len(v) > 1}
+    assert not clashes, "report filenames collide once flattened:\n" + "\n".join(
+        f"  {b}: {v}" for b, v in sorted(clashes.items())[:20])
 
 
 def test_pipeline_resumes_without_duplicates(run_env: Path) -> None:

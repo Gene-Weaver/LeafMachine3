@@ -1,0 +1,2964 @@
+{
+  "_sections": [
+    {
+      "id": "project",
+      "label": "Project",
+      "phase": "setup",
+      "blurb": "Run name, input images, output location, and resume behavior.",
+      "keys": [
+        "version",
+        "project"
+      ]
+    },
+    {
+      "id": "compute",
+      "label": "Compute & Hardware",
+      "phase": "setup",
+      "blurb": "Which devices LM3 may use, how many workers fit in VRAM, and the ONNX Runtime providers.",
+      "keys": [
+        "compute"
+      ]
+    },
+    {
+      "id": "ingest",
+      "label": "Image Preparation",
+      "phase": "setup",
+      "blurb": "How originals are downscaled and re-encoded into the working copies every module reads.",
+      "keys": [
+        "ingest"
+      ]
+    },
+    {
+      "id": "naming",
+      "label": "File Naming",
+      "phase": "setup",
+      "blurb": "The prefixes and friendly class names baked into every exported filename.",
+      "keys": [
+        "naming"
+      ]
+    },
+    {
+      "id": "timing",
+      "label": "Timing",
+      "phase": "setup",
+      "blurb": "The per-module run-timing profiler and its report.",
+      "keys": [
+        "timing"
+      ]
+    },
+    {
+      "id": "mp_conversion_factor",
+      "label": "MP Conversion Factor",
+      "blurb": "Predicts a conversion factor from image resolution alone, as the fallback when no ruler is usable.",
+      "keys": [
+        "modules.mp_conversion_factor"
+      ],
+      "stage": "mp_conversion_factor",
+      "phase": "sheet",
+      "order": 1
+    },
+    {
+      "id": "archival_detector",
+      "label": "Archival Detector",
+      "blurb": "Finds the non-plant items on the sheet: rulers, barcodes, color cards, labels, maps, envelopes.",
+      "keys": [
+        "modules.archival_detector"
+      ],
+      "stage": "archival_detector",
+      "phase": "sheet",
+      "order": 2
+    },
+    {
+      "id": "plant_detector",
+      "label": "Plant Detector",
+      "blurb": "Finds plant organs: whole and partial leaves, leaflets, fruits, flowers, buds, roots, wood.",
+      "keys": [
+        "modules.plant_detector"
+      ],
+      "stage": "plant_detector",
+      "phase": "sheet",
+      "order": 3
+    },
+    {
+      "id": "specimen_segmenter",
+      "label": "Specimen Segmenter",
+      "blurb": "Whole-sheet plant-versus-background mask, with optional paper cleanup.",
+      "keys": [
+        "modules.specimen_segmenter"
+      ],
+      "stage": "specimen_segmenter",
+      "phase": "sheet",
+      "order": 4
+    },
+    {
+      "id": "phenology_detector",
+      "label": "Phenology Detector",
+      "blurb": "Reads the plant boxes to decide whether leaves, flowers and fruits are present.",
+      "keys": [
+        "modules.phenology_detector"
+      ],
+      "stage": "phenology_detector",
+      "phase": "sheet",
+      "order": 5
+    },
+    {
+      "id": "ruler_classifier",
+      "label": "Ruler Classifier",
+      "blurb": "Classifies each ruler crop by unit type, the first half of measuring the conversion factor.",
+      "keys": [
+        "modules.ruler_classifier"
+      ],
+      "stage": "ruler_classifier",
+      "phase": "scale",
+      "order": 6
+    },
+    {
+      "id": "ruler_cf",
+      "label": "Ruler Conversion Factor",
+      "blurb": "Measures pixels per centimeter from the ruler's tick lattice.",
+      "keys": [
+        "modules.ruler_cf"
+      ],
+      "stage": "ruler_cf",
+      "phase": "scale",
+      "order": 7
+    },
+    {
+      "id": "leaf_segmenter",
+      "label": "Leaf Segmenter",
+      "blurb": "Turns each leaf crop into an instance mask for lamina, petiole and holes.",
+      "keys": [
+        "modules.leaf_segmenter"
+      ],
+      "stage": "leaf_segmenter",
+      "phase": "leaf",
+      "order": 8
+    },
+    {
+      "id": "morphology",
+      "label": "Morphology",
+      "blurb": "Shape metrics and the rotated minimum bounding box for every leaf mask.",
+      "keys": [
+        "modules.morphology"
+      ],
+      "stage": "morphology",
+      "phase": "leaf",
+      "order": 9
+    },
+    {
+      "id": "landmark_detector",
+      "label": "Landmark Detector",
+      "blurb": "The 31-keypoint leaf pose: midvein, lamina outline, apex, base and petiole.",
+      "keys": [
+        "modules.landmark_detector"
+      ],
+      "stage": "landmark_detector",
+      "phase": "leaf",
+      "order": 10
+    },
+    {
+      "id": "landmark_measurements",
+      "label": "Landmark Measurements",
+      "blurb": "Traces, extent, width, apex and base angles, and curvature, derived from the keypoints.",
+      "keys": [
+        "modules.landmark_measurements"
+      ],
+      "stage": "landmark_measurements",
+      "phase": "leaf",
+      "order": 11
+    },
+    {
+      "id": "leaf_orientation",
+      "label": "Leaf Orientation",
+      "blurb": "The upright rotation that puts every leaf tip up.",
+      "keys": [
+        "modules.leaf_orientation"
+      ],
+      "stage": "leaf_orientation",
+      "phase": "leaf",
+      "order": 12
+    },
+    {
+      "id": "petiole_width",
+      "label": "Petiole Width",
+      "blurb": "Median perpendicular width of the petiole, from its mask and landmark centerline.",
+      "keys": [
+        "modules.petiole_width"
+      ],
+      "stage": "petiole_width",
+      "phase": "leaf",
+      "order": 13
+    },
+    {
+      "id": "bilateral_symmetry",
+      "label": "Bilateral Symmetry",
+      "blurb": "Scores how closely each leaf mirrors itself across the midvein.",
+      "keys": [
+        "modules.bilateral_symmetry"
+      ],
+      "stage": "bilateral_symmetry",
+      "phase": "leaf",
+      "order": 14
+    },
+    {
+      "id": "ect",
+      "label": "Shape (ECT)",
+      "blurb": "Euler Characteristic Transform of each oriented leaf, plus its visuals.",
+      "keys": [
+        "modules.ect"
+      ],
+      "stage": "ect",
+      "phase": "leaf",
+      "order": 17
+    },
+    {
+      "id": "metric_grounding",
+      "label": "Metric Grounding",
+      "blurb": "Converts every pixel measurement to real units using the conversion factor.",
+      "keys": [
+        "modules.metric_grounding"
+      ],
+      "stage": "metric_grounding",
+      "phase": "output",
+      "order": 15
+    },
+    {
+      "id": "reporter",
+      "label": "Reporter",
+      "blurb": "Every file LM3 writes: crops, masks, per-leaf products, and the annotated review overlays.",
+      "keys": [
+        "modules.reporter",
+        "report"
+      ],
+      "stage": "reporter",
+      "phase": "output",
+      "order": 16,
+      "subsections": [
+        {
+          "label": "Files & formats",
+          "paths": [
+            "modules.reporter",
+            "report.formats"
+          ],
+          "blurb": "Whether the Reporter runs at all, and the image and mask file formats it writes."
+        },
+        {
+          "label": "Data export (CSV)",
+          "paths": [
+            "report.data"
+          ],
+          "blurb": "The run's measurements written out as CSV files into reports/Data, and which files to write."
+        },
+        {
+          "label": "Masks",
+          "paths": [
+            "report.masks"
+          ],
+          "blurb": "Which binary and RGB mask images are written, and what goes in the background."
+        },
+        {
+          "label": "Crops",
+          "paths": [
+            "report.crops"
+          ],
+          "blurb": "Which detected classes get cropped out to their own image files."
+        },
+        {
+          "label": "Leaf products",
+          "paths": [
+            "report.leaf_products"
+          ],
+          "blurb": "The per-leaf product set: original and oriented, lamina, petiole and holes."
+        },
+        {
+          "label": "Overlay \u00b7 Drawing",
+          "paths": [
+            "report.overlay",
+            "report.overlay_ruler_lattice"
+          ],
+          "own": true,
+          "blurb": "What the annotated review image draws, and how heavily."
+        },
+        {
+          "label": "Overlay \u00b7 Scale bars",
+          "paths": [
+            "report.overlay.cf_scalebar"
+          ],
+          "blurb": "Colors and sizing for the two conversion-factor scale overlays."
+        },
+        {
+          "label": "Overlay \u00b7 Box groups",
+          "paths": [
+            "report.overlay.groups"
+          ],
+          "blurb": "Border, fill and line weight for the leaf, plant and archival box groups."
+        },
+        {
+          "label": "Overlay \u00b7 Archival colors",
+          "paths": [
+            "report.overlay.classes.archival"
+          ],
+          "blurb": "Color and visibility for each archival class."
+        },
+        {
+          "label": "Overlay \u00b7 Plant colors",
+          "paths": [
+            "report.overlay.classes.plant"
+          ],
+          "blurb": "Color and visibility for each plant class."
+        },
+        {
+          "label": "Overlay \u00b7 Mask colors",
+          "paths": [
+            "report.overlay.classes.segmentation"
+          ],
+          "blurb": "Color and visibility for the lamina, petiole and hole masks."
+        },
+        {
+          "label": "Overlay \u00b7 Landmarks",
+          "paths": [
+            "report.overlay.landmark",
+            "report.overlay_landmarks"
+          ],
+          "blurb": "The landmark overlay image and how its points and skeleton are drawn."
+        },
+        {
+          "label": "Overlay \u00b7 Petiole",
+          "paths": [
+            "report.overlay.petiole",
+            "report.overlay_petiole"
+          ],
+          "blurb": "The petiole-width overlay image and how its band and samples are drawn."
+        },
+        {
+          "label": "Overlay \u00b7 Specimen",
+          "paths": [
+            "report.overlay_specimen"
+          ],
+          "blurb": "The whole-sheet specimen mask overlay and its colors."
+        }
+      ]
+    }
+  ],
+  "version": {
+    "label": "Settings version",
+    "help": "Schema version of this settings file; LM3 3.x expects 3.",
+    "type": "int",
+    "min": 3,
+    "max": 3,
+    "important": false,
+    "group": "File"
+  },
+  "project.run_name": {
+    "label": "Run name",
+    "help": "Names this run's output folder (<output dir>/<run name>/) and its project database.",
+    "type": "string",
+    "important": true,
+    "group": "Project"
+  },
+  "project.input.dirs": {
+    "label": "Input folders",
+    "help": "One or more folders of original specimen images to process.",
+    "type": "list",
+    "important": true,
+    "group": "Input"
+  },
+  "project.input.recursive": {
+    "label": "Search subfolders",
+    "help": "Also collect images from every folder nested inside the input folders.",
+    "type": "bool",
+    "important": true,
+    "group": "Input"
+  },
+  "project.input.image_extensions": {
+    "label": "Image extensions",
+    "help": "Only files with these extensions are collected as input images.",
+    "type": "list",
+    "important": false,
+    "group": "Input"
+  },
+  "project.output.dir": {
+    "label": "Output folder",
+    "help": "Parent folder that receives <run name>/ with the database, crops, reports, and logs.",
+    "type": "path",
+    "important": true,
+    "group": "Output"
+  },
+  "project.output.tmp_dir": {
+    "label": "Temp file location",
+    "help": "Where the RGB-converted / downscaled working copies go; 'auto' keeps them inside the run folder, or give a path on a fast, roomy disk.",
+    "type": "path",
+    "placeholder": "auto",
+    "important": true,
+    "group": "Output"
+  },
+  "project.run_mode.overwrite": {
+    "label": "Overwrite existing run",
+    "help": "Discard any previous results for this run name and start from scratch.",
+    "type": "bool",
+    "important": true,
+    "group": "Run mode"
+  },
+  "project.run_mode.restart": {
+    "label": "Restart modules",
+    "help": "Empty resumes where the last run stopped; 'all' redoes everything; or list the module keys to redo (for example leaf_segmenter).",
+    "type": "list",
+    "important": true,
+    "group": "Run mode"
+  },
+  "project.run_mode.fail_fast": {
+    "label": "Stop on first error",
+    "help": "Abort the whole run the moment any image fails instead of logging it and continuing.",
+    "type": "bool",
+    "important": false,
+    "group": "Run mode"
+  },
+  "project.logging.level": {
+    "label": "Log level",
+    "help": "Lowest severity written to the log; DEBUG is very chatty.",
+    "type": "enum",
+    "enum": [
+      "DEBUG",
+      "INFO",
+      "WARNING",
+      "ERROR",
+      "CRITICAL"
+    ],
+    "important": false,
+    "group": "Logging"
+  },
+  "project.logging.to_file": {
+    "label": "Write log file",
+    "help": "Save the run log to <run>/logs/ in addition to any console output.",
+    "type": "bool",
+    "important": false,
+    "group": "Logging"
+  },
+  "project.logging.to_console": {
+    "label": "Log to console",
+    "help": "Stream log lines to the console, which is what feeds the live log view.",
+    "type": "bool",
+    "important": false,
+    "group": "Logging"
+  },
+  "compute.devices": {
+    "label": "Devices",
+    "help": "'auto' uses every visible NVIDIA GPU (CPU only if there is none), 'cpu' forces CPU, or give explicit GPU ordinals such as [0, 1].",
+    "type": "string",
+    "placeholder": "auto",
+    "important": true,
+    "group": "Compute"
+  },
+  "compute.tensorrt": {
+    "label": "Use TensorRT",
+    "help": "Try the TensorRT execution provider for ONNX models; falls back to CUDA when unavailable.",
+    "type": "bool",
+    "important": false,
+    "group": "Compute"
+  },
+  "compute.mock": {
+    "label": "Mock models",
+    "help": "Replace every model with a deterministic synthetic stand-in so a run can be exercised with no weights and no GPU.",
+    "type": "bool",
+    "important": true,
+    "group": "Compute"
+  },
+  "compute.longest_first": {
+    "label": "Longest-first dispatch",
+    "help": "Dispatch the largest work items first so a stage does not end waiting on one huge sheet; off keeps the raw specimen order.",
+    "type": "bool",
+    "important": false,
+    "group": "Compute"
+  },
+  "compute.precision": {
+    "label": "Precision",
+    "help": "Numeric precision for GPU inference; fp16 is roughly twice as fast, fp32 is the safe fallback.",
+    "type": "enum",
+    "enum": [
+      "fp16",
+      "fp32"
+    ],
+    "important": true,
+    "group": "Compute"
+  },
+  "compute.io_workers": {
+    "label": "I/O workers",
+    "help": "Threads used for image ingest and the CPU-only modules; 'auto' leaves two cores free.",
+    "type": "string",
+    "placeholder": "auto",
+    "important": true,
+    "group": "Compute"
+  },
+  "compute.force_reprobe": {
+    "label": "Force VRAM reprobe",
+    "help": "Live-probe VRAM at startup even when a tuned hardware profile already exists.",
+    "type": "bool",
+    "important": false,
+    "group": "Compute"
+  },
+  "compute.vram.safety_fraction": {
+    "label": "VRAM safety fraction",
+    "help": "Fraction of each GPU's free memory LM3 is allowed to plan against.",
+    "type": "float",
+    "min": 0.1,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "VRAM"
+  },
+  "compute.vram.reserve_mb": {
+    "label": "VRAM reserve (MB)",
+    "help": "Megabytes held back on every GPU for the driver and other processes.",
+    "type": "int",
+    "min": 0,
+    "max": 32768,
+    "important": false,
+    "group": "VRAM"
+  },
+  "compute.vram.per_worker_mb": {
+    "label": "VRAM per worker (MB)",
+    "help": "Fixed per-worker VRAM budget; 'auto' uses the measured peak from the hardware profile.",
+    "type": "string",
+    "placeholder": "auto",
+    "important": false,
+    "group": "VRAM"
+  },
+  "compute.vram.max_workers_per_gpu": {
+    "label": "Max workers per GPU",
+    "help": "Hard ceiling on concurrent model workers placed on a single GPU.",
+    "type": "int",
+    "min": 1,
+    "max": 32,
+    "important": true,
+    "group": "VRAM"
+  },
+  "compute.vram.headroom_factor": {
+    "label": "VRAM headroom factor",
+    "help": "Multiplier on the measured per-worker VRAM cost when placing workers; higher is safer but fits fewer workers per GPU.",
+    "type": "float",
+    "min": 1.0,
+    "max": 2.0,
+    "step": 0.05,
+    "important": false,
+    "group": "VRAM"
+  },
+  "compute.vram.concurrent_warm_loads": {
+    "label": "Concurrent warm loads",
+    "help": "How many workers may load their model at once; lower values shrink the startup VRAM spike but lengthen pool ramp-up.",
+    "type": "int",
+    "min": 1,
+    "max": 32,
+    "important": false,
+    "group": "VRAM"
+  },
+  "compute.workers.default": {
+    "label": "Default workers",
+    "help": "Worker count for any module without its own override; 'auto' derives it from the hardware profile.",
+    "type": "string",
+    "placeholder": "auto",
+    "important": true,
+    "group": "Workers"
+  },
+  "compute.workers.ruler_cf": {
+    "label": "Ruler CF workers",
+    "help": "Worker count for the pure-CPU ruler lattice conversion-factor module.",
+    "type": "int",
+    "min": 1,
+    "max": 128,
+    "important": true,
+    "group": "Workers"
+  },
+  "compute.onnxruntime.providers": {
+    "label": "ONNX providers",
+    "help": "Execution providers to offer onnxruntime in order; 'auto' picks CUDA then CPU.",
+    "type": "string",
+    "placeholder": "auto",
+    "important": false,
+    "group": "ONNX Runtime"
+  },
+  "compute.onnxruntime.ld_library_path": {
+    "label": "CUDA library path",
+    "help": "Extra LD_LIBRARY_PATH entries so onnxruntime can find the CUDA libraries; 'auto' resolves them from the installed torch wheels.",
+    "type": "string",
+    "placeholder": "auto",
+    "important": false,
+    "group": "ONNX Runtime"
+  },
+  "compute.onnxruntime.allow_cpu_fallback": {
+    "label": "Allow CPU fallback",
+    "help": "Let onnxruntime silently drop to the CPU provider instead of failing when CUDA will not load.",
+    "type": "bool",
+    "important": false,
+    "group": "ONNX Runtime"
+  },
+  "ingest.max_working_dim": {
+    "label": "Max working dimension",
+    "help": "Long-side pixel cap for the working copy every module sees; larger originals are downscaled once at ingest.",
+    "type": "int",
+    "min": 512,
+    "max": 12000,
+    "important": true,
+    "group": "Ingest"
+  },
+  "ingest.jpg_quality": {
+    "label": "Working JPEG quality",
+    "help": "JPEG quality of the converted working copies, 100 being visually lossless.",
+    "type": "int",
+    "min": 50,
+    "max": 100,
+    "important": false,
+    "group": "Ingest"
+  },
+  "naming.bbox_prefix": {
+    "label": "Bounding-box prefix",
+    "help": "Filename tag used for detection bounding-box crops.",
+    "type": "string",
+    "important": false,
+    "group": "Prefixes"
+  },
+  "naming.seg_prefix": {
+    "label": "Segmentation prefix",
+    "help": "Filename tag used for per-crop segmentation masks.",
+    "type": "string",
+    "important": false,
+    "group": "Prefixes"
+  },
+  "naming.seg_rgb_prefix": {
+    "label": "Segmentation RGB prefix",
+    "help": "Filename tag used for per-crop RGB cutouts. Must differ from the segmentation prefix: the cutout and its binary mask describe the same class and box, so a shared tag would leave only the file extension to tell them apart.",
+    "type": "string",
+    "important": false,
+    "group": "Prefixes"
+  },
+  "naming.mask_full_prefix": {
+    "label": "Full-mask prefix",
+    "help": "Filename tag used for full-image masks.",
+    "type": "string",
+    "important": false,
+    "group": "Prefixes"
+  },
+  "naming.mask_rgb_full_prefix": {
+    "label": "Full-mask RGB prefix",
+    "help": "Filename tag used for full-image RGB cutouts. Must differ from the full-mask prefix, for the same reason as the segmentation pair.",
+    "type": "string",
+    "important": false,
+    "group": "Prefixes"
+  },
+  "naming.landmark_prefix": {
+    "label": "Landmark prefix",
+    "help": "Filename tag used for per-leaf landmark overlays.",
+    "type": "string",
+    "important": false,
+    "group": "Prefixes"
+  },
+  "naming.petiole_prefix": {
+    "label": "Petiole prefix",
+    "help": "Filename tag used for per-leaf petiole overlays.",
+    "type": "string",
+    "important": false,
+    "group": "Prefixes"
+  },
+  "naming.bilateral_prefix": {
+    "label": "Bilateral-symmetry prefix",
+    "help": "Filename tag used for per-leaf bilateral-symmetry QC panels.",
+    "type": "string",
+    "important": false,
+    "group": "Prefixes"
+  },
+  "naming.friendly_names.Ruler": {
+    "label": "Ruler",
+    "help": "Short name written into every Ruler filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Barcode": {
+    "label": "Barcode",
+    "help": "Short name written into every Barcode filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Colorcard": {
+    "label": "Color card",
+    "help": "Short name written into every Colorcard filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Label": {
+    "label": "Label",
+    "help": "Short name written into every Label filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Map": {
+    "label": "Map",
+    "help": "Short name written into every Map filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Envelope": {
+    "label": "Envelope",
+    "help": "Short name written into every Envelope filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Photo": {
+    "label": "Photo",
+    "help": "Short name written into every Photo filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Attached_Item": {
+    "label": "Attached item",
+    "help": "Short name written into every Attached_Item filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Weights": {
+    "label": "Weights",
+    "help": "Short name written into every Weights filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Archival names"
+  },
+  "naming.friendly_names.Leaf_WHOLE": {
+    "label": "Whole leaf",
+    "help": "Short name written into every Leaf_WHOLE filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Leaf_PARTIAL": {
+    "label": "Partial leaf",
+    "help": "Short name written into every Leaf_PARTIAL filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Leaflet": {
+    "label": "Leaflet",
+    "help": "Short name written into every Leaflet filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Seed_Fruit_ONE": {
+    "label": "Single fruit",
+    "help": "Short name written into every Seed_Fruit_ONE filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Seed_Fruit_MANY": {
+    "label": "Fruit cluster",
+    "help": "Short name written into every Seed_Fruit_MANY filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Flower_ONE": {
+    "label": "Single flower",
+    "help": "Short name written into every Flower_ONE filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Flower_MANY": {
+    "label": "Flower cluster",
+    "help": "Short name written into every Flower_MANY filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Bud": {
+    "label": "Bud",
+    "help": "Short name written into every Bud filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Specimen": {
+    "label": "Specimen",
+    "help": "Short name written into every Specimen filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Specimen_Inverse": {
+    "label": "Not-specimen",
+    "help": "Short name written into every not-specimen mask filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Roots": {
+    "label": "Roots",
+    "help": "Short name written into every Roots filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Wood": {
+    "label": "Wood",
+    "help": "Short name written into every Wood filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Leaf": {
+    "label": "Leaf (mask)",
+    "help": "Short name written into every Leaf filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Segmentation names"
+  },
+  "naming.friendly_names.Petiole": {
+    "label": "Petiole (mask)",
+    "help": "Short name written into every Petiole filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Segmentation names"
+  },
+  "naming.friendly_names.Hole": {
+    "label": "Hole (mask)",
+    "help": "Short name written into every Hole filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Segmentation names"
+  },
+  "modules.mp_conversion_factor.enabled": {
+    "label": "Enabled",
+    "help": "Predict a rough conversion factor from image resolution alone; it runs first and anchors the ruler measurements.",
+    "type": "bool",
+    "important": true,
+    "group": "Megapixel CF"
+  },
+  "modules.mp_conversion_factor.model.path": {
+    "label": "Model file",
+    "help": "Path to the exported Megapixel CF weights, relative to the LM3 install or absolute.",
+    "type": "path",
+    "important": true,
+    "group": "Megapixel CF"
+  },
+  "modules.mp_conversion_factor.model.format": {
+    "label": "Model format",
+    "help": "Artifact kind at that path; it must match the file you pointed at.",
+    "type": "enum",
+    "enum": [
+      "onnx",
+      "pytorch",
+      "json",
+      "tensorrt"
+    ],
+    "important": false,
+    "group": "Megapixel CF"
+  },
+  "modules.archival_detector.enabled": {
+    "label": "Enabled",
+    "help": "Detect the non-plant items on the sheet: rulers, labels, barcodes, color cards, and more.",
+    "type": "bool",
+    "important": true,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.model.path": {
+    "label": "Model file",
+    "help": "Path to the exported Archival Detector weights, relative to the LM3 install or absolute.",
+    "type": "path",
+    "important": true,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.model.format": {
+    "label": "Model format",
+    "help": "Artifact kind at that path; it must match the file you pointed at.",
+    "type": "enum",
+    "enum": [
+      "onnx",
+      "pytorch",
+      "json",
+      "tensorrt"
+    ],
+    "important": false,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.imgsz": {
+    "label": "Image size",
+    "help": "Square input size the detector letterboxes each sheet into; larger sees smaller items but costs more time and VRAM.",
+    "type": "int",
+    "min": 320,
+    "max": 2560,
+    "step": 32,
+    "important": true,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.conf": {
+    "label": "Confidence threshold",
+    "help": "Minimum score a detection needs to be kept.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.iou": {
+    "label": "IOU threshold",
+    "help": "Overlap threshold used when merging competing boxes.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.max_det": {
+    "label": "Max detections",
+    "help": "Ceiling on boxes kept per sheet.",
+    "type": "int",
+    "min": 1,
+    "max": 5000,
+    "important": false,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.min_box_area": {
+    "label": "Min box area (px)",
+    "help": "Boxes smaller than this many pixels of area are discarded as noise.",
+    "type": "int",
+    "min": 0,
+    "max": 100000,
+    "important": false,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.classes": {
+    "label": "Class names",
+    "help": "Class list in the exported model's own order; edit only when you swap in a model trained on a different set.",
+    "type": "list",
+    "important": false,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.dedup.enabled": {
+    "label": "Remove duplicate boxes",
+    "help": "Reject the lower-confidence box of any same-class overlapping pair, since the detector is NMS-free and can emit duplicates.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.dedup.overlap": {
+    "label": "Duplicate overlap",
+    "help": "Overlap at or above which two same-class boxes count as duplicates.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": false,
+    "group": "Archival Detector"
+  },
+  "modules.archival_detector.dedup.metric": {
+    "label": "Duplicate metric",
+    "help": "'min' measures intersection over the smaller box, which catches nested duplicates; 'iou' is the standard intersection over union.",
+    "type": "enum",
+    "enum": [
+      "min",
+      "iou"
+    ],
+    "important": false,
+    "group": "Archival Detector"
+  },
+  "modules.plant_detector.enabled": {
+    "label": "Enabled",
+    "help": "Detect the plant organs on the sheet: leaves, flowers, fruits, buds, roots, and wood.",
+    "type": "bool",
+    "important": true,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.model.path": {
+    "label": "Model file",
+    "help": "Path to the exported Plant Detector weights, relative to the LM3 install or absolute.",
+    "type": "path",
+    "important": true,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.model.format": {
+    "label": "Model format",
+    "help": "Artifact kind at that path; it must match the file you pointed at.",
+    "type": "enum",
+    "enum": [
+      "onnx",
+      "pytorch",
+      "json",
+      "tensorrt"
+    ],
+    "important": false,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.imgsz": {
+    "label": "Image size",
+    "help": "Square input size the detector letterboxes each sheet into; larger finds smaller organs but costs more time and VRAM.",
+    "type": "int",
+    "min": 320,
+    "max": 2560,
+    "step": 32,
+    "important": true,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.conf": {
+    "label": "Confidence threshold",
+    "help": "Minimum score an organ detection needs to be kept.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.iou": {
+    "label": "IOU threshold",
+    "help": "Overlap threshold used when merging competing boxes.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.max_det": {
+    "label": "Max detections",
+    "help": "Ceiling on organ boxes kept per sheet; dense sheets need a high value.",
+    "type": "int",
+    "min": 1,
+    "max": 5000,
+    "important": false,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.min_box_area": {
+    "label": "Min box area (px)",
+    "help": "Organ boxes smaller than this many pixels of area are discarded as noise.",
+    "type": "int",
+    "min": 0,
+    "max": 100000,
+    "important": false,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.classes": {
+    "label": "Class names",
+    "help": "Class list in the exported model's own order; edit only when you swap in a model trained on a different set.",
+    "type": "list",
+    "important": false,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.dedup.enabled": {
+    "label": "Remove duplicate boxes",
+    "help": "Reject the lower-confidence box of any same-class overlapping pair, since the detector is NMS-free and can emit duplicates.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.dedup.overlap": {
+    "label": "Duplicate overlap",
+    "help": "Overlap at or above which two same-class boxes count as duplicates.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": false,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.dedup.metric": {
+    "label": "Duplicate metric",
+    "help": "'min' measures intersection over the smaller box, which catches nested duplicates; 'iou' is the standard intersection over union.",
+    "type": "enum",
+    "enum": [
+      "min",
+      "iou"
+    ],
+    "important": false,
+    "group": "Plant Detector"
+  },
+  "modules.specimen_segmenter.enabled": {
+    "label": "Enabled",
+    "help": "Cut the whole plant away from the sheet background as one binary mask.",
+    "type": "bool",
+    "important": true,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.model.path": {
+    "label": "Model file",
+    "help": "Path to the exported Specimen Segmenter weights, relative to the LM3 install or absolute.",
+    "type": "path",
+    "important": true,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.model.format": {
+    "label": "Model format",
+    "help": "Artifact kind at that path; it must match the file you pointed at (the UNet++ export is ONNX).",
+    "type": "enum",
+    "enum": [
+      "onnx",
+      "pytorch",
+      "json",
+      "tensorrt"
+    ],
+    "important": false,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.imgsz": {
+    "label": "Image size",
+    "help": "Square input size for the segmenter; it must match the value the model was exported at.",
+    "type": "int",
+    "min": 256,
+    "max": 2048,
+    "step": 32,
+    "important": true,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.conf": {
+    "label": "Mask threshold",
+    "help": "Probability above which a pixel becomes plant in the binary mask.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.paperclean": {
+    "label": "Paper cleanup",
+    "help": "Run the follow-up color pass that strips leftover paper the network kept.",
+    "type": "bool",
+    "important": true,
+    "group": "Specimen Segmenter"
+  },
+  "modules.phenology_detector.enabled": {
+    "label": "Enabled",
+    "help": "Roll the plant detections up into per-specimen leaf, flower, and fruit presence flags.",
+    "type": "bool",
+    "important": true,
+    "group": "Phenology"
+  },
+  "modules.phenology_detector.targets.leaves.min_conf": {
+    "label": "Leaves: min confidence",
+    "help": "Detections below this score do not count toward leaves being present.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Phenology"
+  },
+  "modules.phenology_detector.targets.leaves.min_count": {
+    "label": "Leaves: min count",
+    "help": "How many qualifying detections a specimen needs before leaves are called present.",
+    "type": "int",
+    "min": 1,
+    "max": 100,
+    "important": false,
+    "group": "Phenology"
+  },
+  "modules.phenology_detector.targets.flowers.min_conf": {
+    "label": "Flowers: min confidence",
+    "help": "Detections below this score do not count toward flowers being present.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Phenology"
+  },
+  "modules.phenology_detector.targets.flowers.min_count": {
+    "label": "Flowers: min count",
+    "help": "How many qualifying detections a specimen needs before flowers are called present.",
+    "type": "int",
+    "min": 1,
+    "max": 100,
+    "important": false,
+    "group": "Phenology"
+  },
+  "modules.phenology_detector.targets.fruits.min_conf": {
+    "label": "Fruits: min confidence",
+    "help": "Detections below this score do not count toward fruits being present.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Phenology"
+  },
+  "modules.phenology_detector.targets.fruits.min_count": {
+    "label": "Fruits: min count",
+    "help": "How many qualifying detections a specimen needs before fruits are called present.",
+    "type": "int",
+    "min": 1,
+    "max": 100,
+    "important": false,
+    "group": "Phenology"
+  },
+  "modules.ruler_classifier.enabled": {
+    "label": "Enabled",
+    "help": "Identify each detected ruler's unit type with a three-model ensemble.",
+    "type": "bool",
+    "important": true,
+    "group": "Ruler Classifier"
+  },
+  "modules.ruler_classifier.models_dir": {
+    "label": "Models folder",
+    "help": "Folder holding the exported ensemble members.",
+    "type": "path",
+    "important": true,
+    "group": "Ruler Classifier"
+  },
+  "modules.ruler_classifier.ensemble_members": {
+    "label": "Ensemble members",
+    "help": "Which exported members to load and vote across.",
+    "type": "list",
+    "important": false,
+    "group": "Ruler Classifier"
+  },
+  "modules.ruler_classifier.min_conf": {
+    "label": "Min confidence",
+    "help": "Ensemble agreement a ruler needs before its unit type is trusted downstream.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Ruler Classifier"
+  },
+  "modules.ruler_classifier.squarify.sz": {
+    "label": "Squarify tile size",
+    "help": "Tile edge in pixels for the collage that turns a long ruler strip into a square input; tile_four makes a collage twice this wide.",
+    "type": "int",
+    "min": 128,
+    "max": 2048,
+    "step": 16,
+    "important": false,
+    "group": "Ruler Classifier"
+  },
+  "modules.ruler_classifier.squarify.method": {
+    "label": "Squarify method",
+    "help": "How the ruler strip is cut and stacked into a square; tile_four is what all three members were trained on.",
+    "type": "enum",
+    "enum": [
+      "tile_four",
+      "stack",
+      "quartiles",
+      "nine",
+      "maxheight"
+    ],
+    "important": false,
+    "group": "Ruler Classifier"
+  },
+  "modules.ruler_cf.enabled": {
+    "label": "Enabled",
+    "help": "Measure every ruler's tick lattice and fuse them into one gated conversion factor for the sheet.",
+    "type": "bool",
+    "important": true,
+    "group": "Ruler CF"
+  },
+  "modules.ruler_cf.anchor_tol": {
+    "label": "Anchor tolerance",
+    "help": "How far a lattice reading may drift from the megapixel-predicted conversion factor before it is rejected, as a fraction.",
+    "type": "float",
+    "min": 0.01,
+    "max": 2.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Ruler CF"
+  },
+  "modules.ruler_cf.min_frame_cm": {
+    "label": "Min frame width (cm)",
+    "help": "Sanity floor on how small the sheet can be in centimeters; leave empty for the engine's own 20 cm default.",
+    "type": "float",
+    "min": 1.0,
+    "max": 200.0,
+    "important": false,
+    "group": "Ruler CF"
+  },
+  "modules.leaf_segmenter.enabled": {
+    "label": "Enabled",
+    "help": "Trace the lamina, petiole, and holes inside every leaf crop.",
+    "type": "bool",
+    "important": true,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.model.path": {
+    "label": "Model file",
+    "help": "Path to the exported Leaf Segmenter weights, relative to the LM3 install or absolute.",
+    "type": "path",
+    "important": true,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.model.format": {
+    "label": "Model format",
+    "help": "Artifact kind at that path; it must match the file you pointed at (PyTorch today, ONNX once exported).",
+    "type": "enum",
+    "enum": [
+      "onnx",
+      "pytorch",
+      "json",
+      "tensorrt"
+    ],
+    "important": false,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.include_partial": {
+    "label": "Include partial leaves",
+    "help": "Also segment Leaf_PARTIAL crops, which are cut off by the sheet edge or another organ.",
+    "type": "bool",
+    "important": true,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.imgsz": {
+    "label": "Image size",
+    "help": "Square input size for each leaf crop; larger gives finer mask edges at more cost.",
+    "type": "int",
+    "min": 256,
+    "max": 2048,
+    "step": 32,
+    "important": true,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.conf": {
+    "label": "Confidence threshold",
+    "help": "Minimum score a mask instance needs to be kept.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.iou": {
+    "label": "IOU threshold",
+    "help": "Overlap threshold used when merging competing mask instances.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.retina_masks": {
+    "label": "High-resolution masks",
+    "help": "Produce masks at the crop's own resolution instead of the model's coarser grid.",
+    "type": "bool",
+    "important": false,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.max_det": {
+    "label": "Max instances",
+    "help": "Ceiling on mask instances kept per leaf crop.",
+    "type": "int",
+    "min": 1,
+    "max": 500,
+    "important": false,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.mask_storage.format": {
+    "label": "Mask storage",
+    "help": "How masks are stored in the project database; polygon_xy needs no extra dependencies.",
+    "type": "enum",
+    "enum": [
+      "polygon_xy",
+      "coco_rle"
+    ],
+    "important": false,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.mask_storage.min_area_px": {
+    "label": "Min mask area (px)",
+    "help": "Mask instances smaller than this many pixels are dropped as specks.",
+    "type": "int",
+    "min": 0,
+    "max": 100000,
+    "important": false,
+    "group": "Leaf Segmenter"
+  },
+  "modules.morphology.enabled": {
+    "label": "Enabled",
+    "help": "Measure area, perimeter, and the rotated bounding box of each segmented mask.",
+    "type": "bool",
+    "important": true,
+    "group": "Morphology"
+  },
+  "modules.morphology.classes": {
+    "label": "Measured classes",
+    "help": "Which segmentation classes get measured.",
+    "type": "list",
+    "important": false,
+    "group": "Morphology"
+  },
+  "modules.morphology.method": {
+    "label": "Rotated-box method",
+    "help": "Algorithm that finds each leaf's long axis; pca is the area-weighted principal axis and is the most robust across leaf shapes.",
+    "type": "enum",
+    "enum": [
+      "pca",
+      "feret",
+      "lm2",
+      "minarearect"
+    ],
+    "important": true,
+    "group": "Morphology"
+  },
+  "modules.morphology.find_minimum_bounding_box": {
+    "label": "Rotate to minimum box",
+    "help": "Only used by the lm2 method: run its rotate-to-minimum-circle search.",
+    "type": "bool",
+    "important": false,
+    "group": "Morphology"
+  },
+  "modules.landmark_detector.enabled": {
+    "label": "Enabled",
+    "help": "Place the 31-keypoint leaf skeleton (midvein, apex, base, width, petiole) on each leaf crop.",
+    "type": "bool",
+    "important": true,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_detector.model.path": {
+    "label": "Model file",
+    "help": "Path to the exported Landmark Detector weights, relative to the LM3 install or absolute.",
+    "type": "path",
+    "important": true,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_detector.model.format": {
+    "label": "Model format",
+    "help": "Artifact kind at that path; it must match the file you pointed at.",
+    "type": "enum",
+    "enum": [
+      "onnx",
+      "pytorch",
+      "json",
+      "tensorrt"
+    ],
+    "important": false,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_detector.source_classes": {
+    "label": "Source classes",
+    "help": "Which detected classes get landmarked.",
+    "type": "list",
+    "important": false,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_detector.include_partial": {
+    "label": "Include partial leaves",
+    "help": "Also landmark Leaf_PARTIAL crops, whose missing tip or base makes the keypoints less reliable.",
+    "type": "bool",
+    "important": true,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_detector.imgsz": {
+    "label": "Image size",
+    "help": "Square input size for each leaf crop fed to the pose model.",
+    "type": "int",
+    "min": 256,
+    "max": 1536,
+    "step": 32,
+    "important": true,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_detector.conf": {
+    "label": "Confidence threshold",
+    "help": "Minimum score a landmark detection needs to be kept.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_detector.iou": {
+    "label": "IOU threshold",
+    "help": "Overlap threshold used when merging competing pose detections.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_detector.white_pad": {
+    "label": "White padding",
+    "help": "White border added before inference and removed after, matching how the model was trained.",
+    "type": "float",
+    "min": 0.0,
+    "max": 0.5,
+    "step": 0.01,
+    "important": false,
+    "group": "Landmark Detector"
+  },
+  "modules.landmark_measurements.enabled": {
+    "label": "Enabled",
+    "help": "Derive lamina length, width, apex and base angles, and curvature from the keypoints.",
+    "type": "bool",
+    "important": true,
+    "group": "Landmark Measurements"
+  },
+  "modules.landmark_measurements.min_kpt_conf": {
+    "label": "Min keypoint confidence",
+    "help": "Keypoints below this score are treated as absent and the metrics that need them stay empty.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Landmark Measurements"
+  },
+  "modules.leaf_orientation.enabled": {
+    "label": "Enabled",
+    "help": "Find the rotation that stands each leaf upright with its tip up, which the oriented exports and the ECT depend on.",
+    "type": "bool",
+    "important": true,
+    "group": "Leaf Orientation"
+  },
+  "modules.leaf_orientation.min_kpt_conf": {
+    "label": "Min keypoint confidence",
+    "help": "Keypoint score floor for the tip and base points that define the upright axis.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Leaf Orientation"
+  },
+  "modules.leaf_orientation.min_midvein": {
+    "label": "Min midvein points",
+    "help": "How many midvein keypoints the principal-axis fallback needs when the tip or base is missing.",
+    "type": "int",
+    "min": 2,
+    "max": 15,
+    "important": false,
+    "group": "Leaf Orientation"
+  },
+  "modules.petiole_width.enabled": {
+    "label": "Enabled",
+    "help": "Measure the median perpendicular width of each petiole mask.",
+    "type": "bool",
+    "important": true,
+    "group": "Petiole Width"
+  },
+  "modules.petiole_width.min_kpt_conf": {
+    "label": "Min keypoint confidence",
+    "help": "Keypoint score floor for the petiole centerline points the width probes run along.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Petiole Width"
+  },
+  "modules.petiole_width.touch_dist_px": {
+    "label": "Touch distance (px)",
+    "help": "How close a petiole mask must come to the lamina mask to count as attached.",
+    "type": "int",
+    "min": 0,
+    "max": 500,
+    "important": false,
+    "group": "Petiole Width"
+  },
+  "modules.bilateral_symmetry.enabled": {
+    "label": "Enabled",
+    "help": "Score how well each oriented leaf mirrors about its traced midvein and flag the best-scoring ones as archetypal.",
+    "type": "bool",
+    "important": true,
+    "group": "Bilateral Symmetry"
+  },
+  "modules.bilateral_symmetry.min_kpt_conf": {
+    "label": "Min keypoint confidence",
+    "help": "Keypoint score floor for the midvein, tip, and base points; lower-scoring keypoints are dropped before the axis is traced.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Bilateral Symmetry"
+  },
+  "modules.bilateral_symmetry.n_bins": {
+    "label": "Max arclength bins",
+    "help": "Upper bound on arclength bins along the midvein; small leaves get fewer bins so each one keeps about 500 lamina pixels.",
+    "type": "int",
+    "min": 12,
+    "max": 1000,
+    "important": false,
+    "group": "Bilateral Symmetry"
+  },
+  "modules.bilateral_symmetry.min_score": {
+    "label": "Min archetype score",
+    "help": "Archetype score a gate-passing leaf must reach to count as archetypal; raising it marks fewer leaves and draws more QC panels.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": true,
+    "group": "Bilateral Symmetry"
+  },
+  "modules.bilateral_symmetry.qc_images": {
+    "label": "QC panels",
+    "help": "Which leaves get a QC panel: none, flagged (failed a gate or below the score), or all, which adds about 0.12s per leaf.",
+    "type": "enum",
+    "enum": [
+      "none",
+      "flagged",
+      "all"
+    ],
+    "important": true,
+    "group": "Bilateral Symmetry"
+  },
+  "modules.metric_grounding.enabled": {
+    "label": "Enabled",
+    "help": "Convert the stored pixel measurements to centimeters using each sheet's conversion factor.",
+    "type": "bool",
+    "important": true,
+    "group": "Metric Grounding"
+  },
+  "modules.metric_grounding.missing_cf_policy": {
+    "label": "Missing CF policy",
+    "help": "What to do for a specimen with no trusted conversion factor; skip leaves its centimeter columns empty and is the only implemented behavior.",
+    "type": "enum",
+    "enum": [
+      "skip"
+    ],
+    "important": false,
+    "group": "Metric Grounding"
+  },
+  "modules.metric_grounding.round_ndigits": {
+    "label": "Rounding digits",
+    "help": "Decimal places kept on the converted centimeter values.",
+    "type": "int",
+    "min": 0,
+    "max": 12,
+    "important": false,
+    "group": "Metric Grounding"
+  },
+  "modules.reporter.enabled": {
+    "label": "Enabled",
+    "help": "Write the exported images: every overlay, mask, crop, and per-leaf product below comes from this module.",
+    "type": "bool",
+    "important": true,
+    "group": "Reporter"
+  },
+  "modules.ect.enabled": {
+    "label": "Enabled",
+    "help": "Compute the Euler Characteristic Transform shape signature for each oriented whole leaf.",
+    "type": "bool",
+    "important": true,
+    "group": "ECT"
+  },
+  "modules.ect.include_petiole": {
+    "label": "Include petiole",
+    "help": "Add the petiole to the shape; leaving it off measures the lamina alone.",
+    "type": "bool",
+    "important": true,
+    "group": "ECT"
+  },
+  "modules.ect.include_holes": {
+    "label": "Include holes",
+    "help": "Punch insect holes out of the lamina instead of filling them in.",
+    "type": "bool",
+    "important": true,
+    "group": "ECT"
+  },
+  "modules.ect.num_dirs": {
+    "label": "Directions",
+    "help": "How many angular directions (and thresholds) the transform sweeps; more gives a finer signature and a bigger file.",
+    "type": "int",
+    "min": 8,
+    "max": 1440,
+    "important": true,
+    "group": "ECT"
+  },
+  "modules.ect.bound_radius": {
+    "label": "Bounding radius",
+    "help": "Every outline is scaled to this unit-circle radius before the transform, so shapes are size-normalized.",
+    "type": "float",
+    "min": 0.1,
+    "max": 10.0,
+    "step": 0.1,
+    "important": false,
+    "group": "ECT"
+  },
+  "modules.ect.palette": {
+    "label": "Color map",
+    "help": "Matplotlib color map used for both shape visuals.",
+    "type": "string",
+    "important": false,
+    "group": "ECT"
+  },
+  "modules.ect.apply_log_to_visual_for_bold_color": {
+    "label": "Bold colors (log scale the visuals)",
+    "help": "Log-scale the transform before coloring, so the color map spreads over the dense middle of the range and the structure stands out instead of washing into one shade. Affects the saved pictures only — the transform written to the data files and the database is always the raw, unscaled one.",
+    "type": "bool",
+    "important": false,
+    "group": "ECT"
+  },
+  "modules.ect.radial_viz": {
+    "label": "Write radial visual",
+    "help": "Save the polar view of each leaf's transform.",
+    "type": "bool",
+    "important": true,
+    "group": "ECT"
+  },
+  "modules.ect.cartesian_viz": {
+    "label": "Write matrix visual",
+    "help": "Save the rectangular matrix view of each leaf's transform.",
+    "type": "bool",
+    "important": true,
+    "group": "ECT"
+  },
+  "modules.ect.radial_overlay_viz": {
+    "label": "Write outline overlay visual",
+    "help": "Save the polar view with the leaf outline drawn on top, tip up in both.",
+    "type": "bool",
+    "important": true,
+    "group": "ECT"
+  },
+  "modules.ect.outline_simple": {
+    "label": "Store simplified outline",
+    "help": "Also keep a Douglas-Peucker-simplified copy of the outline in the data file.",
+    "type": "bool",
+    "important": false,
+    "group": "ECT"
+  },
+  "modules.ect.simplify_tolerance": {
+    "label": "Simplify tolerance",
+    "help": "Douglas-Peucker distance tolerance on the size-normalized outline.",
+    "type": "float",
+    "min": 0.0,
+    "max": 0.1,
+    "step": 0.0005,
+    "important": false,
+    "group": "ECT"
+  },
+  "modules.ect.simplify_cutoff": {
+    "label": "Simplify cutoff",
+    "help": "Only outlines with more points than this get simplified.",
+    "type": "int",
+    "min": 0,
+    "max": 100000,
+    "important": false,
+    "group": "ECT"
+  },
+  "modules.ect.export_literal_coords": {
+    "label": "Store pixel outline",
+    "help": "Also keep the raw un-normalized pixel outline in the data file.",
+    "type": "bool",
+    "important": false,
+    "group": "ECT"
+  },
+  "report.overlay.enabled": {
+    "label": "Write summary overlay",
+    "help": "Save the annotated whole-sheet review image for every specimen.",
+    "type": "bool",
+    "important": true,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.box_style": {
+    "label": "Leaf box style",
+    "help": "'rotated' draws the minimum bounding box the Morphology module fitted; 'yolo' draws the axis-aligned detector box.",
+    "type": "enum",
+    "enum": [
+      "rotated",
+      "yolo"
+    ],
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.draw_masks": {
+    "label": "Draw masks",
+    "help": "Fill the leaf, petiole, and hole masks on the overlay.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.draw_landmarks": {
+    "label": "Draw landmarks",
+    "help": "Draw the keypoints and skeleton on top of the masks and boxes.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.draw_petiole": {
+    "label": "Draw petiole width",
+    "help": "Draw each measured petiole width as a colored band.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.draw_labels": {
+    "label": "Draw class labels",
+    "help": "Print the class name inside each box.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.draw_confidence": {
+    "label": "Draw confidence",
+    "help": "Append the detection score to each class label.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.draw_cf_banner": {
+    "label": "Draw CF banner",
+    "help": "Print the derived pixels-per-centimeter banner across the sheet.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.insert_cf_in_rulers": {
+    "label": "Ruler scale bars",
+    "help": "Lay a 1 cm and a 1 inch bar, drawn at the sheet's conversion factor, on a white raft over every detected ruler.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.insert_cf_exterior": {
+    "label": "Exterior scale ring",
+    "help": "Append a checkerboard of 1 cm squares outside the top and left edges of the sheet, so it measures without covering anything.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.cf_scalebar.cm_color": {
+    "label": "1 cm bar color",
+    "help": "Color of the centimeter bar in the ruler scale raft.",
+    "type": "color",
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.inch_color": {
+    "label": "1 inch bar color",
+    "help": "Color of the inch bar in the ruler scale raft.",
+    "type": "color",
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.raft_color": {
+    "label": "Raft color",
+    "help": "Color of the solid backing the two ruler scale bars sit on.",
+    "type": "color",
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.brim": {
+    "label": "Raft brim",
+    "help": "Width in pixels of the backing that shows around and between the two bars.",
+    "type": "int",
+    "min": 0,
+    "max": 50,
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.bar_thickness": {
+    "label": "Bar thickness",
+    "help": "Bar width across the ruler in pixels at the reference resolution; it scales with image size and shrinks to fit a narrow ruler.",
+    "type": "int",
+    "min": 1,
+    "max": 100,
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.exterior_cells": {
+    "label": "Exterior ring thickness",
+    "help": "How many 1 cm squares thick the exterior checkerboard band is.",
+    "type": "int",
+    "min": 1,
+    "max": 10,
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.exterior_light": {
+    "label": "Exterior light square",
+    "help": "Color of the light squares in the exterior checkerboard, and of the margin behind it.",
+    "type": "color",
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.exterior_dark": {
+    "label": "Exterior dark square",
+    "help": "Color of the dark squares in the exterior checkerboard.",
+    "type": "color",
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.groups.leaf.border": {
+    "label": "Leaf boxes: outline",
+    "help": "Stroke the outline of every box for Leaf_WHOLE and Leaf_PARTIAL.",
+    "type": "bool",
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.leaf.fill": {
+    "label": "Leaf boxes: fill",
+    "help": "Shade the interior of every box for Leaf_WHOLE and Leaf_PARTIAL.",
+    "type": "bool",
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.leaf.fill_alpha": {
+    "label": "Leaf boxes: fill opacity",
+    "help": "How opaque that interior shading is, 0 being invisible and 1 solid.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.leaf.line_width": {
+    "label": "Leaf boxes: line width",
+    "help": "Outline width in pixels at the reference resolution; it scales with image size.",
+    "type": "int",
+    "min": 1,
+    "max": 30,
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.plant.border": {
+    "label": "Plant boxes: outline",
+    "help": "Stroke the outline of every box for the other plant organ classes.",
+    "type": "bool",
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.plant.fill": {
+    "label": "Plant boxes: fill",
+    "help": "Shade the interior of every box for the other plant organ classes.",
+    "type": "bool",
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.plant.fill_alpha": {
+    "label": "Plant boxes: fill opacity",
+    "help": "How opaque that interior shading is, 0 being invisible and 1 solid.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.plant.line_width": {
+    "label": "Plant boxes: line width",
+    "help": "Outline width in pixels at the reference resolution; it scales with image size.",
+    "type": "int",
+    "min": 1,
+    "max": 30,
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.archival.border": {
+    "label": "Archival boxes: outline",
+    "help": "Stroke the outline of every box for the archival classes such as rulers and labels.",
+    "type": "bool",
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.archival.fill": {
+    "label": "Archival boxes: fill",
+    "help": "Shade the interior of every box for the archival classes such as rulers and labels.",
+    "type": "bool",
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.archival.fill_alpha": {
+    "label": "Archival boxes: fill opacity",
+    "help": "How opaque that interior shading is, 0 being invisible and 1 solid.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.groups.archival.line_width": {
+    "label": "Archival boxes: line width",
+    "help": "Outline width in pixels at the reference resolution; it scales with image size.",
+    "type": "int",
+    "min": 1,
+    "max": 30,
+    "important": false,
+    "group": "Box groups"
+  },
+  "report.overlay.alpha": {
+    "label": "Mask opacity",
+    "help": "How opaque the mask fills are, 0 being clear and 1 solid.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.line_width_mask": {
+    "label": "Mask outline width",
+    "help": "Width in pixels of the stroke around each mask.",
+    "type": "int",
+    "min": 0,
+    "max": 30,
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.font_scale": {
+    "label": "Label size",
+    "help": "Multiplier applied after labels are auto-fitted to their box.",
+    "type": "float",
+    "min": 0.1,
+    "max": 5.0,
+    "step": 0.1,
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.label_text_color": {
+    "label": "Label text color",
+    "help": "Color of the class-name text drawn inside each box.",
+    "type": "color",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.cf_banner_color": {
+    "label": "CF banner color",
+    "help": "Color of the conversion-factor banner text.",
+    "type": "color",
+    "important": false,
+    "group": "Summary Overlay"
+  },
+  "report.overlay.classes.archival.Ruler.color": {
+    "label": "Ruler color",
+    "help": "Overlay color for ruler.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Ruler.show": {
+    "label": "Ruler visible",
+    "help": "Draw ruler on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Barcode.color": {
+    "label": "Barcode color",
+    "help": "Overlay color for barcode.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Barcode.show": {
+    "label": "Barcode visible",
+    "help": "Draw barcode on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Colorcard.color": {
+    "label": "Color card color",
+    "help": "Overlay color for color card.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Colorcard.show": {
+    "label": "Color card visible",
+    "help": "Draw color card on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Label.color": {
+    "label": "Label color",
+    "help": "Overlay color for label.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Label.show": {
+    "label": "Label visible",
+    "help": "Draw label on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Map.color": {
+    "label": "Map color",
+    "help": "Overlay color for map.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Map.show": {
+    "label": "Map visible",
+    "help": "Draw map on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Envelope.color": {
+    "label": "Envelope color",
+    "help": "Overlay color for envelope.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Envelope.show": {
+    "label": "Envelope visible",
+    "help": "Draw envelope on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Photo.color": {
+    "label": "Photo color",
+    "help": "Overlay color for photo.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Photo.show": {
+    "label": "Photo visible",
+    "help": "Draw photo on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Attached_Item.color": {
+    "label": "Attached item color",
+    "help": "Overlay color for attached item.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Attached_Item.show": {
+    "label": "Attached item visible",
+    "help": "Draw attached item on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Weights.color": {
+    "label": "Weights color",
+    "help": "Overlay color for weights.",
+    "type": "color",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.archival.Weights.show": {
+    "label": "Weights visible",
+    "help": "Draw weights on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Archival colors"
+  },
+  "report.overlay.classes.plant.Leaf_WHOLE.color": {
+    "label": "Whole leaf color",
+    "help": "Overlay color for whole leaf.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Leaf_WHOLE.show": {
+    "label": "Whole leaf visible",
+    "help": "Draw whole leaf on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Leaf_PARTIAL.color": {
+    "label": "Partial leaf color",
+    "help": "Overlay color for partial leaf.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Leaf_PARTIAL.show": {
+    "label": "Partial leaf visible",
+    "help": "Draw partial leaf on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Leaflet.color": {
+    "label": "Leaflet color",
+    "help": "Overlay color for leaflet.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Leaflet.show": {
+    "label": "Leaflet visible",
+    "help": "Draw leaflet on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Seed_Fruit_ONE.color": {
+    "label": "Single fruit color",
+    "help": "Overlay color for single fruit.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Seed_Fruit_ONE.show": {
+    "label": "Single fruit visible",
+    "help": "Draw single fruit on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Seed_Fruit_MANY.color": {
+    "label": "Fruit cluster color",
+    "help": "Overlay color for fruit cluster.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Seed_Fruit_MANY.show": {
+    "label": "Fruit cluster visible",
+    "help": "Draw fruit cluster on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Flower_ONE.color": {
+    "label": "Single flower color",
+    "help": "Overlay color for single flower.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Flower_ONE.show": {
+    "label": "Single flower visible",
+    "help": "Draw single flower on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Flower_MANY.color": {
+    "label": "Flower cluster color",
+    "help": "Overlay color for flower cluster.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Flower_MANY.show": {
+    "label": "Flower cluster visible",
+    "help": "Draw flower cluster on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Bud.color": {
+    "label": "Bud color",
+    "help": "Overlay color for bud.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Bud.show": {
+    "label": "Bud visible",
+    "help": "Draw bud on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Specimen.color": {
+    "label": "Specimen color",
+    "help": "Overlay color for specimen.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Specimen.show": {
+    "label": "Specimen visible",
+    "help": "Draw specimen on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Roots.color": {
+    "label": "Roots color",
+    "help": "Overlay color for roots.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Roots.show": {
+    "label": "Roots visible",
+    "help": "Draw roots on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Wood.color": {
+    "label": "Wood color",
+    "help": "Overlay color for wood.",
+    "type": "color",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.plant.Wood.show": {
+    "label": "Wood visible",
+    "help": "Draw wood on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Plant colors"
+  },
+  "report.overlay.classes.segmentation.Leaf.color": {
+    "label": "Leaf mask color",
+    "help": "Overlay color for leaf mask.",
+    "type": "color",
+    "important": false,
+    "group": "Mask colors"
+  },
+  "report.overlay.classes.segmentation.Leaf.show": {
+    "label": "Leaf mask visible",
+    "help": "Draw leaf mask on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Mask colors"
+  },
+  "report.overlay.classes.segmentation.Petiole.color": {
+    "label": "Petiole mask color",
+    "help": "Overlay color for petiole mask.",
+    "type": "color",
+    "important": false,
+    "group": "Mask colors"
+  },
+  "report.overlay.classes.segmentation.Petiole.show": {
+    "label": "Petiole mask visible",
+    "help": "Draw petiole mask on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Mask colors"
+  },
+  "report.overlay.classes.segmentation.Hole.color": {
+    "label": "Hole mask color",
+    "help": "Overlay color for hole mask.",
+    "type": "color",
+    "important": false,
+    "group": "Mask colors"
+  },
+  "report.overlay.classes.segmentation.Hole.show": {
+    "label": "Hole mask visible",
+    "help": "Draw hole mask on the overlay at all.",
+    "type": "bool",
+    "important": false,
+    "group": "Mask colors"
+  },
+  "report.overlay.landmark.draw_points": {
+    "label": "Draw points",
+    "help": "Draw a dot at every keypoint.",
+    "type": "bool",
+    "important": false,
+    "group": "Landmark Style"
+  },
+  "report.overlay.landmark.draw_skeleton": {
+    "label": "Draw skeleton",
+    "help": "Connect the keypoints with the skeleton lines.",
+    "type": "bool",
+    "important": false,
+    "group": "Landmark Style"
+  },
+  "report.overlay.landmark.point_radius": {
+    "label": "Point radius",
+    "help": "Keypoint dot radius in pixels.",
+    "type": "int",
+    "min": 1,
+    "max": 30,
+    "important": false,
+    "group": "Landmark Style"
+  },
+  "report.overlay.landmark.line_width": {
+    "label": "Skeleton width",
+    "help": "Skeleton line width in pixels.",
+    "type": "int",
+    "min": 1,
+    "max": 30,
+    "important": false,
+    "group": "Landmark Style"
+  },
+  "report.overlay.landmark.min_conf": {
+    "label": "Hide below confidence",
+    "help": "Keypoints scoring under this are left undrawn as occluded or uncertain.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.01,
+    "important": false,
+    "group": "Landmark Style"
+  },
+  "report.overlay.landmark.label_color": {
+    "label": "Landmark label color",
+    "help": "Color of the text drawn beside the landmarks.",
+    "type": "color",
+    "important": false,
+    "group": "Landmark Style"
+  },
+  "report.overlay.landmark.curvature_color": {
+    "label": "Curvature line color",
+    "help": "Color of the two bend lines from the midvein ends to the curvature point.",
+    "type": "color",
+    "important": false,
+    "group": "Landmark Style"
+  },
+  "report.overlay.landmark.colors.lamina": {
+    "label": "Lamina color",
+    "help": "Color used for the lamina tip and base anchor points.",
+    "type": "color",
+    "important": false,
+    "group": "Landmark colors"
+  },
+  "report.overlay.landmark.colors.midvein": {
+    "label": "Midvein color",
+    "help": "Color used for the midrib trace.",
+    "type": "color",
+    "important": false,
+    "group": "Landmark colors"
+  },
+  "report.overlay.landmark.colors.apex": {
+    "label": "Apex color",
+    "help": "Color used for the apex triple.",
+    "type": "color",
+    "important": false,
+    "group": "Landmark colors"
+  },
+  "report.overlay.landmark.colors.base": {
+    "label": "Base color",
+    "help": "Color used for the base triple.",
+    "type": "color",
+    "important": false,
+    "group": "Landmark colors"
+  },
+  "report.overlay.landmark.colors.petiole": {
+    "label": "Petiole color",
+    "help": "Color used for the petiole trace and its tip.",
+    "type": "color",
+    "important": false,
+    "group": "Landmark colors"
+  },
+  "report.overlay.landmark.colors.width": {
+    "label": "Width color",
+    "help": "Color used for the left and right width points.",
+    "type": "color",
+    "important": false,
+    "group": "Landmark colors"
+  },
+  "report.overlay.petiole.width_color": {
+    "label": "Reported width color",
+    "help": "Color of the reported median width band and the matching line in the zoom panel.",
+    "type": "color",
+    "important": false,
+    "group": "Petiole Style"
+  },
+  "report.overlay.petiole.sample_color": {
+    "label": "Sample probe color",
+    "help": "Color of the individual perpendicular width probes.",
+    "type": "color",
+    "important": false,
+    "group": "Petiole Style"
+  },
+  "report.overlay.petiole.band_thickness": {
+    "label": "Width band thickness",
+    "help": "Thickness in pixels of the reported width band.",
+    "type": "int",
+    "min": 1,
+    "max": 30,
+    "important": false,
+    "group": "Petiole Style"
+  },
+  "report.overlay.petiole.sample_thickness": {
+    "label": "Probe thickness",
+    "help": "Thickness in pixels of each sample probe.",
+    "type": "int",
+    "min": 1,
+    "max": 30,
+    "important": false,
+    "group": "Petiole Style"
+  },
+  "report.overlay.petiole.mask_alpha": {
+    "label": "Mask opacity",
+    "help": "How opaque the leaf and petiole fills are in the petiole overlay.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Petiole Style"
+  },
+  "report.overlay.petiole.label_color": {
+    "label": "Panel text color",
+    "help": "Color of the measurement text in the petiole overlay panel.",
+    "type": "color",
+    "important": false,
+    "group": "Petiole Style"
+  },
+  "report.overlay.petiole.zoom_bg_tint": {
+    "label": "Zoom tint amount",
+    "help": "How strongly the zoom panel's background is tinted, 0 leaving the petiole in full color.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Petiole Style"
+  },
+  "report.overlay.petiole.zoom_bg_color": {
+    "label": "Zoom tint color",
+    "help": "Color used for that zoom-panel background tint.",
+    "type": "color",
+    "important": false,
+    "group": "Petiole Style"
+  },
+  "report.overlay_landmarks.enabled": {
+    "label": "Write landmark overlays",
+    "help": "Save one review image per leaf with its keypoints, skeleton, and derived measurements.",
+    "type": "bool",
+    "important": true,
+    "group": "Landmark Overlay"
+  },
+  "report.overlay_petiole.enabled": {
+    "label": "Write petiole overlays",
+    "help": "Save one review image per leaf with a petiole, including the rotated close-up of the measured width.",
+    "type": "bool",
+    "important": true,
+    "group": "Petiole Overlay"
+  },
+  "report.overlay_specimen.enabled": {
+    "label": "Write specimen overlays",
+    "help": "Save the two-panel review image showing the specimen mask on the sheet beside the cutout.",
+    "type": "bool",
+    "important": true,
+    "group": "Specimen Overlay"
+  },
+  "report.overlay_specimen.mask_color": {
+    "label": "Mask color",
+    "help": "Fill color of the final specimen mask.",
+    "type": "color",
+    "important": false,
+    "group": "Specimen Overlay"
+  },
+  "report.overlay_specimen.refined_color": {
+    "label": "Removed-region color",
+    "help": "Tint marking the region the paper cleanup removed.",
+    "type": "color",
+    "important": false,
+    "group": "Specimen Overlay"
+  },
+  "report.overlay_specimen.sample_box_color": {
+    "label": "Sample box color",
+    "help": "Outline color of the boxes showing where paper was sampled.",
+    "type": "color",
+    "important": false,
+    "group": "Specimen Overlay"
+  },
+  "report.overlay_specimen.mask_alpha": {
+    "label": "Mask opacity",
+    "help": "How opaque the specimen mask fill is.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Specimen Overlay"
+  },
+  "report.overlay_specimen.refined_alpha": {
+    "label": "Removed-region opacity",
+    "help": "How opaque the removed-region tint is.",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Specimen Overlay"
+  },
+  "report.overlay_specimen.outline": {
+    "label": "Stroke mask contour",
+    "help": "Draw a stroke along the final mask's contour.",
+    "type": "bool",
+    "important": false,
+    "group": "Specimen Overlay"
+  },
+  "report.overlay_specimen.display_max_dim": {
+    "label": "Panel max dimension",
+    "help": "Long-side pixel cap on each panel; 0 keeps full resolution.",
+    "type": "int",
+    "min": 0,
+    "max": 12000,
+    "important": false,
+    "group": "Specimen Overlay"
+  },
+  "report.overlay_ruler_lattice.enabled": {
+    "label": "Write ruler audit panels",
+    "help": "Save the stacked panel per sheet showing every ruler's detected tick lattice and how they were reconciled into one conversion factor.",
+    "type": "bool",
+    "important": true,
+    "group": "Ruler Overlay"
+  },
+  "report.masks.classes": {
+    "label": "Exported classes",
+    "help": "Which segmentation classes get a mask folder written.",
+    "type": "list",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.background": {
+    "label": "Background",
+    "help": "Background color behind the RGB cutouts.",
+    "type": "enum",
+    "enum": [
+      "black",
+      "white"
+    ],
+    "important": false,
+    "group": "Mask Exports"
+  },
+  "report.masks.subtract_holes": {
+    "label": "Subtract holes",
+    "help": "Remove the insect holes from the leaf mask instead of leaving the silhouette solid.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.Binary_Masks_Full_Image": {
+    "label": "Full-sheet binary masks",
+    "help": "Write one whole-sheet black-and-white leaf mask per specimen.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.RGB_Masks_Full_Image": {
+    "label": "Full-sheet color cutouts",
+    "help": "Write one whole-sheet color leaf cutout per specimen.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.Binary_Masks__Specimen": {
+    "label": "Specimen binary masks",
+    "help": "Write the whole-plant black-and-white mask from the Specimen Segmenter.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.RGB_Masks__Specimen": {
+    "label": "Specimen color cutouts",
+    "help": "Write the whole-plant color cutout on the chosen background.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.Binary_Masks__Specimen_Inverse": {
+    "label": "Not-specimen binary masks",
+    "help": "Write the exact inverse of the whole-plant mask: white everywhere the sheet is not plant.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.RGB_Masks__Specimen_Inverse": {
+    "label": "Not-specimen color cutouts",
+    "help": "Write the sheet with the plant lifted off it and painted over with the fill color below.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.inverse_fill": {
+    "label": "Not-specimen fill color",
+    "help": "What replaces the plant in the not-specimen cutouts: white, black, or an r,g,b triple such as 255, 0, 0.",
+    "type": "string",
+    "important": false,
+    "group": "Mask Exports"
+  },
+  "report.masks.Binary_Masks": {
+    "label": "Per-crop binary masks (legacy)",
+    "help": "Write the old unfitted per-crop leaf masks, superseded by the leaf products below.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.masks.RGB_Masks": {
+    "label": "Per-crop color cutouts (legacy)",
+    "help": "Write the old unfitted per-crop leaf cutouts, superseded by the leaf products below.",
+    "type": "bool",
+    "important": true,
+    "group": "Mask Exports"
+  },
+  "report.crops.enabled": {
+    "label": "Write class crops",
+    "help": "Save the plain bounding-box crop of each detection into one folder per class; leaf crops are handled by the leaf products instead.",
+    "type": "bool",
+    "important": true,
+    "group": "Crop Exports"
+  },
+  "report.crops.classes": {
+    "label": "Cropped classes",
+    "help": "'all' crops every detected class, or list the class names you want, such as [Ruler, Label].",
+    "type": "string",
+    "placeholder": "all",
+    "important": true,
+    "group": "Crop Exports"
+  },
+  "report.leaf_products.enabled": {
+    "label": "Write leaf products",
+    "help": "Save the per-leaf product tree, the main measurable output of a run.",
+    "type": "bool",
+    "important": true,
+    "group": "Leaf Products"
+  },
+  "report.leaf_products.original": {
+    "label": "Original orientation",
+    "help": "Write the tree that keeps each leaf as it sat on the sheet.",
+    "type": "bool",
+    "important": true,
+    "group": "Leaf Products"
+  },
+  "report.leaf_products.oriented": {
+    "label": "Upright orientation",
+    "help": "Write the tree with each leaf rotated tip-up, which needs the Leaf Orientation module to have found a rotation.",
+    "type": "bool",
+    "important": true,
+    "group": "Leaf Products"
+  },
+  "report.leaf_products.background": {
+    "label": "Background",
+    "help": "Color behind each cutout and in the corners left by rotation.",
+    "type": "enum",
+    "enum": [
+      "black",
+      "white"
+    ],
+    "important": false,
+    "group": "Leaf Products"
+  },
+  "report.leaf_products.fit_pad": {
+    "label": "Fit padding (px)",
+    "help": "Pixels of margin left around the fitted content; 0 crops tight.",
+    "type": "int",
+    "min": 0,
+    "max": 500,
+    "important": false,
+    "group": "Leaf Products"
+  },
+  "report.leaf_products.hole_rgb_color": {
+    "label": "Hole fill color",
+    "help": "Color painted into the holes of the holes cutout so they can be thresholded later.",
+    "type": "color",
+    "important": false,
+    "group": "Leaf Products"
+  },
+  "report.leaf_products.products.bbox": {
+    "label": "Bounding-box crop",
+    "help": "Write the plain unfitted leaf crop for every leaf.",
+    "type": "bool",
+    "important": true,
+    "group": "Products"
+  },
+  "report.leaf_products.products.lamina_mask": {
+    "label": "Lamina mask",
+    "help": "Write the black-and-white lamina with holes removed for every leaf.",
+    "type": "bool",
+    "important": true,
+    "group": "Products"
+  },
+  "report.leaf_products.products.lamina_petiole_mask": {
+    "label": "Lamina + petiole mask",
+    "help": "Write the black-and-white lamina with its petiole for every leaf.",
+    "type": "bool",
+    "important": true,
+    "group": "Products"
+  },
+  "report.leaf_products.products.lamina_holes_mask": {
+    "label": "Lamina silhouette mask",
+    "help": "Write the solid black-and-white lamina with holes filled for every leaf.",
+    "type": "bool",
+    "important": true,
+    "group": "Products"
+  },
+  "report.leaf_products.products.lamina_rgb": {
+    "label": "Lamina cutout",
+    "help": "Write the color lamina cutout for every leaf.",
+    "type": "bool",
+    "important": true,
+    "group": "Products"
+  },
+  "report.leaf_products.products.lamina_petiole_rgb": {
+    "label": "Lamina + petiole cutout",
+    "help": "Write the color lamina and petiole cutout for every leaf.",
+    "type": "bool",
+    "important": true,
+    "group": "Products"
+  },
+  "report.leaf_products.products.lamina_holes_rgb": {
+    "label": "Lamina holes cutout",
+    "help": "Write the color lamina cutout with its holes painted in for every leaf.",
+    "type": "bool",
+    "important": true,
+    "group": "Products"
+  },
+  "report.formats.image_ext": {
+    "label": "Image format",
+    "help": "Container for every color export.",
+    "type": "enum",
+    "enum": [
+      "jpg",
+      "png",
+      "tif"
+    ],
+    "important": false,
+    "group": "File Formats"
+  },
+  "report.formats.jpg_quality": {
+    "label": "JPEG quality",
+    "help": "Quality of the JPEG exports, 100 being visually lossless.",
+    "type": "int",
+    "min": 50,
+    "max": 100,
+    "important": false,
+    "group": "File Formats"
+  },
+  "report.formats.mask_ext": {
+    "label": "Mask format",
+    "help": "Container for every black-and-white mask export; keep it lossless.",
+    "type": "enum",
+    "enum": [
+      "png",
+      "tif"
+    ],
+    "important": false,
+    "group": "File Formats"
+  },
+  "report.data.enabled": {
+    "label": "Write CSV data export",
+    "help": "Write the project database out as CSV files into reports/Data at the end of the run. This is the numeric result of the run: the measurements behind every image LM3 produced.",
+    "type": "bool",
+    "important": true,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.folder": {
+    "label": "Folder name",
+    "help": "Subfolder of reports/ the CSV bundle is written into.",
+    "type": "string",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.format": {
+    "label": "File format",
+    "help": "Comma-separated (.csv) or tab-separated (.tsv) output.",
+    "type": "enum",
+    "enum": [
+      "csv",
+      "tsv"
+    ],
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.na_rep": {
+    "label": "Empty value",
+    "help": "What a missing measurement is written as. Blank is safest: most tools read it as a true missing value rather than as text. A measurement is missing when the pipeline could not make it (an occluded keypoint, or no conversion factor), never because it was zero.",
+    "type": "string",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.float_precision": {
+    "label": "Decimal places",
+    "help": "Decimal places every number is rounded to, which keeps floating-point noise out of the files.",
+    "type": "int",
+    "min": 0,
+    "max": 15,
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.leaf_measurements": {
+    "label": "Leaf measurements",
+    "help": "leaf_measurements.csv: ONE ROW PER LEAF, carrying every morphology, landmark, petiole and symmetry measurement together with the metadata that identifies the specimen and the leaf. The main file.",
+    "type": "bool",
+    "important": true,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.specimen_summary": {
+    "label": "Specimen summary",
+    "help": "specimen_summary.csv: one row per input image, with its conversion factor, phenology and counts and medians rolled up from that sheet's leaves.",
+    "type": "bool",
+    "important": true,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.detections": {
+    "label": "Detections",
+    "help": "detections.csv: one row per detection box from both detectors, including the boxes that were suppressed as duplicates.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.landmarks": {
+    "label": "Landmark keypoints",
+    "help": "landmarks.csv: one row per predicted keypoint, 31 per leaf, in both sheet and crop coordinates. The measurements derived from these are already in the leaf file.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.ruler_conversion_factor": {
+    "label": "Ruler conversion factor",
+    "help": "ruler_conversion_factor.csv: one row per sheet recording the conversion-factor verdict, its confidence and the reasoning. Worth keeping: a wrong factor silently corrupts every centimeter value.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.ruler_crops": {
+    "label": "Ruler crops",
+    "help": "ruler_crops.csv: one row per candidate ruler crop, including the ones skipped or unreadable.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.run_stages": {
+    "label": "Run stages",
+    "help": "run_stages.csv: one row per pipeline stage with its state and counts.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.stage_errors": {
+    "label": "Stage errors",
+    "help": "stage_errors.csv: one row per per-image failure, so a run's errors are visible without opening the log.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.data_dictionary": {
+    "label": "Data dictionary",
+    "help": "data_dictionary.csv: every column of every exported file, with its units and what it means.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.leaf_products.products.lamina_petiole_holes_mask": {
+    "label": "Lamina + petiole, holes filled",
+    "help": "Solid leaf-and-petiole silhouette with any holes filled in. Off by default; the ECT module turns it on automatically when it needs this mask.",
+    "type": "bool",
+    "important": false,
+    "group": "Leaf Products"
+  },
+  "timing.enabled": {
+    "label": "Enabled",
+    "help": "Time every module and write reports/Timing/timing.csv plus an interactive timing.html.",
+    "type": "bool",
+    "important": true,
+    "group": "Timing"
+  },
+  "timing.sample_interval_s": {
+    "label": "Sample interval (s)",
+    "help": "How often processor and GPU utilization are sampled while modules run.",
+    "type": "float",
+    "min": 0.05,
+    "max": 10.0,
+    "step": 0.05,
+    "important": false,
+    "group": "Timing"
+  }
+}

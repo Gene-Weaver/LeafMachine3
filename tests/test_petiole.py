@@ -46,3 +46,54 @@ def test_no_centerline_records_touch_but_no_width():
     pw = measure_petiole(mask, leaf, [(30, 20)])             # only one point -> no direction
     assert pw.touches_leaf is True
     assert pw.width_px is None and pw.n_samples == 0
+
+
+# --------------------------------------------------------------------------- #
+# Leaf mass per area (Royer petiole-width scaling)
+#   log10(LMA) = 3.070 + 0.382 * log10(PW^2 / A),  LMA in g/m^2
+# --------------------------------------------------------------------------- #
+import math
+
+from leafmachine3.modules.petiole_width import LMA_A, LMA_B, _area_by_leaf, _lma
+
+
+def test_lma_matches_the_published_formula():
+    pw, area = 7.5, 70312.5
+    assert _lma(pw, area) == pytest.approx(10 ** (LMA_A + LMA_B * math.log10(pw * pw / area)))
+
+
+def test_lma_is_scale_invariant_so_no_ruler_cf_is_needed():
+    """PW^2/A is a ratio of areas, so px, mm and cm must all give the same LMA."""
+    cf = 37.5                                     # px per cm
+    px = _lma(7.5, 70312.5)
+    cm = _lma(7.5 / cf, 70312.5 / cf ** 2)
+    mm = _lma(7.5 / cf * 10, 70312.5 / cf ** 2 * 100)
+    assert px == pytest.approx(cm) == pytest.approx(mm)
+
+
+def test_lma_lands_in_a_biologically_plausible_range():
+    """A ~2 mm petiole on a ~50 cm^2 lamina is a real leaf; guards against a log-base slip.
+
+    Natural logs here would yield ~1.4 g/m^2 instead of ~77, which is why the base matters.
+    """
+    lma = _lma(2.0, 5000.0)                       # mm and mm^2
+    assert 20.0 < lma < 200.0
+
+
+def test_lma_grows_with_petiole_width_and_falls_with_leaf_area():
+    assert _lma(4.0, 5000.0) > _lma(2.0, 5000.0)
+    assert _lma(2.0, 9000.0) < _lma(2.0, 5000.0)
+
+
+@pytest.mark.parametrize("pw,area", [(None, 5000.0), (2.0, None), (0.0, 5000.0),
+                                     (2.0, 0.0), (-1.0, 5000.0), (2.0, -5.0)])
+def test_lma_is_none_when_not_computable(pw, area):
+    """A missing petiole or a degenerate mask must yield NULL, never a crash or a nan."""
+    assert _lma(pw, area) is None
+
+
+def test_area_by_leaf_skips_rows_without_a_usable_area():
+    rows = [{"leaf_id": 1, "area_px": 1200.0}, {"leaf_id": 2, "area_px": None},
+            {"leaf_id": 3, "area_px": 0.0}, {"area_px": 500.0}]
+    assert _area_by_leaf(rows) == {1: 1200.0}
+    assert _area_by_leaf([]) == {} and _area_by_leaf(None) == {}

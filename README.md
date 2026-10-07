@@ -97,7 +97,8 @@ default) or the axis-aligned YOLO box (`yolo`).
 ## Install
 
 Pinned, reproducible (recommended) — see **[INSTALL.md](INSTALL.md)** for the full guide (extras,
-poetry, the torch-CUDA-build gotcha):
+poetry). The runtime needs **no torch and no ultralytics**: every model is an exported end2end ONNX
+graph driven by onnxruntime (`leafmachine3/inference/ultra_replacements.py`).
 
 ```bash
 python -m venv .venv_LM3 && .venv_LM3/bin/pip install -U pip wheel setuptools
@@ -106,9 +107,9 @@ python -m venv .venv_LM3 && .venv_LM3/bin/pip install -U pip wheel setuptools
 .venv_LM3/bin/pip install -r requirements/requirements-macos.txt   # macOS (MPS + CoreML)
 ```
 
-Or the flexible extras: `pip install -e ".[gpu,yolo]"` (`cpu`/`macos` variants too). ⚠️ pip's default
-`torch` is a CUDA-13 wheel (needs driver ≥ 580); on older drivers use the cu124 wheel pinned in the
-GPU requirements — see INSTALL.md.
+Or the flexible extras: `pip install -e ".[gpu]"` (`cpu`/`macos` variants too). The GPU extra pulls the
+CUDA 12 runtime libraries as `nvidia-*` wheels; the only system requirement is an NVIDIA driver
+≥ 525.60.13 (Linux) / 528.33 (Windows). `onnxruntime-gpu` must stay < 1.21 (1.28+ is a CUDA-13 build).
 
 Models are **not** committed. Place exported artifacts under `models/<stage>/` (or symlink the
 training-repo exports); paths are set in `LM3_settings.yaml`.
@@ -137,30 +138,80 @@ reports/
     Overlay_Summary/             <stem>__Overlay.jpg                   (masks + boxes + landmarks + petiole bands)
     Overlay_Landmarks/           <stem>__LM-leaf__x_y_x_y.jpg          (per leaf: keypoints + measures)
     Overlay_Petiole/             <stem>__PET-leaf__x_y_x_y.jpg         (per leaf: petiole width)
-  Original/                      (7 leaf products, non-oriented)
-    Leaf_BBox/                   <stem>__BBOX-leaf__x_y_x_y.jpg        (not fitted)
-    Lamina_Mask/                 <stem>__SEG-lamina__x_y_x_y.png       (fitted; holes removed)
-    LaminaPetiole_Mask/          <stem>__SEG-laminaPetiole__x_y_x_y.png
-    Lamina_Holes_Mask/           <stem>__SEG-laminaHoles__x_y_x_y.png  (solid silhouette)
-    Lamina_RGB/                  <stem>__RGB-lamina__x_y_x_y.jpg
-    LaminaPetiole_RGB/           <stem>__RGB-laminaPetiole__x_y_x_y.jpg
-    Lamina_Holes_RGB/            <stem>__RGB-laminaHoles__x_y_x_y.jpg  (holes = (10,10,10))
-  Oriented/                      (same 7 products, rotated tip-up)
+    Overlay_Specimen_Segmentation/ <stem>__SpecimenSeg.jpg            (annotated sheet | cutout)
+    Overlay_Ruler_Lattice/       <stem>__RulerLattice.png              (ruler-CF QC panel)
+  Leaf_Original/                 (7 leaf products, non-oriented)
+    Leaf_BBox/                   <stem>__og-BBOX-leaf__x_y_x_y.jpg        (not fitted)
+    Lamina_Mask/                 <stem>__og-SEG-lamina__x_y_x_y.png       (fitted; holes removed)
+    LaminaPetiole_Mask/          <stem>__og-SEG-laminaPetiole__x_y_x_y.png
+    Lamina_Holes_Mask/           <stem>__og-SEG-laminaHoles__x_y_x_y.png  (solid silhouette)
+    Lamina_RGB/                  <stem>__og-RGB-lamina__x_y_x_y.jpg
+    LaminaPetiole_RGB/           <stem>__og-RGB-laminaPetiole__x_y_x_y.jpg
+    Lamina_Holes_RGB/            <stem>__og-RGB-laminaHoles__x_y_x_y.jpg  (holes = (10,10,10))
+  Leaf_Oriented/                 (same 7 products rotated tip-up, tagged `or-` instead of `og-`)
   Crops/RGB__<friendly>/         <stem>__BBOX-<friendly>__x_y_x_y.jpg   (NON-leaf classes)
-  Binary_Masks/
-    Binary_Masks_Full_Image__Leaf/  <stem>__MaskFull-leaf.png          (per specimen)
+  Specimen_Masks/                (every mask export shares this one parent)
+    Binary_Masks_Specimen__Leaf/    <stem>__MaskFull-leaf.png           (per specimen)
+    RGB_Masks_Specimen__Leaf/       <stem>__MaskRGBFull-leaf.jpg        (per specimen)
     Binary_Masks__Leaf/             <stem>__SEG-leaf__x_y_x_y.png       (per leaf crop)
-  RGB_Masks/
-    RGB_Masks_Full_Image__Leaf/     <stem>__MaskFull-leaf.jpg           (per specimen)
-    RGB_Masks__Leaf/                <stem>__SEG-leaf__x_y_x_y.jpg       (per leaf crop)
+    RGB_Masks__Leaf/                <stem>__SEGRGB-leaf__x_y_x_y.jpg    (per leaf crop)
+    Binary_Masks_Specimen/          <stem>__MaskFull-specimen.png       (whole specimen)
+    RGB_Masks_Specimen/             <stem>__MaskRGBFull-specimen.jpg
+    Binary_Masks_Specimen_Inverse/  <stem>__MaskFull-specimenInverse.png     (opt-in)
+    RGB_Masks_Specimen_Inverse/     <stem>__MaskRGBFull-specimenInverse.jpg  (opt-in)
+  Leaf_Data/
+    Bilateral_Symmetry/          <stem>__BSYM-leaf__x_y_x_y.jpg
+    Coordinates/                 <stem>__ECT__x_y_x_y.h5
+    Oriented_Leaf_ECT/           <stem>__ECT__x_y_x_y.png                    (Cartesian)
+    Oriented_Leaf_Radial_ECT/    <stem>__ECT-radial__x_y_x_y.png             (polar)
+    Oriented_Leaf_Radial_ECT_Overlay/ <stem>__ECT-radial-overlay__x_y_x_y.png
+  Data/                          (the NUMBERS behind every image above -- see below)
+    leaf_measurements.csv        ONE ROW PER LEAF: every measurement + its identifying metadata
+    specimen_summary.csv         one row per input image, with per-sheet roll-ups
+    detections.csv               one row per detection box, both detectors
+    landmarks.csv                one row per predicted keypoint (31 per leaf)
+    ruler_conversion_factor.csv  one row per sheet: the CF verdict and why
+    ruler_crops.csv              one row per candidate ruler crop
+    run_stages.csv               one row per pipeline stage
+    stage_errors.csv             one row per per-image failure
+    data_dictionary.csv          every column above: file, units, meaning
 ```
 
+### `reports/Data/` — the results as CSV
+
+The Reporter's last step writes the project database out as CSV so a run is analyzable without
+opening SQLite. **`leaf_measurements.csv` is the one to start with**: one row per segmented leaf,
+carrying every morphology, landmark, petiole and symmetry measurement together with the specimen
+and leaf identity needed to trace it back. `crop_file_token` on each row is the filename token of
+that leaf's exported images, so a row joins to its pictures by string match; `leaf_uid` adds the
+instance index and is stable across re-runs (`leaf_id` is not — it is a project-local row id).
+
+Two things to know before analyzing:
+
+* **Pixels are WORKING-frame.** Every `_px` value is measured on the resized copy the stages
+  analyzed. `work_scale` is on every row: original-frame pixels are `value_px / work_scale`.
+* **`_cm` columns are empty unless a ruler CF was published.** LM3 grounds only against
+  `specimen.cf_px_per_cm`, which the lattice stage publishes for high-confidence sheets only, and
+  never against the megapixel estimate. `cf_source` says which case a row is in, and an empty cell
+  always means "not measured", never zero.
+
+Toggle the bundle and its individual files under `report.data` in `LM3_settings.yaml`; set
+`report.data.format: tsv` for tab-separated output.
+
 Files are named so they can be reinserted into the parent by filename:
-`<stem>__<PREFIX>-<friendly>__x_y_x_y.<ext>`, where `PREFIX` is `BBOX` (detection box),
-`SEG` (per-crop mask), `MaskFull` (full-image mask, no coords), or `LM` (per-leaf landmark
-overlay). Class → friendly-name
-mapping (e.g. `Leaf_WHOLE → leaf`, `Leaf_PARTIAL → leafReject`) and the prefixes live in
-`naming` — edit freely. Every output folder toggles independently in `report`.
+`<stem>__<ID>__x_y_x_y.<ext>`, where `ID` is `<PREFIX>-<friendly>` — `BBOX` (detection box),
+`SEG` (per-crop mask), `SEGRGB` (its RGB cutout twin), `MaskFull` (full-image mask, no coords),
+`MaskRGBFull` (its cutout twin), `LM` (per-leaf landmark overlay), `PET`, or `BSYM`. Class →
+friendly-name mapping (e.g. `Leaf_WHOLE → leaf`, `Leaf_PARTIAL → leafReject`) and the prefixes
+live in `naming` — edit freely. Every output folder toggles independently in `report`.
+
+**Every `ID` is unique across the whole run with the extension stripped**, so the entire
+`reports/` tree can be flattened into one directory without a single file overwriting another.
+Two consequences worth knowing: a binary mask and its RGB cutout get different prefixes rather
+than relying on `.png` vs `.jpg`, and the leaf products are tagged by tree (`og-` for
+`Leaf_Original`, `or-` for `Leaf_Oriented`) because the two render the same leaf at the same box.
+The one deliberate exception is `Leaf_Data/Coordinates/*.h5`, which shares the Cartesian ECT
+image's `ECT` token — it is data rather than a picture, and its extension separates them.
 
 ## Layout
 
