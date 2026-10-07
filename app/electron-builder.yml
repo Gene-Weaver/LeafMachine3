@@ -5,7 +5,7 @@
 # on; the Windows and macOS stanzas below were schema-validated only and have never been run.
 #
 # This packages the SHELL (main.js + preload.js), not the LM3 Python runtime. The shell locates
-# a Python interpreter at run time; see "Packaged layout" in ELECTRON_PACKAGING.md.
+# a uv-locked project at run time; see the README desktop setup instructions.
 
 appId: org.leafmachine.lm3
 productName: LeafMachine3
@@ -22,11 +22,15 @@ files:
   - main.js
   - preload.js
   - package.json
+  - desktop-contract.json
 
 asar: true
 compression: normal
 # No native modules anywhere in the tree; skipping the rebuild saves a pointless node-gyp pass.
 npmRebuild: false
+# Package the runtime installed from the locked Electron package's checksum manifest.
+# Build on the target OS/architecture; do not fetch a second runtime during packaging.
+electronDist: node_modules/electron/dist
 # Artifact names must stay filesystem-safe on all three platforms; productName has no spaces.
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
@@ -84,11 +88,10 @@ deb:
 # ----------------------------------------------------------------------------------------------
 win:
   icon: build/icon.png
-  # arm64 is included because Electron 43 still ships a Windows arm64 build (44 dropped ia32,
-  # not arm64). Drop it from the array if you do not want to ship it.
+  # Match the Windows AMD64 environment covered by uv.lock.
   target:
     - target: nsis
-      arch: [x64, arm64]
+      arch: [x64]
     - target: portable
       arch: [x64]
   # No code-signing configuration is present. An unsigned installer raises a SmartScreen
@@ -125,9 +128,9 @@ mac:
   category: public.app-category.education
   target:
     - target: dmg
-      arch: [x64, arm64]
+      arch: [arm64]
     - target: zip
-      arch: [x64, arm64]
+      arch: [arm64]
   # Required for notarization since macOS 10.14.5. The entitlements below are what make a
   # hardened-runtime Electron app that spawns an unsigned Python child actually work.
   hardenedRuntime: true

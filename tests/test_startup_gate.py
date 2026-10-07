@@ -91,3 +91,16 @@ def test_healthz_doctor_requires_the_token_and_returns_the_report(tmp_path, monk
     assert r.status_code == 200
     body = r.json()
     assert body["ready"] is False and body["checks"][1]["name"] == "hardware variant"
+    assert body["environment"]["python"]
+    assert len(body["environment"]["contract_sha256"]) == 64
+
+
+def test_desktop_cannot_disable_or_bypass_a_broken_startup_gate(monkeypatch):
+    monkeypatch.setenv("LM3_DESKTOP", "1")
+    monkeypatch.setenv(doctor.GATE_ENV, "0")
+
+    def broken():
+        raise RuntimeError("broken environment check")
+
+    monkeypatch.setattr(doctor, "startup_gate", broken)
+    assert doctor.run_startup_gate("lm3 serve") == doctor.EXIT_CODE_ENVIRONMENT

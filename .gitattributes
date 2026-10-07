@@ -1,0 +1,5 @@
+# Release contracts hash these text files. Keep identical bytes on Windows and POSIX.
+app/package.json text eol=lf
+app/package-lock.json text eol=lf
+app/desktop-contract.json text eol=lf
+leafmachine3/_env_contract.json text eol=lf

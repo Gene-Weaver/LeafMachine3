@@ -3,7 +3,11 @@
   "version": "3.0.0",
   "description": "LeafMachine3 desktop app -- an Electron shell around the local LM3 server UI.",
   "main": "main.js",
+  "engines": {
+    "node": "24.19.0"
+  },
   "scripts": {
+    "install:electron": "install-electron",
     "test": "node --test test/*.test.js",
     "start": "electron .",
     "start:nosandbox": "electron . --no-sandbox",
@@ -20,6 +24,9 @@
   "devDependencies": {
     "electron": "43.4.1",
     "electron-builder": "26.15.3"
+  },
+  "allowScripts": {
+    "electron-winstaller": false
   },
   "homepage": "https://github.com/Gene-Weaver/LeafMachine3",
   "desktopName": "leafmachine3.desktop"

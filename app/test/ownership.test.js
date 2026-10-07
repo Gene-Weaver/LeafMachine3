@@ -23,10 +23,15 @@ process.setMaxListeners(0);        // boot() installs SIGINT/SIGTERM/SIGHUP hand
 // Helpers
 // --------------------------------------------------------------------------------------------- //
 /** A stub HTTP service. `healthBody === null` means "answer 404", i.e. not an LM3 server at all. */
-function startStub({ healthBody }) {
+function startStub({ healthBody, doctorBody = validDoctorReport() }) {
   const seen = [];
   const server = http.createServer((req, res) => {
     seen.push(`${req.method} ${req.url}`);
+    if (req.url === "/healthz/doctor") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(doctorBody));
+      return;
+    }
     if (req.url === "/healthz" && healthBody !== null) {
       const body = typeof healthBody === "string" ? healthBody : JSON.stringify(healthBody);
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -98,84 +103,91 @@ function executable(file) {
 // --------------------------------------------------------------------------------------------- //
 // Packaged backend discovery -- no child process is ever used as a probe
 // --------------------------------------------------------------------------------------------- //
-test("an explicit LM3_PYTHON wins and a bad explicit path fails instead of falling through", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-backend-root-"));
-  const python = executable(path.join(root, "chosen-python"));
-  const spec = main.resolveBackendLaunch({
-    env: { LM3_PYTHON: python, PATH: "" }, root, packaged: true,
-  });
-  assert.strictEqual(spec.command, python);
-  assert.strictEqual(spec.source, "LM3_PYTHON");
-  assert.deepStrictEqual(spec.argsPrefix,
-    ["-m", "uvicorn", "leafmachine3.server.app:create_app", "--factory"]);
+function uvProject(platform = "linux", variant = "cpu") {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-uv-project-"));
+  const contract = main.DESKTOP_CONTRACT;
+  fs.writeFileSync(path.join(root, "pyproject.toml"), "[project]\nname='leafmachine3'\n");
+  fs.writeFileSync(path.join(root, "uv.lock"), "version=1\n");
+  fs.writeFileSync(path.join(root, ".python-version"), contract.python);
+  fs.mkdirSync(path.join(root, "leafmachine3"));
+  fs.copyFileSync(path.join(APP_DIR, "..", "leafmachine3", "_env_contract.json"),
+                  path.join(root, "leafmachine3", "_env_contract.json"));
+  const prefix = path.join(root, ".venv");
+  const command = executable(path.join(prefix, platform === "win32" ? "Scripts" : "bin",
+                                       platform === "win32" ? "uv.exe" : "uv"));
+  fs.writeFileSync(path.join(prefix, "pyvenv.cfg"),
+    `uv = ${contract.uv}\nversion_info = ${contract.python}\ninclude-system-site-packages = false\n`);
+  const site = platform === "win32" ? path.join(prefix, "Lib", "site-packages")
+    : path.join(prefix, "lib", "python3.11", "site-packages");
+  fs.mkdirSync(path.join(site, variant === "gpu" ? "onnxruntime_gpu-1.20.2.dist-info"
+                     : "onnxruntime-1.20.1.dist-info"), { recursive: true });
+  return { root, prefix, command, site };
+}
 
-  assert.throws(() => main.resolveBackendLaunch({
-    env: { LM3_PYTHON: path.join(root, "missing"), PATH: path.dirname(python) },
+function validDoctorReport() {
+  const c = main.DESKTOP_CONTRACT;
+  return { ready: true, lm3_version: c.lm3_version,
+    environment: { python: c.python, venv_uv: c.uv, contract_sha256: c.backend_contract_sha256 },
+    checks: [1, 2, 3, 4].map((num) => ({ num, status: "ok" })) };
+}
+
+test("LM3_PYTHON is refused instead of allowing an unverified interpreter", () => {
+  assert.throws(() => main.resolveBackendLaunch({ env: { LM3_PYTHON: process.execPath } }), main.BackendLaunchError);
+});
+
+for (const platform of ["linux", "win32", "darwin"]) {
+  test(`${platform}: only the checkout's locked uv launches lm3 serve with the chosen hardware`, () => {
+    const variant = platform === "darwin" ? "macos" : "gpu";
+    const { root, prefix, command } = uvProject(platform, variant);
+    const spec = main.resolveBackendLaunch({
+      env: { LM3_ROOT: root, VIRTUAL_ENV: "/old", CONDA_PREFIX: "/old", PYTHONPATH: "/old",
+             UV_PROJECT_ENVIRONMENT: "/old", UV_NO_SYNC: "1", LM3_STARTUP_GATE: "0" },
+      root, packaged: true, platform,
+    });
+    assert.strictEqual(spec.command, command);
+    assert.strictEqual(spec.cwd, root);
+    assert.ok(spec.argsPrefix.includes("--frozen"));
+    assert.ok(spec.argsPrefix.includes("--managed-python"));
+    assert.ok(!spec.argsPrefix.includes("--no-sync"));
+    assert.deepStrictEqual(spec.argsPrefix.slice(-4), ["--extra", variant, "lm3", "serve"]);
+    assert.strictEqual(spec.env.UV_PROJECT_ENVIRONMENT, prefix);
+    assert.strictEqual(spec.env.LM3_STARTUP_GATE, "1");
+    for (const key of ["VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONPATH", "UV_NO_SYNC"]) assert.ok(!(key in spec.env));
+  });
+}
+
+test("legacy environments, Conda and lm3 on PATH cannot become a packaged backend", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-legacy-"));
+  const python = executable(path.join(root, ".venv_LM3", "bin", "python"));
+  executable(path.join(root, "bin", "lm3"));
+  assert.strictEqual(main.resolveBackendLaunch({
+    env: { VIRTUAL_ENV: path.dirname(python), CONDA_PREFIX: root, PATH: path.join(root, "bin") },
     root, packaged: true,
-  }), main.BackendLaunchError);
+  }), null);
 });
 
-test("an activated virtual environment is usable by a packaged app", () => {
-  const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-active-venv-"));
-  const python = executable(path.join(prefix, "bin", "python3"));
-  const spec = main.resolveBackendLaunch({
-    env: { VIRTUAL_ENV: prefix, PATH: "" }, root: "/not/a/checkout", packaged: true,
-    platform: "linux",
-  });
-  assert.strictEqual(spec.command, python);
-  assert.strictEqual(spec.source, "VIRTUAL_ENV");
+test("stale Python pins, pip venvs and conflicting hardware require a new uv sync", () => {
+  const { root, prefix, site } = uvProject();
+  fs.writeFileSync(path.join(root, ".python-version"), "3.11.0");
+  assert.throws(() => main.resolveBackendLaunch({ root, env: {} }), main.BackendLaunchError);
+  fs.writeFileSync(path.join(root, ".python-version"), main.DESKTOP_CONTRACT.python);
+  fs.writeFileSync(path.join(prefix, "pyvenv.cfg"), "version_info = 3.11.17\n");
+  assert.throws(() => main.resolveBackendLaunch({ root, env: {} }), main.BackendLaunchError);
+  fs.writeFileSync(path.join(prefix, "pyvenv.cfg"),
+    `uv = ${main.DESKTOP_CONTRACT.uv}\nversion_info = ${main.DESKTOP_CONTRACT.python}\ninclude-system-site-packages = false\n`);
+  fs.mkdirSync(path.join(site, "onnxruntime_gpu-1.20.2.dist-info"));
+  assert.throws(() => main.resolveBackendLaunch({ root, env: {} }), main.BackendLaunchError);
 });
 
-test("a checkout launch finds the environment created by uv sync", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-uv-checkout-"));
-  const python = executable(path.join(root, ".venv", "bin", "python3"));
-  const spec = main.resolveBackendLaunch({ env: { PATH: "" }, root, platform: "linux" });
-  assert.strictEqual(spec.command, python);
-  assert.strictEqual(spec.cwd, root);
-});
-
-test("a packaged Windows shell can use an explicit checkout's uv environment", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-win-uv-checkout-"));
-  const python = executable(path.join(root, ".venv", "Scripts", "python.exe"));
-  const spec = main.resolveBackendLaunch({
-    env: { LM3_ROOT: root, PATH: "" }, root, packaged: true, platform: "win32",
-  });
-  assert.strictEqual(spec.command, python);
-  assert.strictEqual(spec.cwd, root);
-});
-
-test("a packaged app finds the installed lm3 console command on PATH without probing it", () => {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-console-bin-"));
-  const command = executable(path.join(bin, "lm3"));
-  const spec = main.resolveBackendLaunch({
-    env: { PATH: bin }, root: "/packaged/resources", packaged: true, platform: "linux",
-  });
-  assert.strictEqual(spec.command, command);
-  assert.strictEqual(spec.source, "PATH");
-  assert.deepStrictEqual(spec.argsPrefix, ["serve"]);
-});
-
-test("Windows discovery uses lm3.exe and never requires a shell", () => {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-win-console-"));
-  const command = executable(path.join(bin, "lm3.exe"));
-  const spec = main.resolveBackendLaunch({
-    env: { PATH: `${bin};C:\\Windows\\System32` }, root: "C:\\packaged\\resources",
-    packaged: true, platform: "win32",
-  });
-  assert.strictEqual(spec.command, command);
-  assert.strictEqual(spec.source, "PATH");
-  assert.deepStrictEqual(spec.argsPrefix, ["serve"]);
-  assert.ok(!Object.prototype.hasOwnProperty.call(spec, "shell"));
-});
-
-test("packaged discovery returns null promptly when no supported backend is installed", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lm3-no-backend-"));
-  const started = Date.now();
-  const spec = main.resolveBackendLaunch({
-    env: { PATH: "" }, root, packaged: true, platform: "linux",
-  });
-  assert.strictEqual(spec, null);
-  assert.ok(Date.now() - started < 100, "resolution is filesystem-only, not a hanging probe child");
+test("a matching authenticated doctor report passes; missing, stale and unhealthy reports fail", () => {
+  assert.strictEqual(main.verifyBackendEnvironment(validDoctorReport()), true);
+  const bad = [null, {}, { ...validDoctorReport(), ready: false },
+               { ...validDoctorReport(), checks: [] }];
+  for (const key of ["python", "venv_uv", "contract_sha256"]) {
+    const report = validDoctorReport(); report.environment[key] = "stale"; bad.push(report);
+  }
+  const warn = validDoctorReport(); warn.checks[0].status = "warn"; bad.push(warn);
+  for (const report of bad) assert.throws(() => main.verifyBackendEnvironment(report), main.BackendLaunchError);
 });
 
 // --------------------------------------------------------------------------------------------- //
@@ -369,6 +381,21 @@ test("attaching reads the token from connection.private.json, never invents one"
   }
 });
 
+test("a same-deployment server with an unverified environment cannot open a desktop window", async () => {
+  const scratch = scratchRuntime("default", null);
+  const report = validDoctorReport(); report.environment.venv_uv = null;
+  const stub = await startStub({ healthBody: healthBodyFor({ deploymentKey: scratch.key }), doctorBody: report });
+  const booted = await boot({ LM3_RUNTIME_DIR: scratch.root, LM3_PORT: String(stub.port),
+                              LM3_SERVER_TOKEN: "existing-server-token" });
+  try {
+    await booted.fake.ready(); await settle();
+    assert.strictEqual(booted.fake.rec.windows.length, 0);
+    assert.ok(booted.fake.rec.errorBoxes[0][1].includes("uv-locked Python and packages"));
+    assert.ok(stub.seen.includes("GET /healthz/doctor"));
+    assert.ok(!stub.seen.some((req) => req.includes("shutdown")));
+  } finally { booted.restore(); await stub.close(); }
+});
+
 test("a descriptor for another deployment is ignored rather than used", async () => {
   const mine = main.canonicalDeploymentKey("default");
   const stub = await startStub({ healthBody: healthBodyFor({ deploymentKey: mine }) });
@@ -426,7 +453,7 @@ test("an unrelated service on the port is refused by its own name", async () => 
     // the interpreter preflight is what stops it. The "unrelated service" refusal below is the
     // case where something DOES answer 200 with a body that is not ours.
     const [[, body]] = booted.fake.rec.errorBoxes;
-    assert.ok(body.includes("/nonexistent/python"), body);
+    assert.ok(body.includes("LM3_PYTHON is no longer supported"), body);
   } finally {
     booted.restore();
     await stub.close();

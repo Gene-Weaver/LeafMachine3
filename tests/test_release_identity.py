@@ -38,6 +38,31 @@ def test_uv_pin_agrees():
     assert CONTRACT["uv"] == ENV["UV_VERSION"]
 
 
+def test_desktop_pins_and_locks_agree():
+    """A desktop upgrade must update uv, npm and the shipped runtime identity together."""
+    import hashlib
+
+    desktop = json.loads((ROOT / "app" / "desktop-contract.json").read_text())
+    package = json.loads((ROOT / "app" / "package.json").read_text())
+    lock = json.loads((ROOT / "app" / "package-lock.json").read_text())
+    assert PYPROJECT["dependency-groups"]["desktop"] == [
+        f"nodejs-wheel=={ENV['NODE_VERSION']}", f"uv=={ENV['UV_VERSION']}"]
+    assert desktop["node"] == ENV["NODE_VERSION"] == package["engines"]["node"]
+    assert desktop["uv"] == ENV["UV_VERSION"]
+    assert desktop["python"] == ENV["PYTHON_VERSION"]
+    assert lock["packages"][""]["devDependencies"] == package["devDependencies"]
+    for key, name in (("electron", "electron"), ("electron_builder", "electron-builder")):
+        assert desktop[key] == package["devDependencies"][name] == lock["packages"][f"node_modules/{name}"]["version"]
+    for key, path in (("backend_contract_sha256", "leafmachine3/_env_contract.json"),
+                      ("package_lock_sha256", "app/package-lock.json"),
+                      ("package_json_sha256", "app/package.json")):
+        assert desktop[key] == hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+    # Every registry package (including optional native builder helpers) needs an integrity pin.
+    for name, row in lock["packages"].items():
+        if name:
+            assert row.get("version") and row.get("integrity"), name
+
+
 def test_driver_minimums_agree():
     assert CONTRACT["cuda_min_driver"] == {"linux": ENV["CUDA_MIN_DRIVER_LINUX"],
                                            "win32": ENV["CUDA_MIN_DRIVER_WINDOWS"]}
@@ -70,6 +95,22 @@ def test_lock_and_contract_are_current():
     lock = subprocess.run(["uv", "lock", "--check"], cwd=ROOT, capture_output=True, text=True)
     assert lock.returncode == 0, lock.stderr
     assert write_env_contract.main(["--check"]) == 0
+
+
+@pytest.mark.parametrize("filename", ["backend.json", "desktop.json"])
+def test_contract_check_rejects_changed_line_endings(tmp_path, monkeypatch, filename):
+    """The desktop validates raw file hashes; newline normalization must not hide drift."""
+    monkeypatch.setattr(write_env_contract, "ROOT", tmp_path)
+    monkeypatch.setattr(write_env_contract, "CONTRACT", tmp_path / "backend.json")
+    monkeypatch.setattr(write_env_contract, "DESKTOP_CONTRACT", tmp_path / "desktop.json")
+    monkeypatch.setattr(write_env_contract, "build", lambda: CONTRACT)
+    assert write_env_contract.main([]) == 0
+    assert write_env_contract.main(["--check"]) == 0
+    path = tmp_path / filename
+    raw = path.read_bytes()
+    assert b"\r" not in raw
+    path.write_bytes(raw.replace(b"\n", b"\r\n"))
+    assert write_env_contract.main(["--check"]) == 1
 
 
 def test_readme_setup_section_names_the_pinned_versions():

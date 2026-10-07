@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import hashlib
 import ipaddress
 import json
 import logging
@@ -1490,15 +1491,30 @@ def create_app(jobs: JobManager | None = None) -> Any:
 
     @app.get("/healthz/doctor", dependencies=[Depends(require_token)])
     async def healthz_doctor(full: bool = False) -> dict:
-        """`lm3 doctor` for this server's environment, as JSON -- the verdict the CLI prints.
+        """`lm3 doctor --production` for this server's environment, plus its desktop release identity.
 
         Quick (checks 1-4) by default; ``?full=1`` adds the driver and the accelerator probe, which
         starts a GPU child process. Authenticated, unlike /healthz, for exactly that reason.
         """
-        from leafmachine3.doctor import diagnose  # noqa: PLC0415
+        from leafmachine3.doctor import Env, diagnose  # noqa: PLC0415
 
-        report = await asyncio.to_thread(diagnose, None, quick=not full)
-        return report.to_json()
+        def inspect_environment() -> dict:
+            env = Env.current()
+            result = diagnose(env, quick=not full, production=True).to_json()
+            from importlib import resources  # noqa: PLC0415
+
+            result["environment"] = {
+                "python": env.python_version,
+                "venv_uv": next((line.split("=", 1)[1].strip() for line in
+                                 (Path(env.prefix) / "pyvenv.cfg").read_text().splitlines()
+                                 if line.startswith("uv =")), None)
+                if (Path(env.prefix) / "pyvenv.cfg").is_file() else None,
+                "contract_sha256": hashlib.sha256(resources.files("leafmachine3").joinpath(
+                    "_env_contract.json").read_bytes()).hexdigest(),
+            }
+            return result
+
+        return await asyncio.to_thread(inspect_environment)
 
     @app.get("/healthz")
     async def healthz() -> dict:

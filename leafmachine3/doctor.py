@@ -194,7 +194,8 @@ def check_interpreter(env: Env) -> Check:
             why.append(f"this release was tested on Python {want}")
         if not managed:
             why.append(f"the interpreter at {env.base_prefix} was not installed by uv")
-        return Check(1, "interpreter", WARN, f"Python {env.python_version}; " + " and ".join(why),
+        severity = FAIL if env.environ.get("LM3_DESKTOP") == "1" else WARN
+        return Check(1, "interpreter", severity, f"Python {env.python_version}; " + " and ".join(why),
                      "uv sync --frozen --extra <gpu|cpu|macos> rebuilds .venv on the release interpreter")
     return Check(1, "interpreter", OK, f"Python {env.python_version} (uv-managed) in {env.prefix}")
 
@@ -553,19 +554,21 @@ def run_startup_gate(prog: str) -> Optional[int]:
     different 3.11 patch) are printed and do not stop anything. If the gate itself breaks, it says so
     and lets the program run: a bug here must never be what keeps LM3 from starting.
     """
-    if os.environ.get(GATE_ENV, "1").strip().lower() in {"0", "false", "no", "off"}:
+    desktop = os.environ.get("LM3_DESKTOP") == "1"
+    if not desktop and os.environ.get(GATE_ENV, "1").strip().lower() in {"0", "false", "no", "off"}:
         return None
     try:
         rep = startup_gate()
     except DoctorError as exc:
         print(f"{prog}: {exc}", file=sys.stderr)
-        print(f"{prog}: run `lm3 doctor` for the full report (or set {GATE_ENV}=0 to bypass at your own risk)",
+        hint = "" if desktop else f" (or set {GATE_ENV}=0 to bypass at your own risk)"
+        print(f"{prog}: run `lm3 doctor` for the full report{hint}",
               file=sys.stderr)
         return EXIT_CODE_ENVIRONMENT
     except Exception as exc:  # noqa: BLE001 - the gate must never be the thing that breaks LM3
         print(f"{prog}: warning: the environment check could not run ({type(exc).__name__}: {exc})",
               file=sys.stderr)
-        return None
+        return EXIT_CODE_ENVIRONMENT if desktop else None
     for c in rep.checks:
         if c.status == WARN:
             print(f"{prog}: warning: {c.name}: {c.detail}", file=sys.stderr)

@@ -9,29 +9,27 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  UV_PYTHON_PREFERENCE: only-managed
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11"]   # the one interpreter requires-python allows (tools/release/versions.env)
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          node-version: "24"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install (CPU + server + test, no heavy ML deps)
+          version-file: pyproject.toml
+      - name: Install the frozen CPU, test and desktop environment
+        run: uv sync --frozen --managed-python --no-default-groups --extra cpu --extra test --group desktop
+      - name: Lock and Python/Electron release contracts must be current
         run: |
-          python -m pip install --upgrade pip
-          # `server` because the endpoint tests import FastAPI directly, and `test` because
-          # fastapi's base dependency does NOT pull httpx -- it lives in fastapi's own optional
-          # extras -- while starlette's TestClient imports it at construction. Without both, a
-          # genuinely clean runner fails at COLLECTION, and the tests that guard with importorskip
-          # vanish silently instead, taking the endpoint coverage with them.
-          pip install -e ".[cpu,dev,server,test]"
+          uv lock --check
+          uv run --frozen --no-sync python tools/release/write_env_contract.py --check
 
       - name: Lint (ratcheted against docs/verification/RUFF_BASELINE.txt)
         run: |
@@ -39,10 +37,10 @@ jobs:
           # findings is an improvement rather than "new debt", and a ruff that could not run fails
           # instead of looking like a clean tree. Negative controls: tests/test_ci_gates.py.
           set +e
-          ruff check --output-format=json leafmachine3 tests > ruff.json
+          uv run --frozen --no-sync ruff check --output-format=json leafmachine3 tests > ruff.json
           ruff_status=$?
           set -e
-          python tools/ci/check_lint_ratchet.py \
+          uv run --frozen --no-sync python tools/ci/check_lint_ratchet.py \
             --json ruff.json --status "$ruff_status" \
             --baseline docs/verification/RUFF_BASELINE.txt
 
@@ -53,10 +51,10 @@ jobs:
           # PIPESTATUS[0] because `| tee` otherwise reports tee's status and hides pytest exiting
           # 2 (interrupted), 3 (internal error), 4 (usage) or 5 (nothing collected).
           set +e
-          python -m pytest tests/ -q -rfE 2>&1 | tee pytest.log
+          uv run --frozen --no-sync python -m pytest tests/ -q -rfE 2>&1 | tee pytest.log
           pytest_status=${PIPESTATUS[0]}
           set -e
-          python tools/ci/check_test_baseline.py \
+          uv run --frozen --no-sync python tools/ci/check_test_baseline.py \
             --log pytest.log --status "$pytest_status" \
             --baseline docs/verification/STEP2_BASELINE_NODE_IDS.txt
 
@@ -65,7 +63,7 @@ jobs:
           # Building a wheel and reading its zip index proves what was packaged; it does not prove
           # the result imports, resolves its resources, or exposes its console scripts. This installs
           # it into a throwaway venv and exercises it from an unrelated working directory.
-          python -m pytest tests/test_version_identity.py -q -m slow -rs
+          uv run --frozen --no-sync python -m pytest tests/test_version_identity.py -q -m slow -rs
 
   # §4 Step 2 exit gate: "the primitives pass in isolation on all three platforms", and §2.2's
   # kill-the-root test is "a first-class CI job, not an extrapolation from the POSIX result — the
@@ -88,16 +86,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          python-version: "3.11"
-      - name: Install (CPU + server + test, no heavy ML deps)
-        run: |
-          python -m pip install --upgrade pip
-          # Same reasoning as the Linux job: this selection includes
-          # tests/test_settings_path_unification.py, which imports the server modules and drives
-          # TestClient, so both `server` and `test` (for httpx) are required to even collect.
-          pip install -e ".[cpu,dev,server,test]"
+          version-file: pyproject.toml
+      - name: Install the frozen platform and test environment
+        env:
+          LM3_EXTRA: ${{ matrix.os == 'macos-latest' && 'macos' || 'cpu' }}
+        run: uv sync --frozen --managed-python --no-default-groups --extra "$LM3_EXTRA" --extra test
       # Steps 2 AND 3. Gate 17 is "the launch handshake and process-tree Stop pass on Windows CI,
       # not only the lock adapter" -- so a list containing only the Step 2 primitive files leaves
       # that gate unmet BY CONSTRUCTION, however green it runs. The section 2.4 handshake is the
@@ -106,7 +101,7 @@ jobs:
       # plan singles it out.
       - name: Step 2 + 3 runtime primitives and handshake (isolated)
         run: >
-          python -m pytest -q -rs
+          uv run --frozen --no-sync python -m pytest -q -rs
           tests/test_runtime_lease.py
           tests/test_runtime_lease_windows.py
           tests/test_runtime_records.py
@@ -132,7 +127,7 @@ jobs:
         # pytest's exit code.
         shell: bash
         run: |
-          python -m pytest -q -rs \
+          uv run --frozen --no-sync python -m pytest -q -rs \
             "tests/test_runtime_lease_windows.py::test_the_real_allowlist_is_a_startupinfo" \
             "tests/test_runtime_lease_windows.py::test_the_real_surface_acquires_and_releases" \
             "tests/test_server_handshake.py::test_the_real_windows_job_object_stops_root_and_grandchild" \
@@ -150,23 +145,29 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: app
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      LM3_EXTRA: ${{ matrix.os == 'macos-latest' && 'macos' || 'cpu' }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-      - run: npm ci
+          version-file: pyproject.toml
+      - name: Install the frozen Python, Node and npm environment
+        run: uv sync --frozen --managed-python --no-default-groups --extra "$LM3_EXTRA" --group desktop
+      - name: Verify both release contracts
+        run: |
+          uv lock --check
+          uv run --frozen --no-sync python tools/release/write_env_contract.py --check
+      - name: Install integrity-pinned Electron packages
+        run: uv run --frozen --no-sync lm3-desktop install
       - name: Server discovery, deployment identity, and ownership tests
-        run: npm test
+        run: uv run --frozen --no-sync lm3-desktop test
       - name: Package the native shell (unsigned CI build)
-        run: npm run pack -- -c.mac.hardenedRuntime=false -c.mac.notarize=false
+        run: uv run --frozen --no-sync lm3-desktop pack -- -c.mac.hardenedRuntime=false -c.mac.notarize=false
+      - name: Packaged Linux GUI must use uv and respect backend ownership
+        if: matrix.os == 'ubuntu-latest'
+        run: uv run --frozen --no-sync python tools/ci/smoke_desktop.py
       - name: Save native package for smoke testing
         uses: actions/upload-artifact@v4
         with:

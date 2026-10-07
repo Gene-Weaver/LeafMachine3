@@ -21,6 +21,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -30,6 +31,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "leafmachine3" / "_env_contract.json"
+DESKTOP_CONTRACT = ROOT / "app" / "desktop-contract.json"
 VERSIONS_ENV = ROOT / "tools" / "release" / "versions.env"
 HARDWARE_EXTRAS = ("gpu", "cpu", "macos")
 #: Packages whose presence marks a DEVELOPMENT environment (the `full` group). Never in production.
@@ -71,11 +73,19 @@ def export_extra(extra: str) -> list[dict[str, str]]:
 def build() -> dict:
     env = read_versions_env()
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    package = json.loads((ROOT / "app" / "package.json").read_text())
     return {
         "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
         "lm3_version": pyproject["project"]["version"],
         "python": env["PYTHON_VERSION"],
         "uv": env["UV_VERSION"],
+        "desktop": {
+            "node": env["NODE_VERSION"],
+            "electron": package["devDependencies"]["electron"],
+            "electron_builder": package["devDependencies"]["electron-builder"],
+            "package_lock_sha256": hashlib.sha256((ROOT / "app" / "package-lock.json").read_bytes()).hexdigest(),
+            "package_json_sha256": hashlib.sha256((ROOT / "app" / "package.json").read_bytes()).hexdigest(),
+        },
         "cuda_min_driver": {"linux": env["CUDA_MIN_DRIVER_LINUX"], "win32": env["CUDA_MIN_DRIVER_WINDOWS"]},
         "dev_only": list(DEV_ONLY),
         "extras": {extra: export_extra(extra) for extra in HARDWARE_EXTRAS},
@@ -91,16 +101,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true", help="fail if the committed contract is stale")
     args = ap.parse_args(argv)
     text = render(build())
+    c = json.loads(text)
+    desktop = render({
+        "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
+        "lm3_version": c["lm3_version"], "python": c["python"], "uv": c["uv"],
+        **c["desktop"],
+        "backend_contract_sha256": hashlib.sha256(text.encode()).hexdigest(),
+    })
     if args.check:
-        current = CONTRACT.read_text() if CONTRACT.exists() else ""
-        if current != text:
-            print(f"{CONTRACT.relative_to(ROOT)} is stale; run tools/release/write_env_contract.py",
-                  file=sys.stderr)
-            return 1
+        for path, expected in ((CONTRACT, text), (DESKTOP_CONTRACT, desktop)):
+            current = path.read_bytes() if path.exists() else b""
+            if current != expected.encode("utf-8"):
+                print(f"{path.relative_to(ROOT)} is stale; run tools/release/write_env_contract.py",
+                      file=sys.stderr)
+                return 1
         print("env contract is current")
         return 0
-    CONTRACT.write_text(text)
-    c = json.loads(text)
+    CONTRACT.write_text(text, encoding="utf-8", newline="\n")
+    DESKTOP_CONTRACT.write_text(desktop, encoding="utf-8", newline="\n")
     print(f"wrote {CONTRACT.relative_to(ROOT)}: "
           + ", ".join(f"{k}={len(v)} pkgs" for k, v in c["extras"].items()))
     return 0

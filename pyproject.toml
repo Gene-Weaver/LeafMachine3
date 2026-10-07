@@ -109,6 +109,9 @@ test = [
 # NEVER run ultralytics on a CPU device in this environment: its ONNX backend `pip install`s the CPU
 # onnxruntime over onnxruntime-gpu (check_requirements). See PACKAGING_PLAN.md section 13.
 [dependency-groups]
+# Desktop tooling is installed by uv, including Node/npm and the uv executable Electron uses.
+# JavaScript packages remain integrity-pinned in app/package-lock.json (npm's lock format).
+desktop = ["nodejs-wheel==24.19.0", "uv==0.12.23"]
 full = [
     "torch==2.6.0; sys_platform == 'linux'",
     "torchvision==0.21.0; sys_platform == 'linux'",
@@ -161,6 +164,7 @@ lm3-setup = "leafmachine3.setup.hardware_setup:main"
 # Until now the only way to start the server was `python -m leafmachine3.server`, so an installed
 # wheel had no documented way to run it at all.
 lm3 = "leafmachine3.cli:main"
+lm3-desktop = "leafmachine3.desktop:main"
 
 [project.urls]
 Homepage = "https://github.com/Gene-Weaver/LeafMachine3"

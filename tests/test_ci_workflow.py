@@ -27,9 +27,8 @@ Point 4's mirror image matters too, and is asserted here: the FakeWin32 harness 
 behind Windows. Its Linux-executing tests remain the primary coverage of the adapter's *logic*; the
 Windows job is purely additive, covering only the real kernel semantics.
 
-NOT A PROOF OF EXECUTION: this checkout has no git remote, so nothing under .github/workflows/ runs
-from it. These tests prove the workflow *says* the right thing; only a green run on the upstream
-named by pyproject's Homepage discharges Step 2's exit gate or gate 27.
+NOT A PROOF OF EXECUTION: these tests prove the workflow configuration; only a green run on the
+upstream named by pyproject's Homepage discharges Step 2's exit gate or gate 27.
 """
 from __future__ import annotations
 
@@ -109,13 +108,6 @@ def _flat(run: str) -> str:
 # --- the Linux job must not be traded away for the new ones -------------------------------------
 
 
-def _release_python_minor() -> str:
-    for line in (_REPO_ROOT / "tools" / "release" / "versions.env").read_text().splitlines():
-        if line.startswith("PYTHON_VERSION="):
-            return ".".join(line.split("=", 1)[1].strip().split(".")[:2])
-    raise AssertionError("tools/release/versions.env has no PYTHON_VERSION")
-
-
 def test_the_linux_job_still_runs_the_whole_suite_on_the_release_python(workflow: dict[str, Any]) -> None:
     """Adding platforms must be additive. The finding that prompted this was explicit that
     ``test: runs-on: ubuntu-latest`` stays exactly as it was -- the platform legs cover the kernel
@@ -126,14 +118,19 @@ def test_the_linux_job_still_runs_the_whole_suite_on_the_release_python(workflow
     a version bump cannot leave CI testing an interpreter the package refuses to install on."""
     job = _job(workflow, "test")
     assert job["runs-on"] == "ubuntu-latest"
-    assert job["strategy"]["matrix"]["python-version"] == [_release_python_minor()]
+    assert _steps_running(job, "uv sync --frozen --managed-python")
     assert _steps_running(job, "pytest"), "the Linux job no longer runs pytest"
 
 
 def test_every_ci_python_is_the_release_python(workflow: dict[str, Any]) -> None:
-    want = _release_python_minor()
-    seen = re.findall(r'python-version:\s*"?\[?"?([0-9.]+)', _CI_YML.read_text(encoding="utf-8"))
-    assert seen and all(v == want for v in seen), f"CI uses {seen}; requires-python admits only {want}"
+    assert workflow["env"]["UV_PYTHON_PREFERENCE"] == "only-managed"
+    for job in workflow["jobs"].values():
+        steps = job["steps"]
+        assert any(str(s.get("uses", "")).startswith("astral-sh/setup-uv@")
+                   and s["with"]["version-file"] == "pyproject.toml" for s in steps)
+        assert not any("setup-python" in str(s.get("uses", "")) or "setup-node" in str(s.get("uses", "")) for s in steps)
+        assert not any("pip install" in str(s.get("run", "")) for s in steps)
+        assert _steps_running(job, "uv sync --frozen --managed-python")
 
 
 # --- section 7 "Platform CI": Linux, macOS and Windows ------------------------------------------
@@ -208,28 +205,26 @@ def test_the_platform_job_does_not_carry_the_local_only_recording_flag(
 def test_the_platform_job_installs_no_heavy_extras_but_does_install_the_server(
     workflow: dict[str, Any]
 ) -> None:
-    """No GPU or ML extras on a hosted runner -- but the ``server`` extra is NOT optional.
-
-    This asserted ``".[cpu,dev]"`` literally. The intent behind that was "nothing heavy": the runtime
-    primitives are pure Python, and pulling torch or onnxruntime-gpu onto a hosted runner makes the
-    job slow and flaky for reasons unrelated to the lease adapter. That intent is intact.
-
-    The literal was wrong, though. This job runs ``tests/test_settings_path_unification.py``, which
-    imports the server modules, and ``server`` is a separate extra in ``pyproject.toml`` -- so on a
-    genuinely clean runner the job failed at COLLECTION for want of FastAPI. ``server`` is
-    fastapi + uvicorn + python-multipart + sse-starlette: pure Python, no GPU, no ML stack, so it
-    costs the runner nothing that the original intent was protecting against.
-    """
+    """The frozen runtime includes the server; platform CI selects a hardware extra and test deps."""
     job = _platform_job(workflow)
-    installs = _steps_running(job, "pip install")
-    assert installs, "the platform job never installs the package"
-    flat = " ".join(_flat(str(s["run"])) for s in installs)
-    for needed in ("cpu", "dev", "server", "test"):
-        assert needed in flat, (
-            f"the platform job must install [cpu,dev,server,test]; {needed!r} is missing from: {flat}")
-    for heavy in ("gpu", "yolo", "macos"):
-        assert f",{heavy}" not in flat and f"[{heavy}" not in flat, (
-            f"the platform job must not pull the {heavy!r} extra onto a hosted runner")
+    (step,) = _steps_running(job, "uv sync")
+    run = _flat(step["run"])
+    assert "--frozen" in run and "--extra test" in run and "--no-default-groups" in run
+    assert "--extra \"$LM3_EXTRA\"" in run
+    assert step["env"]["LM3_EXTRA"] == "${{ matrix.os == 'macos-latest' && 'macos' || 'cpu' }}"
+    assert "--group full" not in run and "--extra gpu" not in run
+
+
+def test_desktop_builds_use_uv_locked_tools_and_verify_both_contracts(workflow: dict[str, Any]) -> None:
+    job = _job(workflow, "desktop")
+    (install,) = _steps_running(job, "uv sync")
+    assert "--group desktop" in install["run"] and "--frozen" in install["run"]
+    for action in ("install", "test", "pack"):
+        assert _steps_running(job, f"uv run --frozen --no-sync lm3-desktop {action}")
+    assert _steps_running(job, "uv lock --check")
+    assert _steps_running(job, "write_env_contract.py --check")
+    (smoke,) = _steps_running(job, "tools/ci/smoke_desktop.py")
+    assert smoke["if"] == "matrix.os == 'ubuntu-latest'"
 
 
 # --- gate 27: the real Win32 surface must EXECUTE, not skip -------------------------------------

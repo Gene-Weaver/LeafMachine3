@@ -63,91 +63,81 @@ function isRunnableFile(file, { platform = process.platform, fsImpl = fs } = {})
   }
 }
 
-function pythonCandidates(prefix, platform = process.platform) {
-  if (!prefix) return [];
-  const root = path.resolve(prefix);
-  return platform === "win32"
-    ? [path.join(root, "Scripts", "python.exe"), path.join(root, "python.exe")]
-    : [path.join(root, "bin", "python3"), path.join(root, "bin", "python")];
+const DESKTOP_CONTRACT = require("./desktop-contract.json");
+
+function fileDigest(file, fsImpl = fs) {
+  return crypto.createHash("sha256").update(fsImpl.readFileSync(file)).digest("hex");
 }
 
-function findOnPath(names, env = process.env, platform = process.platform, fsImpl = fs) {
-  const raw = String(env.PATH || "");
-  if (!raw) return null;
-  const separator = platform === "win32" ? ";" : path.delimiter;
-  for (const directory of raw.split(separator).filter(Boolean)) {
-    for (const name of names) {
-      const candidate = path.join(directory, name);
-      if (isRunnableFile(candidate, { platform, fsImpl })) return candidate;
-    }
-  }
-  return null;
-}
-
-/** Resolve the installed LM3 backend without executing candidates.
- *
- * This deliberately returns a launch SPEC instead of "the Python path": a wheel install already
- * supplies the canonical `lm3 serve` command, while a developer checkout and an activated venv
- * naturally supply Python. No `spawnSync --version`, import probe, PATH shell, or unbounded child
- * is used here; a wrong candidate fails through the existing bounded server-start handshake.
+/** Resolve only this release's uv project. Never search Python, Conda or console scripts on PATH.
+ * Resolution is filesystem-only; uv performs the frozen sync in the bounded startup handshake.
  */
 function resolveBackendLaunch({ env = process.env, root = path.resolve(__dirname, ".."),
                                 packaged = false, platform = process.platform,
                                 fsImpl = fs } = {}) {
-  const explicit = String(env.LM3_PYTHON || "").trim();
-  if (explicit) {
-    const command = path.resolve(expandHome(explicit, env));
-    if (!isRunnableFile(command, { platform, fsImpl })) {
-      throw new BackendLaunchError(
-        `LM3_PYTHON names ${command}, but that file is not a runnable Python interpreter.`);
-    }
-    return {
-      command,
-      argsPrefix: ["-m", "uvicorn", "leafmachine3.server.app:create_app", "--factory"],
-      cwd: root,
-      source: "LM3_PYTHON",
-    };
+  if (String(env.LM3_PYTHON || "").trim()) {
+    throw new BackendLaunchError("LM3_PYTHON is no longer supported. Select the uv project with LM3_ROOT.");
   }
-
-  const prefixes = [];
-  const addPrefix = (value, source) => {
-    const clean = String(value || "").trim();
-    if (clean) prefixes.push([expandHome(clean, env), source]);
+  if (packaged && !String(env.LM3_ROOT || "").trim()) return null;
+  const required = ["pyproject.toml", "uv.lock", ".python-version", "leafmachine3/_env_contract.json"];
+  if (required.some((file) => !fsImpl.existsSync(path.join(root, file)))) return null;
+  if (String(fsImpl.readFileSync(path.join(root, ".python-version"))).trim() !== DESKTOP_CONTRACT.python
+      || fileDigest(path.join(root, "leafmachine3", "_env_contract.json"), fsImpl)
+         !== DESKTOP_CONTRACT.backend_contract_sha256) {
+    throw new BackendLaunchError("LM3_ROOT differs from this desktop release. Use its matching uv checkout.");
+  }
+  const prefix = path.join(root, ".venv");
+  const command = path.join(prefix, platform === "win32" ? "Scripts" : "bin",
+                            platform === "win32" ? "uv.exe" : "uv");
+  if (!isRunnableFile(command, { platform, fsImpl })) return null;
+  const cfg = String(fsImpl.readFileSync(path.join(prefix, "pyvenv.cfg")));
+  if (!cfg.includes(`uv = ${DESKTOP_CONTRACT.uv}`)
+      || !cfg.includes(`version_info = ${DESKTOP_CONTRACT.python}`)
+      || !cfg.includes("include-system-site-packages = false")) {
+    throw new BackendLaunchError("Rebuild .venv with the pinned uv and Python, including --group desktop.");
+  }
+  // Preserve the installed hardware choice. A missing/conflicting variant is an error, never a
+  // reason to quietly turn a GPU installation into a CPU installation at the next GUI launch.
+  const site = platform === "win32" ? path.join(prefix, "Lib", "site-packages")
+    : path.join(prefix, "lib", `python${DESKTOP_CONTRACT.python.split(".").slice(0, 2).join(".")}`, "site-packages");
+  const packages = fsImpl.readdirSync(site);
+  const gpu = packages.some((name) => /^onnxruntime_gpu-.*[.]dist-info$/.test(name));
+  const cpu = packages.some((name) => /^onnxruntime-.*[.]dist-info$/.test(name));
+  const variant = String(env.LM3_EXTRA || (gpu && !cpu ? "gpu" : cpu && !gpu
+                         ? platform === "darwin" ? "macos" : "cpu" : ""));
+  if (!["gpu", "cpu", "macos"].includes(variant)) {
+    throw new BackendLaunchError("Select one hardware extra with uv sync --frozen --extra <gpu|cpu|macos> --group desktop.");
+  }
+  const childEnv = { ...env };
+  for (const key of Object.keys(childEnv)) {
+    if (key.startsWith("UV_") || ["VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONHOME", "PYTHONPATH"].includes(key)) delete childEnv[key];
+  }
+  Object.assign(childEnv, {
+    UV_PROJECT_ENVIRONMENT: prefix, LM3_EXTRA: variant, LM3_STARTUP_GATE: "1", LM3_DESKTOP: "1",
+  });
+  return {
+    command,
+    argsPrefix: ["run", "--frozen", "--managed-python", "--python", DESKTOP_CONTRACT.python,
+                 "--project", root, "--no-default-groups", "--group", "desktop", "--extra", variant,
+                 "lm3", "serve"],
+    cwd: root, env: childEnv, source: "uv.lock",
   };
-  addPrefix(env.VIRTUAL_ENV, "VIRTUAL_ENV");
-  addPrefix(env.CONDA_PREFIX, "CONDA_PREFIX");
-  // In a source checkout this is the normal path. In a package it is considered only when
-  // LM3_ROOT was explicitly supplied; <install>/resources is known not to contain the venv.
-  if (!packaged || String(env.LM3_ROOT || "").trim()) {
-    // uv sync creates .venv inside the checkout, not bin/python at its root.
-    for (const directory of [".venv", ".venv_LM3_noultra", ".venv_LM3"]) {
-      addPrefix(path.join(root, directory), "LM3_ROOT checkout");
-    }
-  }
+}
 
-  const seen = new Set();
-  for (const [prefix, source] of prefixes) {
-    for (const command of pythonCandidates(prefix, platform)) {
-      if (seen.has(command)) continue;
-      seen.add(command);
-      if (!isRunnableFile(command, { platform, fsImpl })) continue;
-      return {
-        command,
-        argsPrefix: ["-m", "uvicorn", "leafmachine3.server.app:create_app", "--factory"],
-        cwd: source === "LM3_ROOT checkout" ? root : os.homedir(),
-        source,
-      };
-    }
+/** Authenticated doctor results must prove the server uses this release's managed environment. */
+function verifyBackendEnvironment(report) {
+  const checks = report && report.checks;
+  const identity = report && report.environment;
+  if (!report || report.ready !== true || report.lm3_version !== DESKTOP_CONTRACT.lm3_version
+      || !identity || identity.python !== DESKTOP_CONTRACT.python
+      || identity.venv_uv !== DESKTOP_CONTRACT.uv
+      || identity.contract_sha256 !== DESKTOP_CONTRACT.backend_contract_sha256
+      || !Array.isArray(checks)
+      || ![1, 2, 3, 4].every((num) => checks.some((check) => check.num === num && check.status === "ok"))) {
+    throw new BackendLaunchError("This server does not match the desktop's uv-locked Python and packages. "
+      + "Start the matching release with uv sync --frozen --extra <gpu|cpu|macos> --group desktop.");
   }
-
-  // A normal installed wheel exposes `lm3`. On Windows pip creates lm3.exe; deliberately ignore
-  // .cmd/.bat so spawning never needs a shell (and therefore never reparses user-controlled text).
-  const consoleNames = platform === "win32" ? ["lm3.exe"] : ["lm3"];
-  const console = findOnPath(consoleNames, env, platform, fsImpl);
-  if (console) {
-    return { command: console, argsPrefix: ["serve"], cwd: os.homedir(), source: "PATH" };
-  }
-  return null;
+  return true;
 }
 
 /** Section 2.1's slug, character by character. Deliberately NOT toLowerCase() and NOT NFKC.
@@ -534,6 +524,26 @@ function boot() {
     });
   }
 
+  async function verifyServerEnvironment() {
+    const report = await new Promise((resolve) => {
+      const req = http.get(`${base()}/healthz/doctor`, {
+        timeout: 10000, headers: { Authorization: `Bearer ${token}` },
+      }, (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { if (body.length < 262144) body += chunk; });
+        res.on("end", () => {
+          if (res.statusCode !== 200) return resolve(null);
+          try { resolve(JSON.parse(body)); } catch (_) { resolve(null); }
+        });
+        res.on("error", () => resolve(null));
+      });
+      req.on("error", () => resolve(null));
+      req.on("timeout", () => { req.destroy(); resolve(null); });
+    });
+    verifyBackendEnvironment(report);
+  }
+
   const portQuiet = async (timeoutMs = 400) => (await health(timeoutMs)) === null;
 
   function requestShutdown(timeoutMs = 4000) {
@@ -645,6 +655,7 @@ function boot() {
           + `descriptor could not be read (${connectionPrivatePath(process.env)}). `
           + `Set LM3_SERVER_TOKEN, or restart that server so it republishes one.`);
       }
+      await verifyServerEnvironment();
       return "attached";
     }
 
@@ -653,9 +664,9 @@ function boot() {
     if (backendError) throw backendError;
     if (!backend) {
       throw new BackendLaunchError(
-        "No installed LM3 backend was found. Install the LM3 wheel so `lm3` is on PATH, activate "
-        + "its virtual/Conda environment before launching, set LM3_PYTHON, set LM3_ROOT for a "
-        + "checkout, or start `lm3 serve` first and reopen the GUI.");
+        "No uv desktop environment was found. Run uv sync --frozen --extra <gpu|cpu|macos> "
+        + "--group desktop in the matching LeafMachine3 checkout. For a packaged app, set LM3_ROOT "
+        + "to that checkout, or start its uv-managed server before opening the GUI.");
     }
     token = loadToken() || crypto.randomBytes(24).toString("hex");
     spawnedInstanceId = crypto.randomBytes(16).toString("hex");
@@ -666,7 +677,7 @@ function boot() {
       {
         cwd: backend.cwd,
         env: {
-          ...process.env,
+          ...backend.env,
           LM3_SERVER_TOKEN: token,
           // THE CUTOVER. Electron is the GUI, and the whole point of the unified runtime is that
           // opening the GUI during a CLI run shows that run. A server started without this flag
@@ -740,6 +751,7 @@ function boot() {
     if (state !== PORT_STATE.OURS) {
       throw portConflictError(state, { url: base(), body, expectedInstanceId: spawnedInstanceId });
     }
+    await verifyServerEnvironment();
     return `spawned via ${backend.source}`;
   }
 
@@ -934,7 +946,7 @@ module.exports = {
   resolvePort, DeploymentIdentityError, DeploymentPortError,
   DEFAULT_DEPLOYMENT_ID, DEFAULT_PORT, SERVICE_NAME,
   // packaged backend discovery
-  isRunnableFile, pythonCandidates, findOnPath, resolveBackendLaunch, BackendLaunchError,
+  isRunnableFile, resolveBackendLaunch, verifyBackendEnvironment, DESKTOP_CONTRACT, BackendLaunchError,
   // section 2.12
   runtimeBaseDir, userCacheDir, deploymentRuntimeDir, connectionPrivatePath,
   readConnectionDescriptor, userDataDirFor, CONNECTION_PRIVATE_FILENAME,

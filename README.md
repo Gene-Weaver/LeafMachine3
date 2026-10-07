@@ -31,6 +31,7 @@ images in this README come from these three sheets.*
   - [Updating](#updating)
 - [Quick Start](#quick-start)
   - [Run from the GUI](#run-from-the-gui)
+  - [Electron desktop app](#electron-desktop-app)
   - [Run from the command line](#run-from-the-command-line)
   - [Where results land](#where-results-land)
 - [Workflow](#workflow)
@@ -135,16 +136,16 @@ uv sync --frozen --extra cpu       # no GPU, any platform
 uv sync --frozen --extra macos     # Apple Silicon
 
 # 4. models (about 1.7 GB, from Hugging Face)
-uv run lm3 models install --yes
+uv run --frozen --no-sync lm3 models install --yes
 ```
 
 ### Verify
 
 ```bash
 uv --version                               # must print 0.12.23
-uv run lm3 doctor                            # must end with "Result: READY"
-uv run machine3 --config LM3_settings.yaml   # processes examples/images into runs/demo/
-uv run lm3 serve                             # GUI at http://127.0.0.1:8765  (Ctrl+C stops it)
+uv run --frozen --no-sync lm3 doctor                            # must end with "Result: READY"
+uv run --frozen --no-sync machine3 --config LM3_settings.yaml   # processes examples/images into runs/demo/
+uv run --frozen --no-sync lm3 serve                             # GUI at http://127.0.0.1:8765  (Ctrl+C stops it)
 ```
 
 `lm3 doctor` checks the interpreter, the lock, the hardware variant, the driver, and that a
@@ -157,15 +158,15 @@ The first run on a new machine profiles the hardware before it starts, which add
 |---|---|---|
 | `machine3` / `lm3 serve` exit with code **78** | the environment does not match `uv.lock` (built with pip, conda, or an old sync) | `uv sync --frozen --extra <gpu\|cpu\|macos> --reinstall` |
 | `lm3 doctor` says the **driver is too old** | NVIDIA driver below 525.60 / 528.33 | update the driver, or use `--extra cpu` |
-| GPU present but models run on the **CPU** | the CUDA provider failed to load | `uv run lm3 doctor --models` names the missing library; reinstall with `--reinstall` |
-| `lm3 models install` asks for a **token** | model repositories are private during pre-release | `uv run hf auth login`, then rerun the install |
-| `lm3 models verify` reports a **hash mismatch** | a partial or stale download | `uv run lm3 models install --force --yes` |
-| **Out of GPU memory** | the hardware profile is wrong for this machine | `uv run lm3-setup --force` to re-profile, or lower workers in `hardware_settings.yaml` |
-| Only one of several GPUs should be used | | `CUDA_VISIBLE_DEVICES=0 uv run machine3 --config LM3_settings.yaml` |
+| GPU present but models run on the **CPU** | the CUDA provider failed to load | `uv run --frozen --no-sync lm3 doctor --models` names the missing library; reinstall with `--reinstall` |
+| `lm3 models install` asks for a **token** | model repositories are private during pre-release | `uv run --frozen --no-sync hf auth login`, then rerun the install |
+| `lm3 models verify` reports a **hash mismatch** | a partial or stale download | `uv run --frozen --no-sync lm3 models install --force --yes` |
+| **Out of GPU memory** | the hardware profile is wrong for this machine | `uv run --frozen --no-sync lm3-setup --force` to re-profile, or lower workers in `hardware_settings.yaml` |
+| Only one of several GPUs should be used | | `CUDA_VISIBLE_DEVICES=0 uv run --frozen --no-sync machine3 --config LM3_settings.yaml` |
 | **Offline / HPC** compute nodes | no network on the compute node | prefetch once: `lm3 models install --dest "$LM3_MODELS_DIR" --yes`; jobs set the same `LM3_MODELS_DIR` |
 | None of the above | | delete `.venv/` and repeat the environment step |
 
-Still stuck? Run `uv run lm3 doctor` and open an issue with its full output.
+Still stuck? Run `uv run --frozen --no-sync lm3 doctor` and open an issue with its full output.
 
 ### Docker
 
@@ -178,7 +179,7 @@ described above is the intended way to keep models out of the image.
 git checkout -- LM3_settings.yaml   # restores shipped settings; first copy personal settings to LM3_settings.local.yaml
 git pull --ff-only
 uv sync --frozen --extra gpu        # or cpu / macos
-uv run lm3 models install --yes     # picks up any model updates in the lock
+uv run --frozen --no-sync lm3 models install --yes     # picks up any model updates in the lock
 ```
 
 ---
@@ -188,7 +189,7 @@ uv run lm3 models install --yes     # picks up any model updates in the lock
 ### Run from the GUI
 
 ```bash
-uv run lm3 serve
+uv run --frozen --no-sync lm3 serve
 ```
 
 ![LeafMachine3 Settings tab](docs/readme_github/gui_settings.jpg)
@@ -209,12 +210,49 @@ mirrors the seventeen modules and fills in as the run advances.
 
 ![Live Status tab during a run](docs/readme_github/gui_live_status.jpg)
 
+### Electron desktop app
+
+Install the desktop group with the same hardware extra used for the pipeline (`gpu`, `cpu`, or
+`macos`). It includes the pinned Node/npm and uv executables; no separate Node or Python install is
+needed. After the sync, `--no-sync` keeps uv from removing the chosen hardware extra or desktop group. For example, on a CPU machine:
+
+```bash
+uv sync --frozen --extra cpu --group desktop
+uv run --frozen --no-sync lm3-desktop install   # npm ci using the uv-locked Node/npm
+uv run --frozen --no-sync lm3-desktop start
+```
+
+Desktop targets match the Python lock: Linux x86_64, Windows x64, and Apple Silicon (macOS 13.5+).
+Build installers on their target OS and architecture; packaging uses the installed, verified Electron runtime.
+
+For development checks and an unpacked native build:
+
+```bash
+uv run --frozen --no-sync lm3-desktop test
+uv run --frozen --no-sync lm3-desktop pack
+```
+
+Python, Node/npm, and uv are pinned in `uv.lock`. Electron, electron-builder, and their JavaScript
+dependencies are integrity-pinned in `app/package-lock.json`; the generated release contracts tie
+both locks together, and CI verifies them before packaging. After an intentional dependency change,
+update the relevant lock and run `uv run --no-sync python tools/release/write_env_contract.py`.
+
+The packaged desktop shell uses a matching uv checkout for its backend. Set `LM3_ROOT` to that
+checkout when launching it, or start that checkout's server with
+`uv run --frozen --no-sync lm3 serve` first. Electron verifies the authenticated environment report
+before attaching. Legacy virtual environments, Conda, `LM3_PYTHON`, and system Python are unsupported
+by the desktop app. Native Windows/macOS packaging is checked in CI; release signing and native
+application acceptance remain separate checks.
+
+On Linux, `./launch_gui.sh` starts the same verified desktop command in the background; its
+`status`, `stop`, and `restart` commands remain available.
+
 ### Run from the command line
 
 ```bash
-uv run machine3 --config LM3_settings.yaml                            # the whole pipeline
-uv run machine3 --config LM3_settings.yaml --run-name my_project      # name the run
-uv run machine3 --config LM3_settings.yaml --restart leaf_segmenter   # rerun one stage + everything after it
+uv run --frozen --no-sync machine3 --config LM3_settings.yaml                            # the whole pipeline
+uv run --frozen --no-sync machine3 --config LM3_settings.yaml --run-name my_project      # name the run
+uv run --frozen --no-sync machine3 --config LM3_settings.yaml --restart leaf_segmenter   # rerun one stage + everything after it
 ```
 
 The settings file is the single source of truth: input folders, output folder, run name, and the
@@ -223,7 +261,7 @@ The settings file is the single source of truth: input folders, output folder, r
 
 ```bash
 cp LM3_settings.yaml LM3_settings.local.yaml   # once, then edit this copy
-uv run machine3 --config LM3_settings.local.yaml
+uv run --frozen --no-sync machine3 --config LM3_settings.local.yaml
 ```
 
 ### Where results land
@@ -254,7 +292,7 @@ Everything a run writes goes to `<output>/<run_name>/`.
 **Compute & Hardware.** Which GPUs to use, precision, and the hardware profile. The profile
 (`hardware_settings.yaml`) is written automatically the first time LeafMachine3 runs on a machine:
 it measures how many workers each stage can hold in VRAM and RAM. Rerun it with
-`uv run lm3-setup --force` after a hardware change.
+`uv run --frozen --no-sync lm3-setup --force` after a hardware change.
 
 **Image Preparation.** Originals are never modified. Each image is read once, converted to RGB,
 and, if its long side exceeds the working limit, downsampled into a working copy that every
@@ -594,7 +632,7 @@ smoothed. The same tool runs in the browser at [leafmachine.org](https://leafmac
 upload.
 
 ```bash
-uv run python -m leafmachine3.postprocessing.generate_stl_from_mask --config postprocessing_settings.yaml --paths <mask.png>
+uv run --frozen --no-sync python -m leafmachine3.postprocessing.generate_stl_from_mask --config postprocessing_settings.yaml --paths <mask.png>
 ```
 
 **Leaf collage.** Tiles a run's best leaves, ranked by the bilateral-symmetry archetype score,
@@ -602,7 +640,7 @@ into the outline of one primary mask: a leaf built out of leaves. Reads existing
 only; nothing is re-segmented.
 
 ```bash
-uv run python -m leafmachine3.postprocessing.generate_leaf_collage --config postprocessing_settings.yaml --run-dir runs/demo --primary-mask <mask.png>
+uv run --frozen --no-sync python -m leafmachine3.postprocessing.generate_leaf_collage --config postprocessing_settings.yaml --run-dir runs/demo --primary-mask <mask.png>
 ```
 
 ---
@@ -615,9 +653,9 @@ install` fetches the defaults; alternates install on request and the command pri
 lines that select them.
 
 ```bash
-uv run lm3 models install --list-alternates
-uv run lm3 models install --model specimen_segmenter=birefnet_hr_swinl_1024
-uv run lm3 models verify
+uv run --frozen --no-sync lm3 models install --list-alternates
+uv run --frozen --no-sync lm3 models install --model specimen_segmenter=birefnet_hr_swinl_1024
+uv run --frozen --no-sync lm3 models verify
 ```
 
 | Module | Default | Alternates | License |
