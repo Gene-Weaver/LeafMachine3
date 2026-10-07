@@ -11,13 +11,10 @@
   environment** still carries torch, torchvision and ultralytics (A/B harness, experiments,
   calibration) and is declared as a uv dependency group that no user command installs; see
   section 13. The training stacks stay in their own environments per `DEPLOYMENT_PLAN.md` section 5.
-- **Implementation state (2026-10-06):** Phase A (lock + contract) and Phase B (`lm3 doctor`) are
-  built and verified on branch `packaging-uv-doctor` (worktree `/datac/Labelbox_Dump/LM3-packaging`),
-  branched from `hf-model-installer` so the lock already includes the model installer's
-  `huggingface_hub`. Not merged. Two Phase B items wait for the uncommitted runtime work to be
-  committed, because they edit the same functions: wiring `startup_gate()` into `machine3` /
-  `lm3 serve`, and the `/healthz/doctor` endpoint. Both are a few lines; the gate itself is built and
-  tested.
+- **Implementation state (2026-10-07):** Phases A and B are DONE on branch `packaging-uv-doctor`,
+  which also carries the consolidated runtime / GUI / Electron / data-export work and the specimen
+  model keys. Not merged to `master`. One item waits on a decision: publishing the opset-18 YOLO
+  exports to the Hub (section 14). Phase C (INSTALL.md, deleting requirements/, uv-based CI) is next.
 - **Goal:** zero wiggle room. A user who follows the instructions for their platform gets the exact
   environment the release was tested with, or an explicit failure during installation that names the
   cause. Nothing resolves, upgrades, or falls back on its own.
@@ -597,24 +594,16 @@ A release is the tag plus these artifacts, all produced by the `release` workflo
   transitive packages resolve to newer patch releases than the months-old pip install, the same
   ones the verified production environment uses.
 
-### Phase B: `lm3 doctor` -- DONE except two call sites (branch `packaging-uv-doctor`)
+### Phase B: `lm3 doctor` -- DONE (branch `packaging-uv-doctor`)
 
 - `leafmachine3/doctor.py` (checks 1-8, `--json`, `--quick`, `--models`, `--production`, `--config`),
-  `leafmachine3/doctor_probe.py` (the child-process probe with the embedded model),
-  `tools/release/make_doctor_probe.py`, `lm3 doctor` in `cli.py`, `startup_gate()`.
-- 40 tests in `tests/test_doctor.py` and `tests/test_release_identity.py`.
-- **Waiting on the runtime commit:** wiring `startup_gate()` into `machine3.main` and `lm3 serve`,
-  and `/healthz/doctor` in `server/app.py`.
-
-**Exit, met 2026-10-06 on real environments built from the lock:**
-- READY on the `gpu` env (CUDA bound, probe within 1.2e-7 of CPU), the `cpu` env, and the dev env
-  (with the development note; `--production` fails it).
-- `CUDA_VISIBLE_DEVICES=""` fails at check 5 with "hides every GPU".
-- `LM3_CUDA_LIBPATH_SET=1` fails at check 6: "asked for CUDAExecutionProvider but onnxruntime bound
-  CPUExecutionProvider ... libcublasLt.so.12: cannot open shared object file", plus the hint.
-- `onnxruntime 1.30.0` pip-installed over `onnxruntime-gpu` (the 2026-10-06 incident) fails at check
-  2, and the single printed fix, `uv sync --frozen --extra gpu --reinstall-package onnxruntime-gpu`,
-  restored READY (uv removes the stray package because the lock does not list it).
+  `leafmachine3/doctor_probe.py` (the child-process probe with the embedded model, and a placement
+  mode), `lm3 doctor` in `cli.py`.
+- Startup gate: `machine3` and `lm3 serve` run checks 1-4 before starting and exit 78 with the fix
+  on failure; `LM3_STARTUP_GATE=0` bypasses (the test suite pins it off). `GET /healthz/doctor`
+  (authenticated; `?full=1` adds the GPU probe).
+- Check 3 also verifies every installed file still exists (shared-file clobbering, section 14).
+- Check 7 (`--models`) also names any installed ONNX model with ops that have no CUDA kernel.
 
 ### Phase C: INSTALL.md and CI
 
@@ -685,3 +674,34 @@ Two facts the group must carry forward:
   happened on 2026-10-06 and silently moved three pipeline runs to the CPU provider. In the `full`
   environment, run ultralytics only with `device="cuda:0"`, or monkeypatch
   `ultralytics.nn.backends.onnx.check_requirements` first.
+
+## 14. Install-test findings, 2026-10-07 (all resolved on the branch unless noted)
+
+Running the documented install from a fresh clone, and a dev <-> production switch, found:
+
+- **Shared-file clobbering.** Uninstalling one package deleted files another still needed while
+  its metadata looked clean: the nvidia-* wheels share `nvidia/__init__.py` (the CUDA library lookup
+  used `nvidia.__file__` and silently found nothing -> CPU), and ultralytics' `opencv-python` shares
+  `cv2/` with production's headless build. Fixed: lookups use `nvidia.__path__`
+  (`core/cuda_libs.py`); `opencv-python` is removed by `[tool.uv] override-dependencies`; doctor check
+  3 stats every RECORD file.
+- **Pillow's decompression-bomb limit** quarantined every sheet over 179 MP as "corrupt". Raised to
+  1 GP in one place (`core/imaging.py`); oversized images are now quarantined as `too_large`.
+- **Hardware profile fingerprint** used size+mtime, so every re-download looked "changed". Now
+  content hashes (cached), over every file a stage loads, naming each difference; legacy entries
+  migrate in place. The leaf segmenter's warning is genuine (profile tuned on the .pt): rerun
+  `python -m leafmachine3.setup` on an idle GPU.
+- **onnxruntime "Memcpy nodes" per worker.** Cause: the four YOLO26 exports are opset 19 and
+  onnxruntime 1.20's CUDA provider has no opset-19 Resize kernel, so the upsampling layers ran on the
+  CPU. `tools/modelhub/fix_resize_opset.py` converts them to opset 18 (bitwise identical on CPU and
+  CUDA, all 14 run tables identical, 22-46% less GPU time per image). **Pending: publish the
+  converted files as new Hub revisions and re-pin the lock (needs Will's go-ahead).** LM3's sessions
+  now log at ERROR; `lm3 doctor --models` names any remaining CPU fallback. Not changed: the DINOv2
+  ruler member's 12 per-layer scale scalars (folding them is not bitwise identical under TF32 and
+  saves ~0.1 ms/crop).
+- **Retired settings** warned once per specimen; now once per run from machine3
+  (`core.config.RETIRED_SETTINGS`). The shipped `LM3_settings.yaml` is the clean template and lists
+  every live setting.
+- **Tooling:** ruff pinned to the lint baseline's 0.12.1; `setuptools` in the test extra; CI on the
+  release Python (3.11) only; the known-failing test baseline is empty; the Electron unit tests no
+  longer need `npm install`; the conversion-factor fit data installs as optional provenance.
