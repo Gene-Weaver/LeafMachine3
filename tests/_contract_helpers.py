@@ -70,6 +70,27 @@ def assert_every_item_shape(rows: Iterable[Any], spec: dict[str, tuple], *, wher
         assert_json_shape(row, spec, where=f"{where}[{i}]")
 
 
+def flattened_app_routes(app: Any) -> list[Any]:
+    """Return concrete routes across FastAPI's eager and lazy router representations.
+
+    FastAPI before 0.141 copied included APIRouter routes directly into ``app.routes``. Newer
+    releases retain an ``_IncludedRouter`` wrapper and expose the source router through
+    ``original_router``. The application behaves the same in both cases, but tests that audit
+    duplicate registrations must inspect the concrete source routes instead of mistaking a lazy
+    wrapper for an absent endpoint.
+    """
+    concrete: list[Any] = []
+    pending = list(getattr(app, "routes", ()))
+    while pending:
+        route = pending.pop(0)
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            pending[0:0] = list(getattr(original, "routes", ()))
+            continue
+        concrete.append(route)
+    return concrete
+
+
 # --------------------------------------------------------------------------- #
 # Response contracts (one place, so the "preserved" and "changes" tests agree)
 # --------------------------------------------------------------------------- #

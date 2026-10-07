@@ -30,6 +30,9 @@
 #   2 x Settings UI 'report.data' rail-group / settings_meta.json assertions -- apparently a
 #                   code/test contract discrepancy (metadata describing settings that no longer
 #                   exist), not an environment property.
+#                   FIXED 2026-10-07 (commit "Settings template: list every live setting, drop
+#                   retired ones"): the shipped template now lists every live setting and the one
+#                   retired key is marked "retired" in settings_meta.json. Both IDs removed below.
 #
 # None is caused by or affected by the Step 1/2 work.
 
@@ -52,6 +55,4 @@ tests/test_bilateral_symmetry.py::test_width_guard_drops_the_tip_slivers
 tests/test_pipeline_mock.py::test_end_to_end_mock_pipeline
 tests/test_pipeline_mock.py::test_pipeline_resumes_without_duplicates
 tests/test_pipeline_mock.py::test_restart_reruns_a_stage
-tests/test_settings_ui.py::test_declared_subsection_paths_resolve_to_real_rail_groups
-tests/test_settings_ui.py::test_no_metadata_for_settings_that_do_not_exist
 tests/test_working_frame.py::test_reporter_outputs_are_working_sized_and_survive_a_deleted_original

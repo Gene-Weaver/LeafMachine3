@@ -171,8 +171,8 @@ modules:
   leaf_segmenter:
     enabled: true
     model:
-      path: ../models/leaf_segmenter/model.pt
-      format: pytorch
+      path: ../models/leaf_segmenter/model.onnx
+      format: onnx
     include_partial: false
     imgsz: 1024
     conf: 0.3

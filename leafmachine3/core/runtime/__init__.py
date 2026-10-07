@@ -233,6 +233,34 @@ _LAZY: dict[str, str] = {
     "launch_manifest_path": "config_io",
     "build_launch_manifest": "config_io",
     "lm3_version": "config_io",
+    # E) runtime/execution.py -- the Step 3 activity context managers (sections 2.2, 2.4, 3.3, 3.4)
+    # THE feature flag reader, the root/child/subactivity context managers, and the child half of
+    # the launch handshake. Every execution entry point reaches the lease through these, which is
+    # what makes invariant 4 one implementation instead of four.
+    "ENV_RUNTIME_V2": "execution",
+    "ENV_CHILD_RUN_ID": "execution",
+    "ENV_PARENT_RUN_ID": "execution",
+    "ENV_CHILD_ACTIVITY": "execution",
+    "CHILD_ENV_VARS": "execution",
+    "DEFAULT_CHILD_JOIN_TIMEOUT_S": "execution",
+    "DEFAULT_CHILD_KILL_TIMEOUT_S": "execution",
+    "runtime_v2_enabled": "execution",
+    "is_approved_child": "execution",
+    "child_base_env": "execution",
+    "StatusChannel": "execution",
+    "status_channel": "execution",
+    "write_launch_manifest": "execution",
+    "ActivityHandle": "execution",
+    "RootActivity": "execution",
+    "ChildActivity": "execution",
+    "DisabledActivity": "execution",
+    "SubactivityLaunch": "execution",
+    "InheritedLease": "execution",
+    "root_activity": "execution",
+    "child_activity": "execution",
+    "execution_activity": "execution",
+    "launch_subactivity": "execution",
+    "bind_child_lease": "execution",
 }
 
 
@@ -332,4 +360,11 @@ __all__ = [
     "project_block", "resolve_archived_db_path", "read_archive_pointer", "canonical_json",
     "config_json", "archive_mode", "resolved_paths", "db_path", "CLUSTER_STATE_DIR_KEY",
     "LAUNCH_MANIFEST_FILENAME", "launch_manifest_path", "build_launch_manifest", "lm3_version",
+    # -- E) execution.py ----------------------------------------------------------------------- #
+    "ENV_RUNTIME_V2", "ENV_CHILD_RUN_ID", "ENV_PARENT_RUN_ID", "ENV_CHILD_ACTIVITY",
+    "CHILD_ENV_VARS", "DEFAULT_CHILD_JOIN_TIMEOUT_S", "DEFAULT_CHILD_KILL_TIMEOUT_S",
+    "runtime_v2_enabled", "is_approved_child", "child_base_env", "StatusChannel", "status_channel",
+    "write_launch_manifest", "ActivityHandle", "RootActivity", "ChildActivity", "DisabledActivity",
+    "SubactivityLaunch", "InheritedLease", "root_activity", "child_activity", "execution_activity",
+    "launch_subactivity", "bind_child_lease",
 ]

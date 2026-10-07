@@ -91,6 +91,41 @@ DEFAULTS: dict[str, dict] = {
     ]},
 }
 
+#: Published NON-default models: installed only on request (`lm3 models install --model STAGE=KEY`),
+#: never reported missing. Destinations live under <stage>/<model_key>/ so they never collide with a
+#: default. ``settings`` = extra lines the CLI prints alongside the path (and key, for keyed stages).
+ALTERNATES: dict[str, dict[str, dict]] = {
+    "specimen_segmenter": {
+        "birefnet_hr_swinl_1024": {"units": [{
+            "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__birefnet_hr_swinl_1024",
+            "files": {"onnx/model.onnx": ("specimen_segmenter/birefnet_hr_swinl_1024/model.onnx", "onnx"),
+                      "pytorch/epoch_145.pth": ("specimen_segmenter/birefnet_hr_swinl_1024/epoch_145.pth", "pytorch"),
+                      "training_metadata.json": ("specimen_segmenter/birefnet_hr_swinl_1024/training_metadata.json", "meta")}}]},
+        "yolo26x_seg_1280": {"units": [{
+            "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__yolo26x_seg_1280",
+            "files": {"onnx/model.onnx": ("specimen_segmenter/yolo26x_seg_1280/model.onnx", "onnx"),
+                      "torchscript/model.torchscript": ("specimen_segmenter/yolo26x_seg_1280/model.torchscript", "torchscript"),
+                      "pytorch/best.pt": ("specimen_segmenter/yolo26x_seg_1280/best.pt", "pytorch"),
+                      "training_metadata.json": ("specimen_segmenter/yolo26x_seg_1280/training_metadata.json", "meta")}}]},
+    },
+    "archival_detector": {
+        "yolo26n_det_640": {"settings": {"imgsz": 640}, "units": [{
+            "repo_id": f"{NAMESPACE}/lm3_archival_detector__yolo26n_det_640",
+            "files": {"onnx/model.onnx": ("archival_detector/yolo26n_det_640/model.onnx", "onnx"),
+                      "torchscript/model.torchscript": ("archival_detector/yolo26n_det_640/model.torchscript", "torchscript"),
+                      "pytorch/best.pt": ("archival_detector/yolo26n_det_640/best.pt", "pytorch"),
+                      "training_metadata.json": ("archival_detector/yolo26n_det_640/training_metadata.json", "meta")}}]},
+    },
+    "plant_detector": {
+        "yolo26n_det_640": {"settings": {"imgsz": 640}, "units": [{
+            "repo_id": f"{NAMESPACE}/lm3_plant_detector__yolo26n_det_640",
+            "files": {"onnx/model.onnx": ("plant_detector/yolo26n_det_640/model.onnx", "onnx"),
+                      "torchscript/model.torchscript": ("plant_detector/yolo26n_det_640/model.torchscript", "torchscript"),
+                      "pytorch/best.pt": ("plant_detector/yolo26n_det_640/best.pt", "pytorch"),
+                      "training_metadata.json": ("plant_detector/yolo26n_det_640/training_metadata.json", "meta")}}]},
+    },
+}
+
 #: Not on the Hub yet. Listed so status/UI know they are expected; the installer skips them.
 #: ``local`` points at the file in this checkout so its sha/bytes can be pinned ahead of upload.
 PLACEHOLDERS: dict[str, dict] = {
@@ -103,6 +138,22 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _pin_units(api, hf_hub_download, spec: dict) -> list[dict]:
+    units = []
+    for u in spec["units"]:
+        info = api.model_info(u["repo_id"], files_metadata=True)
+        manifest = json.loads(Path(hf_hub_download(u["repo_id"], "manifest.json", revision=info.sha)).read_text())
+        files = []
+        for src, (dest, fmt) in u["files"].items():
+            rec = manifest["files"].get(src)
+            if rec is None:
+                raise SystemExit(f"{u['repo_id']}: {src} is not in the repo manifest")
+            files.append({"src": src, "dest": dest, "format": fmt, "sha256": rec["sha256"], "bytes": rec["bytes"],
+                          "optional": dest.endswith("training_metadata.json")})
+        units.append({"repo_id": u["repo_id"], "revision": info.sha, "model_key": manifest["lm3"].get("model_key"), "files": files})
+    return units
 
 
 def build() -> dict:
@@ -136,9 +187,11 @@ def build() -> dict:
                 files.append({"src": src, "dest": dest, "format": fmt, **rec})
             units.append({"repo_id": u["repo_id"], "revision": None, "model_key": None, "files": files})
         actions[action] = {"required": True, "placeholder": True, "units": units}
+    alternates = {stage: {k: ({"settings": spec["settings"]} if spec.get("settings") else {}) | {"units": _pin_units(api, hf_hub_download, spec)}
+                          for k, spec in models.items()} for stage, models in ALTERNATES.items()}
     return {"schema_version": 1, "lm3_version": "3.0.0", "hub_namespace": NAMESPACE,
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-            "default_formats": ["onnx"], "actions": actions}
+            "default_formats": ["onnx"], "actions": actions, "alternates": alternates}
 
 
 def main(argv=None) -> int:

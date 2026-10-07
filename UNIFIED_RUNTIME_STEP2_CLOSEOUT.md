@@ -192,7 +192,7 @@ Net: **37 reported → 33 distinct defects.**
 > | F-001 / F-031 open — a read path performs the legacy adopt | **Fixed.** Resolution is pure and memoized; adoption happens once, at controlled startup. `test_read_paths_are_pure.py`. |
 > | F-009 has 7 tests | **16**, including two that execute each CLI's real `main()` and an 8-process adopt race. |
 > | F-017 open; "no wheel was built" | **Closed.** A wheel is now built, INSTALLED into a throwaway venv and probed from an unrelated CWD (`tests/test_version_identity.py`, and a CI job). It ships the browser UI, `settings_meta.json`, `schema.sql`, the calibration images and all 33 `stl_webview` files; `leafmachine3_backup` is excluded. |
-> | F-010's account of the available commands | **Partially superseded.** There is now a canonical `lm3` command with a `serve` subcommand (`leafmachine3/cli.py`), so an installed wheel has a documented way to start the server. F-010's substance — a packaged Electron app resolves `ROOT` to `<install>/resources` and so cannot SPAWN a server without `LM3_PYTHON` — is unchanged and still owned by Step 5b. |
+> | F-010's packaged-backend account | **Superseded and closed.** The original `<install>/resources/.venv_LM3` measurement remains valid historical evidence, but `main.js` now uses a bounded filesystem-only resolver: explicit `LM3_PYTHON`, active virtual/Conda environment, explicit checkout, then the installed `lm3` command on `PATH`. No probe subprocess is launched. The Electron artifact remains intentionally separate from the Python backend. |
 >
 > Ownership reassignments (§ below) and the Phase 8 evidence are current.
 
@@ -201,7 +201,8 @@ Net: **37 reported → 33 distinct defects.**
 > Phases 3–6 of this pass then fixed **F-007, F-008, F-011 and F-031**, and a follow-up pass fixed
 > **F-009**; §Phase 8 measured all five, and those rows have been brought current. Ownership was
 > also reassigned for **F-006** (→ Step 5b, server startup), **F-010** (→ Step 5b) and **F-012**
-> (→ Step 3, first task), and **F-010 is now confirmed** rather than unverified. Every other row still reads as of the snapshot, and
+> (→ Step 3, first task). F-010 was first confirmed by the packaged probe and is now fixed as the
+> superseded-facts table above records. Every other row still reads as of the snapshot, and
 > `open` there means open.
 
 

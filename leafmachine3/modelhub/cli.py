@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -50,6 +51,49 @@ def _progress_printer(ev: dict) -> None:
         print(f"  {ev['action']}: ERROR {ev['message']}", file=sys.stderr)
 
 
+def _parse_models(raw) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for item in raw or []:
+        for part in str(item).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "=" not in part:
+                raise SystemExit(f"lm3 models: --model expects STAGE=KEY, got {part!r}")
+            stage, key = (x.strip() for x in part.split("=", 1))
+            out.append((stage, key))
+    return out
+
+
+#: stages whose settings name their model with ``model.key`` (the name picks the input workflow)
+KEYED_STAGES = {"specimen_segmenter"}
+
+
+def _print_settings_snippet(alt, root: Path, formats) -> None:
+    """The settings lines that point ``alt.stage`` at this alternate, using the installed paths."""
+    onnx = next((f.dest for _u, f in alt.files(formats) if f.format == "onnx"), None)
+    if onnx is None:
+        return
+    # relative "models/..." only when the files went to the default folder beside the settings file;
+    # anywhere else ($LM3_MODELS_DIR or --dest) the snippet names the absolute path it really used
+    try:
+        default_root = installer.models_root(env={}).resolve()
+    except Exception:  # noqa: BLE001 - no settings file to anchor on
+        default_root = None
+    rel = f"models/{onnx}" if (default_root is not None and Path(root).resolve() == default_root
+                               and not os.environ.get(installer.ENV_ROOT)) else str(Path(root).resolve() / onnx)
+    model = {"path": rel, "format": "onnx"}
+    if alt.stage in KEYED_STAGES:
+        model = {"key": alt.model_key, **model}
+    inner = ", ".join(f'{k}: "{v}"' for k, v in model.items())
+    print(f"\nTo use {alt.model_key} for {alt.stage}, set in LM3_settings.yaml:\n")
+    print("modules:")
+    print(f"  {alt.stage}:")
+    print(f"    model: {{ {inner} }}")
+    for k, v in (alt.settings or {}).items():
+        print(f"    {k}: {v}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     def common(parser: argparse.ArgumentParser, *, after: bool) -> None:
         # The same options are accepted before AND after the subcommand (`lm3 models install --dest X`
@@ -68,6 +112,10 @@ def build_parser() -> argparse.ArgumentParser:
     ins = sub.add_parser("install", help="download missing/outdated models (backs up, verifies, rolls back on failure)")
     common(ins, after=True)
     ins.add_argument("--actions", default=None, help="comma list of actions (default: all)")
+    ins.add_argument("--model", action="append", default=None, metavar="STAGE=KEY",
+                     help="install an alternate model instead, e.g. specimen_segmenter=yolo26x_seg_1280 "
+                          "(repeatable or comma-separated); prints the settings lines that select it"),
+    ins.add_argument("--list-alternates", action="store_true", help="list the alternate models in the lock and exit")
     ins.add_argument("--force", action="store_true", help="re-download actions that are already current")
     ins.add_argument("--yes", "-y", action="store_true", help="do not ask before overwriting existing models")
     return p
@@ -87,7 +135,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             st = installer.verify(root, lock=lock, formats=formats)
             _print_status(st, args.json)
             return 0 if not st["summary"]["needs_attention"] else 1
+        if getattr(args, "list_alternates", False):
+            for stage, ks in lock.alternates.items():
+                for k, a in ks.items():
+                    print(f"  {stage}={k:28s} {a.units[0].repo_id}")
+            return 0
         actions = [s.strip() for s in args.actions.split(",")] if args.actions else None
+        models = _parse_models(getattr(args, "model", None))
+        if models:
+            for stage, k in models:
+                lock.alternate(stage, k)          # unknown -> KeyError with the known list
+            st = installer.install(root, lock=lock, actions=actions, formats=formats, force=args.force, models=models,
+                                   progress=None if args.json else _progress_printer)
+            if args.json:
+                print(json.dumps(st, indent=2))
+            else:
+                for stage, k in models:
+                    _print_settings_snippet(lock.alternate(stage, k), root, formats or lock.default_formats)
+            return 0
         before = installer.status(root, lock=lock, formats=formats)
         existing = [k for k, a in before["actions"].items() if any(f["present"] for f in a["files"])
                     and (actions is None or k in actions) and a["state"] in ("outdated", "current") and (args.force or a["state"] == "outdated")]

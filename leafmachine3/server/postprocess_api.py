@@ -24,9 +24,18 @@ thread, so starting the server costs nothing.
 Security: every user-supplied path is resolved (symlinks included) and must land inside
 :func:`allowed_roots` -- the LM3 project dir, the configured output / tmp / input dirs, and the
 server jobs root. A caller cannot read or write outside the install.
+
+Concurrency (plan section 2.8): a tool aimed at the run a pipeline is writing right now is
+REFUSED, a different completed run is always allowed, and two ``read_write`` tools on one
+completed run are serialized by a per-run advisory lock held in the local deployment runtime
+registry -- never a lock file inside the output directory, which on a cluster is the network
+storage section 3.1 declares unreliable for locking. Both rules live in one place,
+:func:`check_target_allowed` and :func:`_acquire_artifact_locks`, so a standalone CLI uses the
+same guard as this HTTP layer instead of a parallel copy that drifts.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -80,6 +89,44 @@ class ToolBusy(RuntimeError):
         super().__init__(f"tool {tool_id!r} is already running (task {task_id})")
         self.tool_id = tool_id
         self.task_id = task_id
+
+
+class TargetActive(RuntimeError):
+    """The tool's target is the run a pipeline is writing RIGHT NOW (plan section 2.8, HTTP 409).
+
+    Postprocessing reads a finished run's reports and DB and writes new artifacts beside them. Do
+    that to a live run and the two disagree about what exists: the Reporter is still creating the
+    files being globbed, the ledger is mid-transaction, and any output lands in a directory the run
+    may still rewrite. A DIFFERENT completed run is always allowed -- these tools are CPU-only, so
+    there is no device to contend for.
+    """
+
+    def __init__(self, artifact_dir: Path, run_name: Optional[str] = None,
+                 run_id: Optional[str] = None) -> None:
+        who = f"{run_name!r}" if run_name else "the active run"
+        super().__init__(
+            f"refused: {artifact_dir} belongs to {who}, which is running right now. Postprocessing "
+            f"a live run would read half-written reports and write into a directory the pipeline "
+            f"still owns. Wait for it to finish, or pick a completed run."
+        )
+        self.artifact_dir = artifact_dir
+        self.run_name = run_name
+        self.run_id = run_id
+
+
+class TargetLocked(RuntimeError):
+    """Another read_write tool already holds this run's advisory lock (plan section 2.8, HTTP 409).
+
+    The lock is per RUN, not per tool: two different tools writing the same run's ``reports`` tree
+    concurrently is the race the per-tool gate in :class:`TaskRegistry` does not cover.
+    """
+
+    def __init__(self, artifact_dir: Path) -> None:
+        super().__init__(
+            f"refused: another read/write postprocessing tool is already working on {artifact_dir}. "
+            f"Two writers on one run's artifacts are serialized; try again when it finishes."
+        )
+        self.artifact_dir = artifact_dir
 
 
 # --------------------------------------------------------------------------- #
@@ -145,6 +192,16 @@ class Tool:
     module: str                                 # importable module implementing the tool
     cli: str                                    # the equivalent command line, shown in the UI
     icon: str = "*"
+    #: plan section 2.8: "Every tool declares read_only / read_write and cpu / gpu resource
+    #: metadata." ``access`` decides whether the per-run advisory lock is taken; ``resource``
+    #: exists so the first GPU postprocessor cannot be added without confronting the question --
+    #: nothing today may declare "gpu" and skip explicit device coordination.
+    access: str = "read_write"                  # read_only | read_write
+    resource: str = "cpu"                       # cpu | gpu
+    #: Parameter keys whose value names the run (or a file inside it) this tool touches. The guard
+    #: resolves each to its enclosing run directory; that directory IS the ``artifact_dir`` the
+    #: refusal and the advisory lock are keyed on.
+    target_keys: tuple[str, ...] = ()
 
     def input(self, key: str) -> Optional[ToolInput]:
         return next((i for i in self.inputs if i.key == key), None)
@@ -161,6 +218,8 @@ class Tool:
             "settings_key": self.settings_key,
             "settings_path": str(_settings_path()),
             "cli": self.cli,
+            "access": self.access,
+            "resource": self.resource,
             "inputs": [i.describe(_default_for(i, block)) for i in self.inputs],
             "outputs_description": self.outputs_description,
         }
@@ -269,18 +328,33 @@ def _lm3_settings() -> dict:
         return {}
 
 
-def allowed_roots() -> list[Path]:
-    """Directories a request is allowed to read from / write into.
+def _normalize_root(raw: Any, settings_file: Optional[Path]) -> Optional[Path]:
+    """One raw root -> an absolute, symlink-resolved path, or ``None`` when it is unusable.
 
-    Loopback binding plus a Bearer token already gates WHO can call; this gates WHERE. The set is
-    intentionally the same ground the CLI covers (the project dir and its configured data dirs) so
-    nothing the user can do from the terminal is blocked in the app -- and nothing beyond it works.
+    Relative entries are resolved against the settings FILE, exactly like ``project.output.dir`` --
+    never against the CWD (section 3.1) -- and are dropped outright when there is no settings file
+    to resolve them against.
+    """
+    if not raw or not isinstance(raw, (str, os.PathLike)):
+        return None
+    p = Path(str(raw)).expanduser()
+    if not p.is_absolute():
+        if settings_file is None:
+            return None
+        p = settings_file.parent / p
+    try:
+        return Path(os.path.realpath(p))
+    except OSError:
+        return None
 
-    The server's CWD is NOT a root any more (plan section 3.1: "No path falls back to the current
-    working directory"). It was never a statement about the user's data -- it was a statement about
-    where someone happened to type ``lm3 serve`` -- and as a WRITE sandbox that is the wrong shape:
-    a server started from ``/`` or from a home directory authorized the lot. The settings file's own
-    directory replaces it, which is the directory the project is actually described from.
+
+def _static_allowed_roots() -> list[Path]:
+    """The half of :func:`allowed_roots` that only a settings/env edit can move -- memoized.
+
+    Every input here is observable in the cache key below: the settings file, the
+    ``LM3_POSTPROCESS_ROOTS`` override, the ``project`` block, and each tool's configured
+    ``output_dir``. The RUN-HISTORY half is not observable in any of them, so it deliberately does
+    not live here (see :func:`allowed_roots`).
     """
     settings_file = _lm3_settings_path()
     cfg = _lm3_settings()
@@ -298,21 +372,8 @@ def allowed_roots() -> list[Path]:
     out: list[Path] = []
 
     def add(raw: Any) -> None:
-        if not raw or not isinstance(raw, (str, os.PathLike)):
-            return
-        p = Path(str(raw)).expanduser()
-        if not p.is_absolute():
-            # Relative entries are resolved against the settings file, exactly like
-            # project.output.dir -- never against the CWD, and dropped outright when there is no
-            # settings file to resolve them against.
-            if settings_file is None:
-                return
-            p = settings_file.parent / p
-        try:
-            real = Path(os.path.realpath(p))
-        except OSError:
-            return
-        if real not in out:
+        real = _normalize_root(raw, settings_file)
+        if real is not None and real not in out:
             out.append(real)
 
     if settings_file is not None:
@@ -338,16 +399,6 @@ def allowed_roots() -> list[Path]:
     except Exception:  # noqa: BLE001 - app.py is optional here
         pass
 
-    # every run-history root the Results tab can list, so a run visible in the app is a run the
-    # Postprocess tab may read (section 3.1 row 5)
-    try:
-        from leafmachine3.server.results_api import run_roots
-
-        for root in run_roots():
-            add(root)
-    except Exception:  # noqa: BLE001 - results_api is optional here
-        pass
-
     # anything a tool is already configured to write to
     for tool in _TOOLS.values():
         block = _yaml_block(tool.settings_key)
@@ -356,6 +407,51 @@ def allowed_roots() -> list[Path]:
     with _roots_lock:
         _roots_cache.update({"key": key, "roots": list(out)})
     return list(out)
+
+
+def allowed_roots() -> list[Path]:
+    """Directories a request is allowed to read from / write into.
+
+    Loopback binding plus a Bearer token already gates WHO can call; this gates WHERE. The set is
+    intentionally the same ground the CLI covers (the project dir and its configured data dirs) so
+    nothing the user can do from the terminal is blocked in the app -- and nothing beyond it works.
+
+    The server's CWD is NOT a root any more (plan section 3.1: "No path falls back to the current
+    working directory"). It was never a statement about the user's data -- it was a statement about
+    where someone happened to type ``lm3 serve`` -- and as a WRITE sandbox that is the wrong shape:
+    a server started from ``/`` or from a home directory authorized the lot. The settings file's own
+    directory replaces it, which is the directory the project is actually described from.
+
+    Composed from two halves on purpose: a memoized settings/env half, and the run-history half,
+    recomputed on EVERY call because nothing in that memo key observes it.
+    """
+    settings_file = _lm3_settings_path()
+    out = _static_allowed_roots()
+
+    # every run-history root the Results tab can list, so a run visible in the app is a run the
+    # Postprocess tab may read (section 3.1 row 5).
+    #
+    # This union sits OUTSIDE the memo above, and that placement is the whole point: ``run_roots()``
+    # re-reads active.json / last.json on every call (row 5 slot 2), and NOTHING in the memo key
+    # moves when a run starts or finishes. Inside the memo the sandbox was computed from an input it
+    # never observed, and it failed in both directions -- a CLI run writing outside every configured
+    # root was refused here while the Results tab was listing it, and a root that entered the set
+    # while a record named it stayed writable for the life of the server long after no record named
+    # it. The active/last run_id is no use as a key either: section 2.10's staged mode contributes
+    # run_dir, artifact_dir and active_state_dir separately and a hardware_setup record contributes
+    # none, so record -> roots is not run_id-determined. The read is no more expensive than the
+    # per-tool YAML reads the key already performs.
+    try:
+        from leafmachine3.server.results_api import run_roots
+
+        for root in run_roots():
+            real = _normalize_root(root, settings_file)
+            if real is not None and real not in out:
+                out.append(real)
+    except Exception:  # noqa: BLE001 - results_api is optional here
+        log.debug("could not read the run-history roots", exc_info=True)
+
+    return out
 
 
 def _within_roots(real: Path, roots: list[Path]) -> bool:
@@ -861,6 +957,302 @@ def _capture_release() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Concurrency policy (plan section 2.8)
+# --------------------------------------------------------------------------- #
+# Two rules, and one place that enforces them for BOTH the HTTP API and any standalone CLI:
+#
+#   1. a postprocessor whose target is the ACTIVE pipeline's run directory is refused; a different
+#      COMPLETED run is allowed, because these tools are CPU-only and contend for nothing;
+#   2. two ``read_write`` tools aimed at the same completed run are serialized by a per-run
+#      advisory lock that lives in the LOCAL deployment runtime registry, keyed by a hash of the
+#      resolved ``artifact_dir``.
+#
+# The lock deliberately does NOT live beside the artifacts. On a cluster the output directory is
+# network storage, which section 3.1 declares unreliable for locking -- an advisory lock there is a
+# lock that silently does not lock. Keeping it node-local is honest, and it states the limit out
+# loud: CROSS-HOST concurrent postprocessing of one run is out of scope for the single-user cluster
+# profile, not quietly half-supported.
+_MAX_RUN_DIR_WALK = 8            # bounded parent walk; a run dir is never that far above a report
+_LOCK_DIRNAME = "postprocess"    # <deployment runtime dir>/postprocess/<sha256(artifact_dir)>.lock
+
+
+def _runtime_v2_enabled() -> bool:
+    """The one place this module reads ``LM3_RUNTIME_V2`` (default ON since the cutover).
+
+    With explicit ``LM3_RUNTIME_V2=0`` no runtime record exists, so rule 1 cannot fire and rule 2's
+    lock stays off with it. Import failures propagate: silently returning false here would disable
+    the active-run write guard, which is the unsafe direction to fail.
+    """
+    from leafmachine3.core.runtime.execution import runtime_v2_enabled
+
+    return bool(runtime_v2_enabled())
+
+
+def _enclosing_run_dir(path: Path) -> Path:
+    """The run directory ``path`` belongs to, or the nearest directory when it belongs to none.
+
+    A tool is handed a mask file deep inside ``<run>/reports/...`` or an output folder that does
+    not exist yet; both have to collapse to the one identity the guard and the lock are keyed on.
+    """
+    start = path if path.is_dir() else path.parent
+    candidate = start
+    for _ in range(_MAX_RUN_DIR_WALK):
+        if _is_run_dir(candidate):
+            return candidate
+        if candidate.parent == candidate:
+            break
+        candidate = candidate.parent
+    return start
+
+
+def target_artifact_dirs(tool: Tool, params: dict) -> list[Path]:
+    """Every run directory ``tool`` would touch with ``params``, de-duplicated, in order.
+
+    ``params`` must already have been through :func:`validate_params`: that is what turns each
+    path field into a resolved, sandbox-checked :class:`~pathlib.Path`.
+    """
+    out: list[Path] = []
+    for key in tool.target_keys:
+        value = params.get(key)
+        for raw in (value if isinstance(value, (list, tuple)) else [value]):
+            if raw in (None, ""):
+                continue
+            try:
+                resolved = _enclosing_run_dir(Path(str(raw)))
+            except OSError:                        # a vanished or unreadable path is not a target
+                continue
+            if resolved not in out:
+                out.append(resolved)
+    return out
+
+
+def _overlaps(target: Path, active: Path) -> bool:
+    """True when the two paths are the same run, or one contains the other.
+
+    Containment matters in both directions: an output folder INSIDE the live run is a write into
+    it, and a target ABOVE it (someone passing the whole output root) sweeps it up.
+    """
+    if target == active:
+        return True
+    return active in target.parents or target in active.parents
+
+
+def active_run_target() -> Optional[dict]:
+    """The run holding the deployment lease right now, as ``{artifact_dir, run_name, run_id}``.
+
+    The registry and ONLY the registry: never the settings file, never a filesystem recency guess.
+    That matters here more than anywhere else -- a refusal built on a guess would block legitimate
+    work on a finished run, and section 2.5 is explicit that a guess authorizes nothing.
+
+    The record is read STRAIGHT OFF DISK on every call rather than through
+    ``progress_api.active_runtime_ref()``, whose registry read is memoized behind a 0.25-2.0 s TTL
+    for the 2 Hz status endpoints. That memo has no lifecycle invalidation from the run-start path,
+    so for one TTL after a run publishes ``active.json`` the cached answer is still the pre-launch
+    "nothing is running" -- and this function is the input to a NORMATIVE refusal ("it is refused
+    when its target is the currently active pipeline's run directory", section 2.8). An
+    authorization decision may not be answered out of a cache nobody invalidates: a stale hit here
+    admits a ``read_write`` tool into a run the pipeline is writing, and the tool then runs for
+    minutes. The read itself is one lock probe plus one small JSON parse, and it happens once per
+    tool start (and once per Postprocess tab render), not at 2 Hz.
+
+    Only a LIVE record qualifies, exactly as ``progress_api._from_runtime`` decides it: ABANDONED is
+    a crashed writer holding nothing, and INCOMPATIBLE yields no record at all so a newer-schema
+    runtime is never half-interpreted here (section 2.9). A ``hardware_setup`` root has no project
+    block by invariant 6, so it names no run directory and refuses nothing.
+    """
+    if not _runtime_v2_enabled():
+        return None
+    try:
+        from leafmachine3.core import paths as core_paths
+        from leafmachine3.core.runtime import RecordClassification
+        from leafmachine3.core.runtime import records as runtime_records
+
+        # check_filesystem=False: the network-filesystem refusal is for a WRITER taking a lock. A
+        # reader that declined to look would report "nothing is running" on exactly the cluster
+        # setup section 3.1 warns about -- which here would mean ADMITTING a tool into a live run.
+        deployment = core_paths.deployment_runtime_dir(check_filesystem=False)
+        if not deployment.is_dir():
+            return None
+        # include_children=False: the refusal is keyed on the ROOT's run directory. A
+        # calibration child (the only child activity there is) writes under its own root's
+        # tree, so reading the two child records would cost two file reads and decide nothing.
+        snapshot = runtime_records.read_runtime(deployment, include_children=False)
+    except Exception:  # noqa: BLE001 - an unreadable registry must not take the tools down
+        log.debug("could not read the active runtime record", exc_info=True)
+        return None
+    if snapshot is None or snapshot.classification is not RecordClassification.LIVE:
+        return None
+    project = getattr(getattr(snapshot, "record", None), "project", None)
+    if project is None:
+        return None
+    try:
+        run_dir = Path(str(project.run_dir))
+        run_name = str(project.run_name)
+    except (AttributeError, TypeError, ValueError):
+        log.debug("runtime record carries an unusable project block", exc_info=True)
+        return None
+    # realpath, because every TARGET has already been through ``resolve_path`` (which realpaths).
+    # Comparing a resolved target against an unresolved record path is how a run reached through a
+    # symlinked output root slips past the refusal -- the two spellings never meet.
+    try:
+        artifact_dir = Path(os.path.realpath(run_dir))
+    except (OSError, ValueError):
+        artifact_dir = run_dir
+    run_id = str(getattr(snapshot.record, "run_id", "")) or None
+    return {"artifact_dir": artifact_dir, "run_name": run_name, "run_id": run_id}
+
+
+def check_target_allowed(tool: Tool, params: dict) -> list[Path]:
+    """Rule 1. Return the tool's target run dirs, or raise :class:`TargetActive`.
+
+    THE one guard: the HTTP route reaches it through :func:`start_tool`, and a standalone CLI must
+    call it rather than growing a parallel copy that drifts (section 2.8, last bullet).
+    """
+    targets = target_artifact_dirs(tool, params)
+    active = active_run_target()
+    if active is None:
+        return targets
+    for target in targets:
+        if _overlaps(target, active["artifact_dir"]):
+            raise TargetActive(target, active["run_name"], active["run_id"])
+    return targets
+
+
+def artifact_lock_path(artifact_dir: Path) -> Optional[Path]:
+    """``<deployment runtime dir>/postprocess/<sha256(artifact_dir)>.lock``, or ``None``.
+
+    The hash, rather than a mangled path, keeps the name bounded and filesystem-safe for artifact
+    directories of any depth, and it is stable across processes because the input is the RESOLVED
+    directory.
+    """
+    try:
+        from leafmachine3.core import paths as core_paths
+
+        base = core_paths.deployment_runtime_dir(create=True, check_filesystem=False) / _LOCK_DIRNAME
+        base.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(base, 0o700)                  # the registry is user-private; keep it so
+        except OSError:
+            pass
+    except Exception:  # noqa: BLE001 - no registry directory means no cross-process lock
+        log.debug("could not resolve the postprocess lock directory", exc_info=True)
+        return None
+    digest = hashlib.sha256(str(artifact_dir).encode("utf-8", "surrogateescape")).hexdigest()
+    return base / f"{digest}.lock"
+
+
+#: In-process half of the advisory lock, one entry per artifact key. The OS file lock covers other
+#: PROCESSES; this covers the server's own tool threads, whose behavior when two handles in one
+#: process lock the same file is not identical on POSIX and Windows. Holding both makes the
+#: guarantee the same everywhere, which is the only kind worth documenting.
+_LOCAL_LOCKS: dict[str, threading.Lock] = {}
+_LOCAL_LOCKS_GUARD = threading.Lock()
+
+
+class _ArtifactLock:
+    """A non-blocking advisory lock over one run's artifacts. Never waits; refuses instead."""
+
+    def __init__(self, artifact_dir: Path) -> None:
+        self.artifact_dir = artifact_dir
+        self.path = artifact_lock_path(artifact_dir)
+        self._local: Optional[threading.Lock] = None
+        self._fd: Optional[int] = None
+
+    def acquire(self) -> bool:
+        key = str(self.artifact_dir)
+        with _LOCAL_LOCKS_GUARD:
+            local = _LOCAL_LOCKS.setdefault(key, threading.Lock())
+        if not local.acquire(blocking=False):
+            return False
+        self._local = local
+        if self.path is None:
+            return True
+        try:
+            fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        except OSError:
+            log.debug("could not open the artifact lock file %s", self.path, exc_info=True)
+            return True                            # in-process serialization still holds
+        try:
+            if not _try_lock_fd(fd):
+                os.close(fd)
+                self.release()
+                return False
+        except OSError:
+            os.close(fd)
+            log.debug("advisory locking is unavailable on %s", self.path, exc_info=True)
+            return True
+        self._fd = fd
+        return True
+
+    def release(self) -> None:
+        if self._fd is not None:
+            try:
+                _unlock_fd(self._fd)
+            except OSError:
+                log.debug("could not release the artifact lock %s", self.path, exc_info=True)
+            finally:
+                os.close(self._fd)
+                self._fd = None
+        if self._local is not None:
+            self._local.release()
+            self._local = None
+
+
+def _try_lock_fd(fd: int) -> bool:
+    """Take an exclusive, non-blocking OS lock on ``fd``. False means somebody else holds it.
+
+    ``fcntl`` / ``msvcrt`` are imported HERE, never at module scope: this file must import cleanly
+    on both platforms, and only one of the two exists on each.
+    """
+    if os.name == "nt":                            # pragma: no cover - exercised on Windows only
+        import msvcrt
+
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+    import fcntl
+
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
+
+
+def _unlock_fd(fd: int) -> None:
+    if os.name == "nt":                            # pragma: no cover - exercised on Windows only
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
+
+    fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _acquire_artifact_locks(tool: Tool, targets: list[Path]) -> list["_ArtifactLock"]:
+    """Rule 2. Lock every target for a ``read_write`` tool, or raise :class:`TargetLocked`.
+
+    All-or-nothing: a partial acquisition is released before the refusal, so a caller that retries
+    is not slowly starving itself behind locks nobody is using.
+    """
+    if not _runtime_v2_enabled() or tool.access != "read_write":
+        return []
+    held: list[_ArtifactLock] = []
+    for target in targets:
+        lock = _ArtifactLock(target)
+        if not lock.acquire():
+            for done in held:
+                done.release()
+            raise TargetLocked(target)
+        held.append(lock)
+    return held
+
+
+# --------------------------------------------------------------------------- #
 # Task registry
 # --------------------------------------------------------------------------- #
 class TaskRegistry:
@@ -873,22 +1265,37 @@ class TaskRegistry:
         self._max = max_tasks
 
     def start(self, tool: Tool, params: dict) -> Task:
-        """Validate, claim the tool, and launch the runner on a daemon thread."""
+        """Validate, guard, claim the tool, and launch the runner on a daemon thread.
+
+        Order matters. Validation first, because the guard needs RESOLVED paths to know what the
+        tool would touch. Then section 2.8's two rules -- refuse a live target, serialize two
+        writers on one completed run -- and only then the per-tool claim, so a refused request
+        leaves no trace in the registry. The locks are handed to the worker thread, which is what
+        releases them; taking them here and releasing them there is deliberate, because the lock
+        has to outlive this call for exactly as long as the tool runs.
+        """
         clean = validate_params(tool, params)
+        targets = check_target_allowed(tool, clean)
+        locks = _acquire_artifact_locks(tool, targets)
         task = Task(id=uuid.uuid4().hex[:12], tool_id=tool.id, tool_name=tool.name, params=clean)
-        with self._lock:
-            active = self._active.get(tool.id)
-            if active and active in self._tasks and self._tasks[active].state == "running":
-                raise ToolBusy(tool.id, active)
-            self._active[tool.id] = task.id
-            self._tasks[task.id] = task
-            self._evict_locked()
+        try:
+            with self._lock:
+                active = self._active.get(tool.id)
+                if active and active in self._tasks and self._tasks[active].state == "running":
+                    raise ToolBusy(tool.id, active)
+                self._active[tool.id] = task.id
+                self._tasks[task.id] = task
+                self._evict_locked()
+        except BaseException:
+            for lock in locks:
+                lock.release()
+            raise
         task.append(f"{tool.name}: starting", "INFO", tool.id)
-        threading.Thread(target=self._run, args=(tool, task), name=f"lm3-pp-{tool.id}",
+        threading.Thread(target=self._run, args=(tool, task, locks), name=f"lm3-pp-{tool.id}",
                          daemon=True).start()
         return task
 
-    def _run(self, tool: Tool, task: Task) -> None:
+    def _run(self, tool: Tool, task: Task, locks: Optional[list] = None) -> None:
         _capture_acquire(task)
         try:
             result = tool.runner(task.params, TaskContext(task, tool))
@@ -906,6 +1313,8 @@ class TaskRegistry:
                 if isinstance(stream, _ThreadTee):
                     stream.flush()
             _capture_release()
+            for lock in (locks or ()):             # released HERE, not in start(): see its docstring
+                lock.release()
             with self._lock:
                 if self._active.get(tool.id) == task.id:
                     self._active.pop(tool.id, None)
@@ -1467,6 +1876,9 @@ def _build_registry() -> "OrderedDict[str, Tool]":
         ),
         runner=_run_generate_stl,
         settings_key="generate_stl_from_mask",
+        access="read_write",                 # writes .stl beside the masks unless redirected
+        resource="cpu",                      # trimesh + numpy; no torch, no onnxruntime
+        target_keys=("paths", "output_dir"),
         module="leafmachine3.postprocessing.generate_stl_from_mask",
         cli=(".venv_LM3/bin/python -m leafmachine3.postprocessing.generate_stl_from_mask "
              "--config postprocessing_settings.yaml --paths <mask.png>"),
@@ -1490,6 +1902,9 @@ def _build_registry() -> "OrderedDict[str, Tool]":
         ),
         runner=_run_generate_collage,
         settings_key="generate_leaf_collage",
+        access="read_write",                 # writes reports/Collage into the run it reads
+        resource="cpu",                      # PIL + numpy over finished masks
+        target_keys=("run_dir", "output_dir"),
         module="leafmachine3.postprocessing.generate_leaf_collage",
         cli=(".venv_LM3/bin/python -m leafmachine3.postprocessing.generate_leaf_collage "
              "--config postprocessing_settings.yaml --run-dir <run> --primary-mask <mask.png>"),
@@ -1513,7 +1928,13 @@ def get_tool(tool_id: str) -> Tool:
 
 
 def start_tool(tool_id: str, params: Any) -> Task:
-    """Validate and launch ``tool_id``. Raises KeyError / ParamError / ToolBusy."""
+    """Validate, guard, and launch ``tool_id``.
+
+    Raises ``KeyError`` / :class:`ParamError` / :class:`ToolBusy` / :class:`TargetActive` /
+    :class:`TargetLocked`. The last two are section 2.8's concurrency policy and are the reason a
+    standalone CLI must come through here (or through :func:`check_target_allowed`) rather than
+    calling a runner directly.
+    """
     return _registry.start(get_tool(tool_id), params or {})
 
 
@@ -1796,8 +2217,19 @@ def context() -> dict:
         "cwd": str(Path.cwd()),
         "tools": [t.id for t in _TOOLS.values()],
         "active": _registry.active(),
+        # The run a pipeline is writing right now, so the tab can gray out its own targets instead
+        # of finding out through a 409 (section 2.8). ``null`` when nothing holds the deployment.
+        "active_run": _describe_active_run(),
         "runs": discover_runs(),
     }
+
+
+def _describe_active_run() -> Optional[dict]:
+    target = active_run_target()
+    if target is None:
+        return None
+    return {"artifact_dir": str(target["artifact_dir"]), "run_name": target["run_name"],
+            "run_id": target["run_id"]}
 
 
 # --------------------------------------------------------------------------- #
@@ -1942,6 +2374,21 @@ def router(dependencies: Optional[list] = None) -> Any:
                 status_code=409,
                 detail={"message": str(exc), "tool_id": exc.tool_id, "task_id": exc.task_id},
             )
+        except TargetActive as exc:
+            # 409, not 403: this is a temporal conflict, and the same request succeeds unchanged
+            # once the pipeline finishes. ``reason`` lets the tab say WHY without parsing prose.
+            raise HTTPException(
+                status_code=409,
+                detail={"message": str(exc), "reason": "target_active",
+                        "artifact_dir": str(exc.artifact_dir), "run_name": exc.run_name,
+                        "run_id": exc.run_id},
+            )
+        except TargetLocked as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"message": str(exc), "reason": "target_locked",
+                        "artifact_dir": str(exc.artifact_dir)},
+            )
         except ParamError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return {"task_id": task.id, "tool_id": task.tool_id, "state": task.state,
@@ -2033,7 +2480,9 @@ def router(dependencies: Optional[list] = None) -> Any:
 
 
 __all__ = [
-    "ParamError", "ToolBusy", "Tool", "ToolInput", "Task", "TaskContext", "TaskRegistry",
+    "ParamError", "ToolBusy", "TargetActive", "TargetLocked", "Tool", "ToolInput", "Task",
+    "TaskContext", "TaskRegistry",
     "allowed_roots", "resolve_path", "validate_params", "list_tools", "get_tool", "start_tool",
     "registry", "discover_runs", "resolve_run", "pick_masks", "context", "sse_frames", "router",
+    "active_run_target", "check_target_allowed", "target_artifact_dirs", "artifact_lock_path",
 ]

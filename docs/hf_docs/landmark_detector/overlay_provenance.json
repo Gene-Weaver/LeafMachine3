@@ -1,0 +1,270 @@
+{
+  "what": "LeafMachine3 Reporter 'Overlay_Landmarks' renders: landmark_detector keypoints drawn on the plant_detector leaf crop (midvein trace, petiole trace, apex/base angle lines, width line) + landmark_measurements text box. Model = lm3_landmark_detector__yolo26x_pose_640 (strict_300).",
+  "note": "10 candidates copied 2026-10-06; Will prunes to 1-3 by hand, then the survivors are linked from the model card under docs/. 2026-10-06: +4 Quercus (11-14). No Acer overlays exist in any examples_out run (Acer rubrum/saccharum sheets are in data/ if a run is wanted). Pruned by Will 2026-10-06 to the 10 in 'kept'; these are linked from the card as a 5x2 grid.",
+  "examples": [
+    {
+      "file": "overlay_01_Tetrapanax.jpg",
+      "genus": "Tetrapanax",
+      "shape": "palmately lobed",
+      "parent_specimen": "CHSC_2418004540_Araliaceae_Tetrapanax_papyrifer",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        0,
+        262,
+        2026,
+        2854
+      ],
+      "source": "LM3/examples_out/collage_test_broadsampletrees/reports/Overlay/Overlay_Landmarks/CHSC_2418004540_Araliaceae_Tetrapanax_papyrifer__LM-leaf__0_262_2026_2854.jpg",
+      "size": [
+        2026,
+        2592
+      ],
+      "bytes": 2765794
+    },
+    {
+      "file": "overlay_02_Sorbus.jpg",
+      "genus": "Sorbus",
+      "shape": "serrate, lanceolate leaflet",
+      "parent_specimen": "FLAS_1899882561_Rosaceae_Sorbus_americana",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        497,
+        1246,
+        864,
+        1557
+      ],
+      "source": "LM3/examples_out/collage_test_broadsampletrees/reports/Overlay/Overlay_Landmarks/FLAS_1899882561_Rosaceae_Sorbus_americana__LM-leaf__497_1246_864_1557.jpg",
+      "size": [
+        367,
+        311
+      ],
+      "bytes": 108975
+    },
+    {
+      "file": "overlay_03_Mimusops.jpg",
+      "genus": "Mimusops",
+      "shape": "entire, elliptic",
+      "parent_specimen": "US_1456247004_Sapotaceae_Mimusops_elengi",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        949,
+        655,
+        1648,
+        1254
+      ],
+      "source": "LM3/examples_out/collage_test_broadsampletrees/reports/Overlay/Overlay_Landmarks/US_1456247004_Sapotaceae_Mimusops_elengi__LM-leaf__949_655_1648_1254.jpg",
+      "size": [
+        699,
+        599
+      ],
+      "bytes": 336354
+    },
+    {
+      "file": "overlay_04_Oxydendrum.jpg",
+      "genus": "Oxydendrum",
+      "shape": "entire, elliptic, dark",
+      "parent_specimen": "DBG_2242403044_Ericaceae_Oxydendrum_arboreum",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        830,
+        1402,
+        1252,
+        1923
+      ],
+      "source": "LM3/examples_out/collage_test_broadsampletrees/reports/Overlay/Overlay_Landmarks/DBG_2242403044_Ericaceae_Oxydendrum_arboreum__LM-leaf__830_1402_1252_1923.jpg",
+      "size": [
+        422,
+        521
+      ],
+      "bytes": 219662
+    },
+    {
+      "file": "overlay_05_Zelkova.jpg",
+      "genus": "Zelkova",
+      "shape": "serrate, ovate",
+      "parent_specimen": "US_2397741824_Ulmaceae_Zelkova_carpinifolia",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        1447,
+        365,
+        1698,
+        841
+      ],
+      "source": "LM3/examples_out/collage_test_broadsampletrees/reports/Overlay/Overlay_Landmarks/US_2397741824_Ulmaceae_Zelkova_carpinifolia__LM-leaf__1447_365_1698_841.jpg",
+      "size": [
+        251,
+        476
+      ],
+      "bytes": 111823
+    },
+    {
+      "file": "overlay_06_Stewartia.jpg",
+      "genus": "Stewartia",
+      "shape": "entire, ovate",
+      "parent_specimen": "NCU_2640538502_Theaceae_Stewartia_malacodendron",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        1345,
+        686,
+        1745,
+        1158
+      ],
+      "source": "LM3/examples_out/collage_test_broadsampletrees/reports/Overlay/Overlay_Landmarks/NCU_2640538502_Theaceae_Stewartia_malacodendron__LM-leaf__1345_686_1745_1158.jpg",
+      "size": [
+        400,
+        472
+      ],
+      "bytes": 144638
+    },
+    {
+      "file": "overlay_07_Plumeria.jpg",
+      "genus": "Plumeria",
+      "shape": "long obovate",
+      "parent_specimen": "NY_1930937198_Apocynaceae_Plumeria_obtusa",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        505,
+        329,
+        1240,
+        1996
+      ],
+      "source": "LM3/examples_out/collage_test_broadsampletrees/reports/Overlay/Overlay_Landmarks/NY_1930937198_Apocynaceae_Plumeria_obtusa__LM-leaf__505_329_1240_1996.jpg",
+      "size": [
+        735,
+        1667
+      ],
+      "bytes": 759736
+    },
+    {
+      "file": "overlay_08_Pimenta.jpg",
+      "genus": "Pimenta",
+      "shape": "obovate, reflex apex",
+      "parent_specimen": "NY_1930932504_Myrtaceae_Pimenta_jamaicensis",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        1159,
+        1930,
+        1467,
+        2430
+      ],
+      "source": "LM3/examples_out/collage_test_broadsampletrees/reports/Overlay/Overlay_Landmarks/NY_1930932504_Myrtaceae_Pimenta_jamaicensis__LM-leaf__1159_1930_1467_2430.jpg",
+      "size": [
+        308,
+        500
+      ],
+      "bytes": 140942
+    },
+    {
+      "file": "overlay_09_Siphoneugena.jpg",
+      "genus": "Siphoneugena",
+      "shape": "entire, elliptic, curved midvein",
+      "parent_specimen": "ASU_2270467516_Myrtaceae_Siphoneugena_densiflora",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        2242,
+        371,
+        3017,
+        1260
+      ],
+      "source": "LM3/examples_out/paulo_phenology/reports/Overlay/Overlay_Landmarks/ASU_2270467516_Myrtaceae_Siphoneugena_densiflora__LM-leaf__2242_371_3017_1260.jpg",
+      "size": [
+        775,
+        889
+      ],
+      "bytes": 129920
+    },
+    {
+      "file": "overlay_10_Campomanesia.jpg",
+      "genus": "Campomanesia",
+      "shape": "orbicular",
+      "parent_specimen": "ASU_2270670649_Myrtaceae_Campomanesia_adamantium",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        835,
+        4295,
+        1396,
+        4712
+      ],
+      "source": "LM3/examples_out/paulo_phenology/reports/Overlay/Overlay_Landmarks/ASU_2270670649_Myrtaceae_Campomanesia_adamantium__LM-leaf__835_4295_1396_4712.jpg",
+      "size": [
+        561,
+        417
+      ],
+      "bytes": 88239
+    },
+    {
+      "file": "overlay_11_Quercus_bicolor.jpg",
+      "genus": "Quercus",
+      "shape": "lobed oak, full leaf",
+      "parent_specimen": "NY_1927952050_Fagaceae_Quercus_bicolor",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        1676,
+        3409,
+        3457,
+        4658
+      ],
+      "source": "LM3/examples_out/test_ultralytics_removal_for_inference_new_rerun/reports/Overlay/Overlay_Landmarks/NY_1927952050_Fagaceae_Quercus_bicolor__LM-leaf__1676_3409_3457_4658.jpg",
+      "size": [
+        1781,
+        1249
+      ],
+      "bytes": 356759
+    },
+    {
+      "file": "overlay_12_Quercus_suberoides.jpg",
+      "genus": "Quercus",
+      "shape": "lobed oak, upright",
+      "parent_specimen": "UM_1807393061_Fagaceae_Quercus_suberoides",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        2242,
+        1353,
+        2767,
+        2289
+      ],
+      "source": "LM3/examples_out/test_phenology/reports/Overlay/Overlay_Landmarks/UM_1807393061_Fagaceae_Quercus_suberoides__LM-leaf__2242_1353_2767_2289.jpg",
+      "size": [
+        525,
+        936
+      ],
+      "bytes": 142994
+    },
+    {
+      "file": "overlay_13_Quercus_muhlenbergii.jpg",
+      "genus": "Quercus",
+      "shape": "serrate (chinkapin) oak",
+      "parent_specimen": "BRIT_4064898552_Fagaceae_Quercus_muhlenbergii",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        1740,
+        3831,
+        3866,
+        5216
+      ],
+      "source": "LM3/examples_out/csv_export_verify/reports/Overlay/Overlay_Landmarks/BRIT_4064898552_Fagaceae_Quercus_muhlenbergii__LM-leaf__1740_3831_3866_5216.jpg",
+      "size": [
+        2126,
+        1385
+      ],
+      "bytes": 544088
+    },
+    {
+      "file": "overlay_14_Quercus_helvetica.jpg",
+      "genus": "Quercus",
+      "shape": "lobed oak, mounting tape across lamina",
+      "parent_specimen": "Z_2575336428_Fagaceae_Quercus_helvetica",
+      "leaf_crop_bbox_px_x1y1x2y2": [
+        1659,
+        628,
+        2141,
+        1074
+      ],
+      "source": "LM3/examples_out/ect_align/reports/Overlay/Overlay_Landmarks/Z_2575336428_Fagaceae_Quercus_helvetica__LM-leaf__1659_628_2141_1074.jpg",
+      "size": [
+        482,
+        446
+      ],
+      "bytes": 168533
+    }
+  ],
+  "kept": [
+    "overlay_02_Sorbus.jpg",
+    "overlay_03_Mimusops.jpg",
+    "overlay_05_Zelkova.jpg",
+    "overlay_06_Stewartia.jpg",
+    "overlay_07_Plumeria.jpg",
+    "overlay_08_Pimenta.jpg",
+    "overlay_09_Siphoneugena.jpg",
+    "overlay_10_Campomanesia.jpg",
+    "overlay_11_Quercus_bicolor.jpg",
+    "overlay_13_Quercus_muhlenbergii.jpg"
+  ]
+}

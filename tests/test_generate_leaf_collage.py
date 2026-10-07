@@ -1,7 +1,9 @@
 """Tests for the generate_leaf_collage postprocessing tool."""
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -584,3 +586,287 @@ def test_leaf_order_random_breaks_up_the_incoming_order(tmp_path) -> None:
         assert seen[("random", 0)][0] == seen[("random", 0)][1], f"{layout}: not reproducible"
         assert seen[("random", 0)][0] != seen[("score", 0)][0], f"{layout}: order unchanged"
         assert seen[("random", 7)][0] != seen[("random", 0)][0], f"{layout}: seed ignored"
+
+
+# -- section 2.8: the standalone CLI uses the same guard as the HTTP API ------------
+# Plan section 2.8: a postprocessor "is **refused** when its target is the currently active
+# pipeline's run directory", two ``read_write`` tools on one completed run "are serialized by a
+# per-run advisory lock", and -- last bullet -- "Standalone CLI tools use the same guard as the
+# HTTP API, not a parallel one." These tests are about the CLI actually REACHING that guard;
+# the guard's own behavior is pinned in tests/test_progress_registry.py.
+
+_FLAG = "LM3_RUNTIME_V2"
+
+_FAKE_RESULT = {"collage": "/tmp/x/collage.png", "size_px": (10, 10), "n_placed": 1,
+                "n_passing": 1, "layout": "grid", "score_range": (0.9, 0.9)}
+
+
+@pytest.fixture
+def deployment(tmp_path, monkeypatch):
+    """A private deployment: its own runtime dir (where the advisory locks live), its own roots.
+
+    The flag goes on explicitly rather than being inherited -- a developer with ``LM3_RUNTIME_V2``
+    exported would otherwise run these in the opposite mode from CI. Individual tests turn it off
+    again to assert the flag-off path.
+    """
+    import yaml
+
+    from leafmachine3.server import postprocess_api
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("LM3_RUNTIME_DIR", str(runtime))
+    monkeypatch.setenv("LM3_DEPLOYMENT_ID", "test-collage-guard")
+    monkeypatch.setenv("LM3_POSTPROCESS_ROOTS", str(tmp_path))
+    settings = tmp_path / "LM3_settings.yaml"
+    settings.write_text(
+        yaml.safe_dump({"project": {"run_name": "", "output": {"dir": str(tmp_path / "runs")}}}),
+        encoding="utf-8")
+    monkeypatch.setenv("LM3_SETTINGS", str(settings))
+    monkeypatch.setenv(_FLAG, "1")
+    postprocess_api._LOCAL_LOCKS.clear()
+    yield
+    postprocess_api._LOCAL_LOCKS.clear()
+
+
+@pytest.fixture
+def cli(tmp_path, monkeypatch):
+    """``main(argv)`` with the real runner replaced, plus the calls it received.
+
+    Whether the collage is actually built is beside the point here: a refusal must happen BEFORE
+    the runner is reached, and an allowed invocation must still reach it.
+    """
+    from leafmachine3.postprocessing import generate_leaf_collage as mod
+
+    calls: list = []
+
+    def fake_run(settings=None, run_dir=None, primary_mask=None, output_dir=None, **kw):
+        calls.append({"run_dir": run_dir, "primary_mask": primary_mask, "output_dir": output_dir})
+        return [dict(_FAKE_RESULT)]
+
+    monkeypatch.setattr(mod, "run", fake_run)
+    cfg = tmp_path / "postprocessing.yaml"
+    cfg.write_text("generate_leaf_collage: {}\n", encoding="utf-8")
+
+    def invoke(*args):
+        return mod.main(["--config", str(cfg), *[str(a) for a in args]])
+
+    invoke.calls = calls                     # a handle for the assertions, not an API
+    return invoke
+
+
+def _run_dir(root: Path, name: str = "demo") -> Path:
+    """A directory ``postprocess_api._is_run_dir`` recognizes -- ledger and reports tree."""
+    d = root / name
+    (d / "reports").mkdir(parents=True)
+    sqlite3.connect(d / f"{name}.sqlite").close()
+    return d
+
+
+@contextlib.contextmanager
+def _live_pipeline(run_dir: Path):
+    """Publish ``run_dir`` as the active ``pipeline`` record while genuinely holding the lease.
+
+    Nothing here is stubbed. ``active_run_target`` reads ``active.json`` off disk and classifies it
+    off the OS lock (section 2.9), so a record written WITHOUT a lease reads ``abandoned`` and
+    refuses nothing -- which would make every assertion below pass for the wrong reason.
+    """
+    from leafmachine3.core import paths as core_paths
+    from leafmachine3.core.runtime import (
+        Activity, ActivityRole, ArchiveMode, ArchiveStatus, ConfigRef, Launcher, ProjectBlock,
+        RunState, RuntimeRecord,
+    )
+    from leafmachine3.core.runtime import lease as lease_mod
+    from leafmachine3.core.runtime import records as records_mod
+
+    (run_dir / "logs").mkdir(parents=True, exist_ok=True)
+    config = run_dir / "used_at_launch.yaml"
+    config.write_text("version: 3\n", encoding="utf-8")
+    db = run_dir / f"{run_dir.name}.sqlite"
+    now = records_mod.utc_now()
+    record = RuntimeRecord(
+        run_id="rid-live", activity=Activity.PIPELINE, activity_role=ActivityRole.ROOT,
+        state=RunState.RUNNING, launcher=Launcher.CLI, pid=os.getpid(),
+        process_started_at=records_mod.process_start_time(), started_at=now, updated_at=now,
+        deployment=records_mod.build_deployment_info(),
+        config=ConfigRef(path=str(config), sha256="0" * 64),
+        project=ProjectBlock(
+            run_name=run_dir.name, input_dirs=(str(run_dir.parent),), artifact_dir=str(run_dir),
+            active_state_dir=str(run_dir), active_db_path=str(db),
+            archive_mode=ArchiveMode.IN_PLACE, archive_status=ArchiveStatus.NOT_APPLICABLE,
+            archive_pointer_path=None, archived_db_path=str(db), run_dir=str(run_dir),
+            log_path=str(run_dir / "logs" / "lm3.log"),
+        ),
+    )
+    lease = lease_mod.RuntimeLease()
+    lease.acquire()
+    store = records_mod.RecordStore(
+        core_paths.deployment_runtime_dir(create=True, check_filesystem=False), run_id=record.run_id)
+    try:
+        store.write_active(record)
+        yield record
+    finally:
+        with contextlib.suppress(Exception):
+            lease.release()
+
+
+def test_the_cli_refuses_the_run_a_pipeline_is_writing(tmp_path, capsys, deployment, cli) -> None:
+    """Section 2.8, bullet 2, reached from the CLI rather than from the HTTP route."""
+    live = _run_dir(tmp_path / "runs", "live")
+    with _live_pipeline(live):
+        code = cli("--run-dir", live, "--primary-mask", _primary(tmp_path))
+
+    assert code == 3 and code != 0, "a refused CLI invocation must not exit 0"
+    assert not cli.calls, "the runner ran anyway -- the guard came too late to matter"
+    err = capsys.readouterr().err
+    assert "refused" in err and "live" in err
+
+
+def test_a_different_completed_run_is_still_allowed(tmp_path, deployment, cli) -> None:
+    """Section 2.8, bullet 3: a live pipeline does not put every other run off limits."""
+    done = _run_dir(tmp_path / "runs", "finished")
+    with _live_pipeline(_run_dir(tmp_path / "runs", "live")):
+        assert cli("--run-dir", done, "--primary-mask", _primary(tmp_path)) == 0
+    assert len(cli.calls) == 1
+
+
+def test_a_symlinked_spelling_of_the_live_run_is_refused_too(tmp_path, deployment, cli) -> None:
+    """The reason the guard is fed through ``validate_params`` and not raw argv.
+
+    ``active_run_target`` realpaths the record's root, so a target that was never resolved would
+    simply never meet it -- and an output root reached through a symlink is the normal case on a
+    cluster, not an exotic one.
+    """
+    real = tmp_path / "real_runs"
+    live = _run_dir(real, "live")
+    link = tmp_path / "runs_link"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):          # pragma: no cover - unprivileged Windows
+        pytest.skip("this filesystem/user cannot create symlinks")
+    with _live_pipeline(live):
+        assert cli("--run-dir", link / "live", "--primary-mask", _primary(tmp_path)) == 3
+    assert not cli.calls
+
+
+def test_the_advisory_lock_is_held_across_the_whole_run(tmp_path, monkeypatch, deployment,
+                                                        cli) -> None:
+    """Section 2.8, bullet 5. A lock taken after argparse and dropped before ``run()`` serializes
+    nothing, so the assertion is made from INSIDE the runner, and again after ``main`` returns."""
+    from leafmachine3.postprocessing import generate_leaf_collage as mod
+    from leafmachine3.server import postprocess_api as pp
+
+    done = _run_dir(tmp_path / "runs", "finished")
+    tool = pp.get_tool(mod.TOOL_ID)
+    seen: list = []
+
+    def fake_run(settings=None, run_dir=None, primary_mask=None, output_dir=None, **kw):
+        with pytest.raises(pp.TargetLocked):
+            pp._acquire_artifact_locks(tool, [done])
+        seen.append(True)
+        return [dict(_FAKE_RESULT)]
+
+    monkeypatch.setattr(mod, "run", fake_run)
+
+    assert cli("--run-dir", done, "--primary-mask", _primary(tmp_path)) == 0
+    assert seen, "the runner never ran, so nothing was proved about the lock"
+    after = pp._acquire_artifact_locks(tool, [done])
+    assert after, "the lock outlived main() -- this run dir is now wedged"
+    for lock in after:
+        lock.release()
+
+
+def test_the_lock_is_released_even_when_the_run_raises(tmp_path, monkeypatch, deployment,
+                                                       cli) -> None:
+    from leafmachine3.postprocessing import generate_leaf_collage as mod
+    from leafmachine3.server import postprocess_api as pp
+
+    done = _run_dir(tmp_path / "runs", "finished")
+    monkeypatch.setattr(mod, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with pytest.raises(RuntimeError):
+        cli("--run-dir", done, "--primary-mask", _primary(tmp_path))
+    held = pp._acquire_artifact_locks(pp.get_tool(mod.TOOL_ID), [done])
+    assert held, "a crashing runner leaked the advisory lock"
+    for lock in held:
+        lock.release()
+
+
+def test_a_second_writer_on_one_completed_run_is_refused(tmp_path, deployment, cli) -> None:
+    """The other half of bullet 5: the CLI is the one that loses when the lock is already held."""
+    from leafmachine3.postprocessing import generate_leaf_collage as mod
+    from leafmachine3.server import postprocess_api as pp
+
+    done = _run_dir(tmp_path / "runs", "finished")
+    held = pp._acquire_artifact_locks(pp.get_tool(mod.TOOL_ID), [done])
+    try:
+        assert cli("--run-dir", done, "--primary-mask", _primary(tmp_path)) == 3
+        assert not cli.calls
+    finally:
+        for lock in held:
+            lock.release()
+
+
+def test_the_yaml_supplied_run_dir_is_guarded_too(tmp_path, monkeypatch, deployment) -> None:
+    """``--run-dir`` is optional: the run just as often comes from the settings block, and a guard
+    that only looked at argv would wave that straight through."""
+    from leafmachine3.postprocessing import generate_leaf_collage as mod
+
+    live = _run_dir(tmp_path / "runs", "live")
+    calls: list = []
+    monkeypatch.setattr(mod, "run", lambda *a, **k: calls.append(1) or [dict(_FAKE_RESULT)])
+    cfg = tmp_path / "postprocessing.yaml"
+    cfg.write_text(
+        f"generate_leaf_collage:\n  run_dir: {live}\n  primary_mask: {_primary(tmp_path)}\n",
+        encoding="utf-8")
+
+    with _live_pipeline(live):
+        assert mod.main(["--config", str(cfg)]) == 3
+    assert not calls
+
+
+def test_with_the_flag_off_nothing_is_guarded(tmp_path, monkeypatch, deployment, cli) -> None:
+    """The Step 3 contract: with ``LM3_RUNTIME_V2`` off the CLI behaves exactly as it shipped --
+    same target, same exit code, no refusal, no server package in the way."""
+    live = _run_dir(tmp_path / "runs", "live")
+    with _live_pipeline(live):
+        monkeypatch.setenv(_FLAG, "0")   # only AFTER the record is published and leased
+        assert cli("--run-dir", live, "--primary-mask", _primary(tmp_path)) == 0
+    assert len(cli.calls) == 1 and cli.calls[0]["run_dir"] == str(live)
+
+
+def test_a_missing_run_dir_still_gets_the_tools_own_error(tmp_path, monkeypatch, deployment,
+                                                          cli) -> None:
+    """The guard must not turn "you forgot --run-dir" into a param-validation refusal: ``run()``
+    already refuses, with the message that says which key to set."""
+    from leafmachine3.postprocessing import generate_leaf_collage as mod
+
+    def boom(settings=None, run_dir=None, primary_mask=None, output_dir=None, **kw):
+        raise ValueError("no run: set generate_leaf_collage.run_dir in the yaml or pass --run-dir")
+
+    monkeypatch.setattr(mod, "run", boom)
+    with pytest.raises(ValueError, match="no run:"):
+        cli("--primary-mask", _primary(tmp_path))
+
+
+def test_a_public_guard_wrapper_is_preferred_when_postprocess_api_grows_one(
+    tmp_path, monkeypatch, deployment, cli
+) -> None:
+    """Section 2.8's last bullet is about there being ONE guard. The composition above is a
+    stand-in for the single public wrapper that belongs in ``postprocess_api``; the moment that
+    wrapper exists this CLI must route through it instead, or the two start to drift."""
+    from leafmachine3.server import postprocess_api as pp
+
+    seen: list = []
+
+    @contextlib.contextmanager
+    def fake_guard(tool_id, params):
+        seen.append((tool_id, dict(params)))
+        yield []
+
+    monkeypatch.setattr(pp, "guard_cli", fake_guard, raising=False)
+    done = _run_dir(tmp_path / "runs", "finished")
+
+    assert cli("--run-dir", done, "--primary-mask", _primary(tmp_path)) == 0
+    assert seen and seen[0][0] == "generate_leaf_collage"
+    assert seen[0][1]["run_dir"] == str(done)

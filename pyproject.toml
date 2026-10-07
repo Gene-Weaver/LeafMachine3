@@ -84,6 +84,10 @@ test = [
     "pytest-xdist>=3.5",
     "ruff>=0.5",
     "httpx>=0.27",
+    # Starlette 1.x moved TestClient to httpx2 while retaining an httpx fallback for
+    # older installations. Keep both so the unbounded supported FastAPI/Starlette
+    # range is testable at either end.
+    "httpx2>=2.0",
     "build>=1.2",
 ]
 

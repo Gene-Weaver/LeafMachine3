@@ -12,6 +12,7 @@ from collections import Counter
 
 from leafmachine3.core.device import Device
 from leafmachine3.core.executor import StageExecutor
+from leafmachine3.core.runtime import process_creation_lock
 
 
 def _stage(device_kind="cpu", cpu_parallel="thread", fanout=False):
@@ -652,3 +653,129 @@ def test_worker_loads_anyway_when_the_warm_load_gate_never_frees():
     assert loaded == ["model"]                                     # loaded despite the dead gate
     assert released == []                                          # never release what we don't hold
     assert results == [("ok", results[0][1], {"row": 1})]
+
+
+# --------------------------------------------------------------------------- #
+# Plan section 2.2, step 6 -- the ONE process-creation mutex has TWO parties.
+#
+# The lease handoff (leafmachine3/core/runtime/lease.py) holds an inheritable duplicate of the
+# lease handle between DuplicateHandle and CloseHandle. A worker spawned from another thread inside
+# that window is the only way an ordinary executor worker could inherit the lease and pin the
+# deployment occupied after the root exits (invariant 3, gates 32/33). tests/test_runtime_lease.py
+# pins the handoff side; these pin the worker-launch side, which is what makes it a mutex at all.
+# (``process_creation_lock`` is imported at the top of this file with the other module imports --
+# a mid-file import here would add lint debt the ruff baseline does not record.)
+# --------------------------------------------------------------------------- #
+
+
+def _locked_out(pending: list) -> bool:
+    """True if a foreign thread CANNOT enter the process-creation mutex right now.
+
+    The contender is left running: it unblocks the moment the caller releases the lock, so it is
+    collected through ``pending`` and joined once the window under test has closed.
+    """
+    entered = threading.Event()
+    passed = threading.Event()
+
+    def contender() -> None:
+        entered.set()
+        with process_creation_lock():
+            passed.set()
+
+    thread = threading.Thread(target=contender, daemon=True)
+    thread.start()
+    pending.append(thread)
+    entered.wait(timeout=5)                                        # it is definitely at the lock
+    return not passed.wait(timeout=0.2)                            # ... and it did not get through
+
+
+class _MutexProbeProc:
+    """A stand-in worker process that records whether the mutex was held when it was started."""
+
+    def __init__(self, pending, seen, **kwargs):
+        self._pending, self._seen = pending, seen
+        self.name = kwargs.get("name")
+        self.pid = 4242
+        self.started = False
+
+    def start(self):
+        self.started = True
+        self._seen.append(_locked_out(self._pending))
+
+    def is_alive(self):
+        return False
+
+    def join(self, timeout=None):
+        return None
+
+
+def _mutex_probe_ctx(monkeypatch, pending, seen):
+    """Replace the spawn context so no real process is created by these tests."""
+    ctx = types.SimpleNamespace(
+        Process=lambda **kw: _MutexProbeProc(pending, seen, **kw),
+        Queue=lambda maxsize=0: queue.Queue(maxsize=maxsize),
+        Semaphore=lambda n: threading.Semaphore(n),
+    )
+    monkeypatch.setattr("leafmachine3.core.executor._CTX", ctx)
+    return ctx
+
+
+def test_every_pool_worker_is_started_inside_the_process_creation_mutex(monkeypatch):
+    """Plan section 2.2 step 6: worker launches take the SAME lock the lease handoff takes.
+
+    Without this the mutex has exactly one participant and serializes nothing -- a lock held by one
+    of two parties is not mutual exclusion.
+    """
+    pending: list = []
+    seen: list[bool] = []
+    _mutex_probe_ctx(monkeypatch, pending, seen)
+
+    ex = _ex(_stage(device_kind="cuda"), _cfg())
+    ex._remaining = Counter()
+    monkeypatch.setattr(type(ex), "_collect", lambda *a, **k: None)
+    monkeypatch.setattr(type(ex), "_shutdown", lambda *a, **k: None)
+
+    todo = [types.SimpleNamespace(specimen_id=i) for i in range(3)]
+    ex._run_pool(types.SimpleNamespace(), todo, [Device("cuda", 0), Device("cuda", 1)])
+
+    assert seen == [True, True]                                    # one entry per worker started
+    for thread in pending:
+        thread.join(timeout=5)                                     # the lock is released by now
+        assert not thread.is_alive()
+
+
+def test_a_fault_recovery_respawn_also_takes_the_process_creation_mutex(monkeypatch):
+    """A replacement worker lands at an arbitrary instant, so it is the launch MOST likely to
+    collide with an open handoff window -- it may not be the one that skips the lock."""
+    pending: list = []
+    seen: list[bool] = []
+    _mutex_probe_ctx(monkeypatch, pending, seen)
+
+    ex = _collect_ex()
+    ex._devices = [Device("cuda", 0)]                              # non-empty -> _respawn spawns
+    ex._gate = threading.Semaphore(1)
+    workers: list = []
+
+    ex._respawn(workers, queue.Queue(), queue.Queue())
+
+    assert seen == [True]
+    assert len(workers) == 1 and workers[0].started                # ... and it really was started
+    for thread in pending:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+
+def test_the_mutex_is_released_again_once_the_pool_is_running(monkeypatch):
+    """It is a window, not a stage-long hold: nothing may sit on the process-creation lock after
+    the launches are done, or an unrelated subactivity handoff would block for the whole stage."""
+    pending: list = []
+    seen: list[bool] = []
+    _mutex_probe_ctx(monkeypatch, pending, seen)
+
+    ex = _ex(_stage(device_kind="cuda"), _cfg())
+    ex._start_workers([_MutexProbeProc(pending, seen, name="w0")])
+
+    assert seen == [True]
+    assert not _locked_out(pending)                                # released the moment it returned
+    for thread in pending:
+        thread.join(timeout=5)

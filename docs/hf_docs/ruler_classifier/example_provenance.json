@@ -1,0 +1,96 @@
+{
+  "squarify": "RulerSquarifier method=tile_four sz=720 -> 1440x1440 (LM2 squarify_tile_four_versions: 2x2 collage of stack / maxheight / quartiles / nine); crop converted to grayscale and rotated to landscape first",
+  "crop_source_dataset": "datasets/LM3_RulerCrops/images/<file>",
+  "squarified_source_dataset": "datasets/LM3_RulerCrops-h-squarify/images/<file>",
+  "label_map_version": "v1",
+  "split": "test",
+  "examples": [
+    {
+      "tag": "cm_tick",
+      "description": "centimeter tick ruler (mm sub-ticks at 0), white on black",
+      "source_filename": "NY_1930723574_Sapindaceae_Acer_saccharum__R__3052-161-4721-361.jpg",
+      "parent_specimen": "NY_1930723574_Sapindaceae_Acer_saccharum",
+      "crop_bbox_px_x1y1x2y2": [
+        3052,
+        161,
+        4721,
+        361
+      ],
+      "label": "METRIC_MM_CM",
+      "files": {
+        "example_cm_tick_crop.jpg": {
+          "size": [
+            1669,
+            200
+          ],
+          "bytes": 49088
+        },
+        "example_cm_tick_squarified.jpg": {
+          "size": [
+            1440,
+            1440
+          ],
+          "bytes": 199811
+        }
+      }
+    },
+    {
+      "tag": "block",
+      "description": "alternating black/white cm block ruler with mm ticks",
+      "source_filename": "Herbarium-of-Andalas-University_2609487656_Cannabaceae_Trema_cannabina__R__95-4688-1306-4852.jpg",
+      "parent_specimen": "Herbarium-of-Andalas-University_2609487656_Cannabaceae_Trema_cannabina",
+      "crop_bbox_px_x1y1x2y2": [
+        95,
+        4688,
+        1306,
+        4852
+      ],
+      "label": "METRIC_MM_CM_BLOCK",
+      "files": {
+        "example_block_crop.jpg": {
+          "size": [
+            1211,
+            164
+          ],
+          "bytes": 84459
+        },
+        "example_block_squarified.jpg": {
+          "size": [
+            1440,
+            1440
+          ],
+          "bytes": 435777
+        }
+      }
+    },
+    {
+      "tag": "mm_tick",
+      "description": "numbered cm ruler with mm ticks, white on black",
+      "source_filename": "DBG_2242420911_Salicaceae_Populus_deltoides__R__1883-586-2851-715.jpg",
+      "parent_specimen": "DBG_2242420911_Salicaceae_Populus_deltoides",
+      "crop_bbox_px_x1y1x2y2": [
+        1883,
+        586,
+        2851,
+        715
+      ],
+      "label": "METRIC_MM",
+      "files": {
+        "example_mm_tick_crop.jpg": {
+          "size": [
+            968,
+            129
+          ],
+          "bytes": 109144
+        },
+        "example_mm_tick_squarified.jpg": {
+          "size": [
+            1440,
+            1440
+          ],
+          "bytes": 766273
+        }
+      }
+    }
+  ]
+}

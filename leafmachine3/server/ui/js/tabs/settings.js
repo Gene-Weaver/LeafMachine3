@@ -443,12 +443,70 @@ export function initSettings(root) {
 
   const subtabs = el("div.subtabs");
 
+  /* Invariant 8, on the tab where every module knob lives.
+     This file had no notion of a run being in progress at all -- no occurrence of "running",
+     "active run" or "next run" in 3,000 lines -- so it presented the settings tree as the state
+     of the world. It is the state of the NEXT run: section 3.4 pins a running job to the launch
+     manifest written when it started, so nothing saved here can reach it, and nothing saved here
+     changes which run the GUI is displaying. */
+  const nextRunNote = el("div.card.info", {
+    style: { margin: "0 0 8px" },
+  }, el("p", el("strong", "Next run. "),
+    "Saving here changes what the NEXT run will do. A run already in progress keeps the settings "
+    + "it started with, and saving never changes which run the app is showing."));
+
   const header = el("div", {
     style: {
       position: "sticky", top: "0", zIndex: "6",
       background: "var(--bg)", paddingBottom: "2px", flex: "0 0 auto",
     },
-  }, toolbar);
+  }, nextRunNote, toolbar);
+
+  /* Sharpen the label while something holds the deployment (section 2.6).
+
+     `occupied` and `live` are DIFFERENT facts and deriveView() separates them on purpose, so this
+     card must too. `runRef` is whichever run the project views are pointed at; it is only the
+     deployment's occupant when `live` is true. Two states make them disagree, and naming runRef in
+     either one states something false about a run that is not running:
+       - a `hardware_setup` root (section 2.6 row 2): the record carries no project (invariant 6),
+         so runRef falls through to the LAST FINISHED run while the lease is held;
+       - an explicit history selection (invariant 7): runRef is the run the user picked out of
+         history, while the live one keeps the lease.
+     Identity therefore comes from the active record by way of `machine.tuning` / `live`, never
+     from a recency guess (invariant 5). */
+  function applyRuntimeView(ev) {
+    const view = (ev && ev.detail && ev.detail.view) || null;
+    const ref = view && view.runRef;
+    const tuning = !!(view && view.machine && view.machine.tuning);
+    const live = !!(view && view.live);
+    const occupied = !!(view && view.occupied);
+    // Occupancy stays visible in all three held states -- what changes is WHO is named.
+    nextRunNote.className = (tuning || live || occupied) ? "card warn" : "card info";
+    clear(nextRunNote);
+
+    let body;
+    if (tuning) {
+      // Names no project, because there is no project to name.
+      body = "This machine is being profiled — LM3 Setup holds this deployment. Saving here "
+           + "changes what the NEXT run will do; it does not affect the tuning in progress and "
+           + "does not change which run the app is showing.";
+    } else if (live) {
+      // Only here is runRef guaranteed to BE the run holding the deployment.
+      body = `“${ref ? ref.run_name : "A run"}” is running now with the settings it started `
+           + "with. Saving here changes what the NEXT run will do; it does not touch the run in "
+           + "progress and does not change which run the app is showing.";
+    } else if (occupied) {
+      // Held, but the run being displayed is not the holder -- so say the true thing without
+      // borrowing the displayed run's name for it.
+      body = "A run started elsewhere holds this deployment; the run shown here is not it. Saving "
+           + "changes what the NEXT run will do, and never changes which run the app is showing.";
+    } else {
+      body = "Saving here changes what the NEXT run will do. It never changes which run the app "
+           + "is showing.";
+    }
+    nextRunNote.appendChild(el("p", el("strong", "Next run. "), body));
+  }
+  document.addEventListener("lm3:runtime", applyRuntimeView);
 
   // The rail carries the navigation the accordion used to: sections, and the
   // groups inside the open one. Scrolling is for reading a group, not for
@@ -2998,6 +3056,7 @@ export function initSettings(root) {
     destroy() {
       S.destroyed = true;
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("lm3:runtime", applyRuntimeView);
       window.removeEventListener("beforeunload", onBeforeUnload);
       S.listeners.clear();
       clear(root);

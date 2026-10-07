@@ -15,18 +15,22 @@ Security: bind loopback on a caller-chosen port and require a Bearer shared secr
 """
 from __future__ import annotations
 
+import collections
+import contextlib
 import ipaddress
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
+import sys
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any, Iterable, Iterator, Mapping, Optional
 
 import yaml
 
@@ -197,8 +201,12 @@ def path_diagnostics(explicit_settings: Any = None) -> dict:
     try:
         env = server_env()
     except paths.PathsError as exc:                  # a split-brain env must still be REPORTABLE
-        return {"error": str(exc)}
-    return paths.describe_resolved_paths(env=env, explicit_settings=explicit_settings, seed=False)
+        return {"error": redact_token(str(exc))}
+    resolved = paths.describe_resolved_paths(env=env, explicit_settings=explicit_settings, seed=False)
+    # Gate 13: "redact tokens from error messages, tracebacks, and /healthz diagnostics". A path
+    # here should never contain the secret -- but this block is served UNAUTHENTICATED, and a
+    # resolver error string quoting an environment value is exactly how one would arrive.
+    return {key: redact_token(value) for key, value in resolved.items()}
 
 
 def log_resolved_paths(where: str = "startup") -> dict:
@@ -330,9 +338,14 @@ class JobManager:
         self.get(job_id).state = "done"
 
     def mark_error(self, job_id: str, msg: str) -> None:
+        # Redacted HERE rather than at each of the six call sites (gate 13: "redact tokens from
+        # error messages"). A job error is echoed back over /v1/jobs/{id}, replayed into the setup
+        # event log and shown in the UI, and the messages are built from exception text that has
+        # passed through argv and environment handling -- so one chokepoint is the only version of
+        # this that stays true as call sites are added.
         job = self.get(job_id)
         job.state = "error"
-        job.error = msg
+        job.error = redact_token(msg)
 
     # -- reads over the project ledger -------------------------------------- #
     def status(self, job_id: str) -> dict:
@@ -409,6 +422,275 @@ class JobManager:
 
 
 # --------------------------------------------------------------------------- #
+# Hardware setup as a subprocess (plan section 2.13) -- runtime v2 only
+# --------------------------------------------------------------------------- #
+# GUI hardware setup runs INSIDE the server today: ``run_in_threadpool(run_setup, ...)``, no Popen,
+# no child, no process group of its own. That is irreconcilable with section 3.3, which requires
+# Stop to terminate the retained root process group so a calibration tree dies as one unit -- if
+# the setup root IS the server, "terminate the root process group" means killing the server along
+# with every unrelated request it is serving. It is also the one exception invariant 13 had to
+# carry ("the server process is never a lease holder"), and an invariant with an exception erodes.
+#
+# So: a dedicated ``lm3-setup`` child, a retained handle, and progress through a server-private
+# append-only JSONL log -- chosen over a live channel because it survives server and UI
+# disconnects, cannot fill a pipe and stall the subprocess, and can be replayed on reconnect.
+
+#: Append-only JSONL progress, under the job dir (server-private jobs root = permitted staging).
+SETUP_EVENT_LOG = "setup_events.jsonl"
+#: The setup child's stdout+stderr, from the moment of Popen. Never a pipe the server may not drain.
+SETUP_CONSOLE_LOG = "setup_console.log"
+#: A setup child that exits with this lost the deployment lease race (section 2.3 / 3.3).
+EXIT_CODE_BUSY = 75
+
+
+def _lm3_setup_argv() -> list[str]:
+    """The command that runs hardware setup out of process.
+
+    Prefer the console script from THIS venv so the child uses the same interpreter and the same
+    installed leafmachine3 as the server; ``python -m leafmachine3.setup.hardware_setup`` is the
+    fallback. Both route through ``hardware_setup.main()``, which is the part that matters.
+    """
+    # At call time, like every other heavy-ish import in this module: app.py must keep importing
+    # cleanly on a base install, and this function runs once per setup request.
+    import shutil
+    import sys
+
+    override = os.environ.get("LM3_SETUP_BIN")
+    if override:
+        return [override]
+    exe = Path(sys.executable).with_name("lm3-setup")
+    if exe.is_file() and os.access(exe, os.X_OK):
+        return [str(exe)]
+    found = shutil.which("lm3-setup")
+    if found:
+        return [found]
+    return [sys.executable, "-m", "leafmachine3.setup.hardware_setup"]
+
+
+def setup_event_log_path(job: Job) -> Path:
+    """Where one setup job's JSONL progress lives."""
+    return Path(job.root) / SETUP_EVENT_LOG
+
+
+def append_setup_event(path: Path, event: dict) -> None:
+    """Append one JSON line. Append-only on purpose: a replayable log, never a mutable snapshot."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"t": time.time(), **event}, default=str) + "\n")
+            fh.flush()
+    except OSError:                                   # progress is diagnostics: never fail a run on it
+        log.debug("could not append a setup event to %s", path, exc_info=True)
+
+
+def read_setup_events(path: Path, *, limit: int = 5000) -> list[dict]:
+    """Replay the JSONL log. A malformed line is skipped, never fatal -- the rest still describes."""
+    if not path.is_file():
+        return []
+    out: list[dict] = []
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            # deque(maxlen=limit) bounds the READ: only the tail is held and parsed. Trimming with
+            # ``out[-limit:]`` after parsing bounded the reply but not the work, and this endpoint
+            # is polled once a second for the whole of a multi-minute calibration.
+            tail = collections.deque(fh, maxlen=limit)
+    except OSError:
+        return out
+    for line in tail:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(payload, dict):
+            out.append(payload)
+    return out
+
+
+def launch_setup_subprocess(job: Job, *, optimize: bool = True, quick: bool = False,
+                            force: bool = False, calibrate: bool = False) -> Any:
+    """Start ``lm3-setup`` for ``job`` and return the retained control handle.
+
+    Raises :class:`FileNotFoundError` when the canonical config does not exist. Section 2.13:
+    "optimized or calibrated setup requires a valid canonical config ... if it cannot, the setup job
+    fails with a precise message naming the missing path rather than an ``AttributeError``" --
+    which is what ``run_setup(None, ...)`` produces today, because it dereferences ``cfg`` at
+    ``_fingerprint(cfg)`` before any guard.
+    """
+    import subprocess
+
+    from leafmachine3.core.runtime.execution import child_base_env
+    from leafmachine3.server.metrics_api import _ManagedChild
+
+    cfg_path = Path(job.cfg_path)
+    if not cfg_path.is_file():
+        raise FileNotFoundError(
+            f"hardware setup needs the canonical settings file, and there is none at {cfg_path}. "
+            f"Save settings first, or set LM3_SETTINGS to the file you want profiled.")
+
+    argv = _lm3_setup_argv() + ["--config", str(cfg_path)]
+    if optimize:
+        argv.append("--optimize")
+    if quick:
+        argv.append("--quick")
+    if force:
+        argv.append("--force")
+    if calibrate:
+        argv.append("--calibrate")
+
+    root = Path(job.root)
+    root.mkdir(parents=True, exist_ok=True)
+    console = root / SETUP_CONSOLE_LOG
+    events = setup_event_log_path(job)
+    fh = console.open("a", encoding="utf-8", errors="replace")
+
+    # Filtered, never a wholesale copy: os.environ carries this server's own LM3_STATUS_FD and any
+    # lease variables, and a descriptor NUMBER means something different in the child.
+    env = child_base_env(extra={"PYTHONUNBUFFERED": "1"})
+    env.pop("LM3_CUDA_LIBPATH_SET", None)
+    env.pop("LM3_SERVER_TOKEN", None)
+
+    try:
+        proc = subprocess.Popen(
+            argv, cwd=str(cfg_path.parent), env=env,
+            stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, close_fds=True,
+            # Its own group, so Stop kills the setup AND the calibration child that inherited its
+            # lease -- as one unit -- while the server keeps serving (section 2.13).
+            start_new_session=True,
+        )
+    except OSError:
+        fh.close()
+        raise
+
+    child = _ManagedChild(proc, kind="hardware_setup", console_path=console, log_fh=fh)
+    append_setup_event(events, {"type": "started", "pid": child.pid, "pgid": child.pgid,
+                                "argv": argv, "config": str(cfg_path),
+                                "console": str(console)})
+    return child
+
+
+def watch_setup_subprocess(job: Job, child: Any, manager: "JobManager") -> None:
+    """Tail the child's console into the JSONL log, then record how it ended.
+
+    Runs on a daemon thread. It reads the console FILE rather than a pipe, so the child can never
+    block on a reader that went away -- which is the same reason section 2.4 keeps the run's console
+    off a pipe.
+    """
+    events = setup_event_log_path(job)
+    console = child.console_path
+    offset = 0
+
+    def drain() -> None:
+        nonlocal offset
+        if console is None or not Path(console).is_file():
+            return
+        try:
+            with Path(console).open("r", encoding="utf-8", errors="replace") as fh:
+                fh.seek(offset)
+                # readline(), NOT ``for line in fh``: iterating a TextIOWrapper sets its read-ahead
+                # flag, after which tell() raises OSError("telling position disabled by next()
+                # call"). That exception is swallowed by the handler below, so the iterator form
+                # silently drained ONE line and then re-appended it every pass forever.
+                while True:
+                    line = fh.readline()
+                    if not line:
+                        break
+                    if not line.endswith("\n"):       # a partial line: leave it for the next pass
+                        break
+                    text = line.rstrip("\n")
+                    if text.strip():
+                        append_setup_event(events, {"type": "log", "line": text})
+                    # Strictly AFTER the append, and only for a newline-terminated line, so a torn
+                    # write is re-read next pass rather than lost. tell() is legal here because
+                    # readline() never engages the iterator read-ahead.
+                    offset = fh.tell()
+        except OSError:
+            log.debug("could not drain the setup console %s", console, exc_info=True)
+
+    while child.alive:
+        drain()
+        time.sleep(0.5)
+    with contextlib.suppress(Exception):
+        child.proc.wait(timeout=5)
+    drain()
+
+    rc = child.returncode
+    child.close_log(f"[LM3 app] hardware setup finished (exit code {rc})")
+    if getattr(child, "stopped_by_user", False):
+        append_setup_event(events, {"type": "state", "state": "stopped", "returncode": rc})
+        manager.mark_error(job.id, "hardware setup was stopped")
+        return
+    if rc == 0:
+        append_setup_event(events, {"type": "state", "state": "done", "returncode": rc})
+        manager.mark_done(job.id)
+        return
+    if rc == EXIT_CODE_BUSY:
+        message = ("another root activity holds this deployment, so hardware setup did not run "
+                   f"(exit {EXIT_CODE_BUSY})")
+    else:
+        message = f"hardware setup exited with code {rc}"
+    append_setup_event(events, {"type": "state", "state": "error", "returncode": rc,
+                                "error": message})
+    manager.mark_error(job.id, message)
+
+
+#: One entry per legacy ``/v1/jobs`` route that has actually been called in this process.
+#:
+#: THE AUDIT INSTRUMENT for section 4 Step 7. The step asks for the actual EXTERNAL consumers of
+#: ``/v1/jobs``, and a source grep cannot answer that -- it can only prove what the tree itself
+#: calls, which is nothing (Appendix B C2: ``getJob``, ``getJobResults`` and ``streamJobEvents``
+#: are DEFINED in ``ui/js/api.js`` and called from nowhere; no Python, test, script or Electron
+#: file references the routes). Whether some operator's script does is unknowable from here, so the
+#: server records the evidence instead of guessing: the first use of each route in a process logs a
+#: warning naming the caller, and that line in a user's log is what turns "probably nobody" into a
+#: fact before anything is deleted. See docs/DEPRECATIONS.md.
+_LEGACY_JOBS_SEEN: set = set()
+
+
+def note_legacy_jobs_use(route: str, user_agent: str = "") -> bool:
+    """Record one use of a legacy ``/v1/jobs`` route. ``True`` when this was the first.
+
+    Once per route per process: these are polled endpoints (``/events`` is an SSE stream and
+    ``/{jid}`` is what a poller hits every second), so warning on every call would bury the log it
+    is meant to inform. The User-Agent is included because it is the only thing that distinguishes
+    an operator's ``curl`` from a browser, and it is NEVER a secret -- unlike the query string,
+    which on the SSE routes can carry ``?token=`` and is deliberately not logged.
+    """
+    if route in _LEGACY_JOBS_SEEN:
+        return False
+    _LEGACY_JOBS_SEEN.add(route)
+    log.warning(
+        "legacy %s was called by %s. This upload-and-queue API is a removal CANDIDATE (see "
+        "docs/DEPRECATIONS.md): it has no in-tree consumer, and POST /v1/run/start plus "
+        "GET /v1/runtime cover everything except multipart upload. If you depend on it, say so "
+        "before it is scheduled for removal.",
+        route, user_agent.strip() or "an unidentified client")
+    return True
+
+
+def _run_job_as_subprocess(job: Job) -> None:
+    """Run a legacy ``/v1/jobs`` submission through the SAME managed launch the Run button uses.
+
+    ``app.py``'s worker calls ``machine3()`` in-process. The moment Step 3 wraps ``machine3()`` in
+    a lease, that line makes the SERVER a lease holder -- which invariant 13 forbids without
+    exception, and which would let a queued job take the deployment out from under a CLI run with
+    no handshake and no refusal. Step 3's exit gate names "legacy jobs" as one of the four entry
+    points that must refuse a second root activity, so under the flag the job goes out of process
+    and inherits the section 2.4 handshake, the 409, and the retained handle for free.
+    """
+    from leafmachine3.server import metrics_api
+
+    metrics_api.start_run(config_path=str(job.cfg_path))   # RunError(409) when the deployment is busy
+    while metrics_api.is_active():
+        time.sleep(0.5)
+    record = metrics_api.active()
+    if record.get("state") == "error":
+        raise RuntimeError(record.get("error") or "the job process failed")
+
+
+# --------------------------------------------------------------------------- #
 # Progress tailing (used by the SSE endpoint)
 # --------------------------------------------------------------------------- #
 TAIL_POLL_S = 1.0                      # seconds between job-progress snapshots
@@ -472,9 +754,7 @@ def _server_token() -> str:
         token = secrets.token_urlsafe(24)
         os.environ[_TOKEN_ENV] = token
         try:
-            descriptor = (paths.deployment_runtime_dir(env=server_env())
-                          / paths.CONNECTION_PRIVATE_FILENAME)
-            where = f"it will be written to {descriptor}"
+            where = f"it will be written to {connection_private_path(server_env())}"
         except (paths.PathsError, OSError):
             where = "set it explicitly to choose your own"
         log.warning(
@@ -494,6 +774,69 @@ def redact_token(text: str) -> str:
     if not token or not text:
         return text
     return text.replace(token, "***redacted***")
+
+
+#: A ``token=`` query parameter inside a request line. Redaction goes by PATTERN as well as by the
+#: literal secret because a user-supplied ``LM3_SERVER_TOKEN`` may contain characters the client
+#: percent-encodes on the way out (``api.js`` builds the SSE URL through ``URLSearchParams``), and
+#: what lands in the log is then an ENCODING of the secret that a literal replace sails past.
+_ACCESS_LOG_TOKEN_QUERY = re.compile(r"(?i)([?&]token=)[^&\s]*")
+
+
+class _AccessLogTokenRedactor(logging.Filter):
+    """Scrub ``?token=`` out of uvicorn's access log (plan section 2.11, gate 13).
+
+    Two clients cannot send an ``Authorization`` header and so must carry the secret on the query
+    string: the ``EventSource`` streams (``api.js``; ``progress_api.py`` accepts ``token`` as a
+    ``Query`` for exactly that reason) and Electron's first ``win.loadURL(.../?token=...)``.
+    uvicorn's ``AccessFormatter`` builds the request line from ``get_path_with_query_string()``,
+    which appends the RAW query, so without this filter every SSE connect -- one per stream, again
+    on every reconnect -- and every window load writes the bearer token to the server's stdout.
+    Under ``lm3 serve`` in an allocation that stdout IS the Slurm job output file section 2.11
+    names; under Electron it is the stderr pipe ``app/main.js`` tails into an error dialog. Gate 13
+    is absolute: the raw token appears in NO log.
+
+    It rewrites ``record.args``, never ``record.msg``: uvicorn logs the tuple
+    ``(client_addr, method, full_path, http_version, status)`` against a fixed format string and the
+    formatter rebuilds the request line from those args, so patching the message would change
+    nothing. Every step is guarded -- a filter that raises breaks logging itself, so an unexpected
+    arg shape from a future uvicorn must degrade to a no-op, not to an exception on every request.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            args = record.args
+            # uvicorn's access record is always a 5-tuple with the path third; anything else is a
+            # shape we do not understand and therefore must not rewrite.
+            if not isinstance(args, tuple) or len(args) < 3 or not isinstance(args[2], str):
+                return True
+            scrubbed = redact_token(_ACCESS_LOG_TOKEN_QUERY.sub(r"\1***redacted***", args[2]))
+            if scrubbed != args[2]:
+                record.args = args[:2] + (scrubbed,) + args[3:]
+        except Exception:  # noqa: BLE001 - logging must never raise out of a filter
+            return True
+        return True
+
+
+def install_access_log_redaction(logger_name: str = "uvicorn.access") -> bool:
+    """Attach :class:`_AccessLogTokenRedactor` to uvicorn's access logger. Idempotent.
+
+    This belongs in :func:`create_app`, NOT in :func:`serve`. Electron spawns the production server
+    as ``python -m uvicorn leafmachine3.server.app:create_app --factory`` (``app/main.js``), which
+    never enters ``serve()``, so a fix confined there would cover only ``lm3 serve``. The ordering
+    works out on both entry points: uvicorn calls ``Config.configure_logging()`` from
+    ``Config.__init__``, before ``Config.load()`` imports the app factory, and ``dictConfig`` removes
+    a logger's HANDLERS but leaves its FILTERS in place -- so a filter installed here survives
+    uvicorn's own logging configuration whichever order the two happen in.
+
+    Returns True when it installed the filter, False when one was already present (create_app is
+    called more than once per process by the tests, and duplicate filters would each rewrite).
+    """
+    logger = logging.getLogger(logger_name)
+    if any(isinstance(existing, _AccessLogTokenRedactor) for existing in logger.filters):
+        return False
+    logger.addFilter(_AccessLogTokenRedactor())
+    return True
 
 
 #: Host names that mean "this machine" for the purposes of handing over the shared secret.
@@ -577,6 +920,12 @@ def _hard_exit_soon(delay_s: float = 0.25, code: int = 0) -> None:
     """
     def _bye() -> None:
         time.sleep(max(0.0, delay_s))        # long enough for the response to reach the client
+        # os._exit skips the lifespan shutdown, so the ONE piece of cleanup that matters happens
+        # here: a connection descriptor left behind advertises a token and a port that are about to
+        # stop existing, and the next client would authenticate against a dead server. It is
+        # removed only when the instance ID is still ours (section 2.12).
+        with contextlib.suppress(Exception):
+            remove_connection_descriptor()
         os._exit(code)
 
     threading.Thread(target=_bye, name="lm3-shutdown", daemon=True).start()
@@ -618,9 +967,339 @@ def _start_owner_watchdog() -> None:
             time.sleep(2.0)
             if gone():
                 log.warning("owner pid %s is gone -- stopping the LM3 server", owner)
+                with contextlib.suppress(Exception):
+                    remove_connection_descriptor()
                 os._exit(0)
 
     threading.Thread(target=_watch, name="lm3-owner-watchdog", daemon=True).start()
+
+
+# --------------------------------------------------------------------------- #
+# Server identity and the connection descriptor (sections 2.11, 2.12; Step 5b)
+# --------------------------------------------------------------------------- #
+#: What this service calls itself on the wire. A client that finds ANY other value (or no
+#: ``service`` key at all) on the configured port is talking to an unrelated service and must
+#: refuse to attach -- section 2.11 makes that a NAMED error, distinct from "a valid LM3 server
+#: for a different deployment is here".
+SERVICE_NAME = "leafmachine3"
+
+#: Wire version of the identity fields in ``/healthz`` and of ``connection.private.json``. Bumped
+#: only when an existing field changes MEANING; adding an optional field does not bump it. It is
+#: deliberately separate from ``__version__`` (which moves with releases) and from the runtime
+#: record's schema version (which moves with the on-disk registry).
+HEALTH_PROTOCOL_VERSION = 1
+CONNECTION_SCHEMA_VERSION = 1
+
+#: A parent that SPAWNS this server states the instance ID it is going to verify. Section 2.11's
+#: "expected-instance-ID handshake for spawned servers" exists because a shell that loses a
+#: startup race otherwise cannot tell its own server from one that already owned the port -- both
+#: answer 200. With this set, the shell attaches only to the instance it named.
+ENV_INSTANCE_ID = "LM3_INSTANCE_ID"
+
+#: The address uvicorn was actually told to bind. The application object never sees the command
+#: line (Electron runs ``uvicorn ... --host --port`` directly), so the launcher states it here and
+#: :func:`serve` sets it for ``lm3 serve``. Only ``connection.private.json`` consumes it.
+ENV_BIND_HOST = "LM3_BIND_HOST"
+ENV_BIND_PORT = "LM3_BIND_PORT"
+
+#: Accepted shape of an externally supplied instance ID. Narrow on purpose: the value reaches a
+#: JSON body and a log line, and a caller that can put arbitrary text there can forge either.
+_INSTANCE_ID_RE = re.compile(r"\A[A-Za-z0-9_-]{8,64}\Z")
+
+#: Used only when the ``server`` extra is absent, so ``metrics_api`` cannot be imported.
+_FALLBACK_INSTANCE_ID = uuid.uuid4().hex
+_INSTANCE_ID: str | None = None
+_INSTANCE_LOCK = threading.Lock()
+
+
+def server_instance_id() -> str:
+    """This server process's instance ID. Stable for the life of the process, never persisted.
+
+    Three sources, in this order, and the order is the whole point:
+
+    1. ``LM3_INSTANCE_ID`` from the parent that spawned us (section 2.11). The shell mints the
+       value, passes it down, and then refuses to attach to anything on the port that answers with
+       a different one -- which is how "my server came up" is distinguished from "someone else's
+       server already had the port".
+    2. ``metrics_api.SERVER_INSTANCE_ID``, so the identity ``/healthz`` publishes is the SAME value
+       control authority is decided against (section 2.5). Two IDs for one process would let a
+       client verify one thing while the server enforced another.
+    3. A local uuid4, for a base install where the ``server`` extra (and therefore ``metrics_api``)
+       is not importable at all.
+
+    It is an IDENTITY, not a capability: knowing it authorizes nothing (invariant 12).
+    """
+    global _INSTANCE_ID
+    with _INSTANCE_LOCK:
+        if _INSTANCE_ID is not None:
+            return _INSTANCE_ID
+        supplied = (os.environ.get(ENV_INSTANCE_ID) or "").strip()
+        if supplied:
+            if _INSTANCE_ID_RE.match(supplied):
+                _INSTANCE_ID = supplied
+                return _INSTANCE_ID
+            log.warning("ignoring a malformed %s (expected 8-64 of [A-Za-z0-9_-])", ENV_INSTANCE_ID)
+        try:
+            from leafmachine3.server.metrics_api import SERVER_INSTANCE_ID  # noqa: PLC0415
+        except Exception:  # noqa: BLE001 - a base install has no server extra
+            _INSTANCE_ID = _FALLBACK_INSTANCE_ID
+        else:
+            _INSTANCE_ID = str(SERVER_INSTANCE_ID) or _FALLBACK_INSTANCE_ID
+        return _INSTANCE_ID
+
+
+def reset_instance_id_cache() -> None:
+    """Forget the memoized instance ID. For tests only.
+
+    The ID is deliberately minted once per PROCESS -- an identity that changed under a client would
+    defeat the section 2.11 handshake it exists for -- so a test that wants to observe a DIFFERENT
+    server (a restart, a supplied ``LM3_INSTANCE_ID``) has to say so explicitly rather than get it
+    by accident.
+    """
+    global _INSTANCE_ID
+    with _INSTANCE_LOCK:
+        _INSTANCE_ID = None
+
+
+def ownership_mode() -> str:
+    """``owned`` / ``orphaned`` / ``independent`` -- who claims this server's lifetime.
+
+    DESCRIPTIVE, never an authorization. Invariant 12 forbids deriving control from a response
+    body, and Electron stops a server only through its own retained child handle. The field exists
+    so a person (and a support log) can see whether the thing on this port belongs to a desktop
+    shell or was started by hand with ``lm3 serve`` -- which is exactly the question a user asks
+    when a window will not attach.
+
+    ``orphaned`` is reported rather than hidden: a server whose owner has died is still serving,
+    and its own watchdog is about to stop it, so a client that sees this should expect the port to
+    go quiet shortly rather than treat the server as durable.
+    """
+    raw = (os.environ.get(_OWNER_ENV) or "").strip()
+    if not raw:
+        return "independent"
+    try:
+        owner = int(raw)
+    except ValueError:
+        return "independent"
+    if owner <= 1:                              # 1 is init; it outlives everything
+        return "independent"
+    return "owned" if _pid_alive(owner) else "orphaned"
+
+
+def deployment_identity(env: "Mapping[str, str] | None" = None) -> dict:
+    """``{"deployment_id": raw, "deployment_key": canonical, "error": str}``. Never raises.
+
+    The canonical key is the value every client verifies (section 2.1), so a resolution failure has
+    to be REPORTABLE rather than fatal -- an empty key with an error string tells a shell "this
+    server cannot name its deployment", which is a refusal it can act on. A silently absent field
+    would look like an old server instead.
+    """
+    out = {"deployment_id": "", "deployment_key": "", "error": ""}
+    try:
+        environ = dict(os.environ) if env is None else dict(env)
+        out["deployment_id"] = paths.raw_deployment_id(environ)
+        out["deployment_key"] = paths.deployment_key(environ)
+    except paths.PathsError as exc:
+        out["error"] = str(exc)
+    return out
+
+
+def bind_address(env: "Mapping[str, str] | None" = None) -> tuple[str, int]:
+    """The address this server was told to bind, for ``connection.private.json`` only.
+
+    ``LM3_BIND_HOST`` / ``LM3_BIND_PORT`` are what the launcher states; the port otherwise comes
+    from :func:`paths.resolve_port`, which is section 2.1's rule (8765 for the default deployment,
+    an explicit ``LM3_PORT`` for any named one). A named deployment with no port is not fatal HERE
+    -- refusing to publish a descriptor because a port could not be inferred would be a worse
+    failure than publishing the default -- so the fallback is taken and logged.
+    """
+    environ = dict(os.environ) if env is None else dict(env)
+    host = (environ.get(ENV_BIND_HOST) or environ.get("LM3_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+    raw = (environ.get(ENV_BIND_PORT) or "").strip()
+    if raw:
+        try:
+            return host, int(raw)
+        except ValueError:
+            log.warning("ignoring a non-numeric %s=%r", ENV_BIND_PORT, raw)
+    try:
+        return host, paths.resolve_port(environ)
+    except paths.PathsError as exc:
+        log.debug("falling back to port %s for the connection descriptor: %s", paths.DEFAULT_PORT, exc)
+        return host, paths.DEFAULT_PORT
+
+
+def connection_private_path(env: "Mapping[str, str] | None" = None, *, create: bool = False) -> Path:
+    """``<deployment runtime dir>/connection.private.json`` (section 2.12). May raise PathsError."""
+    environ = dict(os.environ) if env is None else dict(env)
+    directory = paths.deployment_runtime_dir(env=environ, create=create)
+    return directory / paths.CONNECTION_PRIVATE_FILENAME
+
+
+def _restrict_to_current_user(path: Path, *, os_name: str | None = None,
+                              runner: "Any" = None) -> bool:
+    """Windows: replace an inherited ACL with one granting the current user only.
+
+    Section 2.12 says so explicitly -- "POSIX mode bits are not a substitute there". The 0o600 the
+    temporary file was created with is largely cosmetic on Windows, so the ACL is reset before the
+    file is renamed into place. ``icacls`` is used rather than ``win32security`` because pywin32 is
+    not a dependency of LM3 and a missing optional import must never be what decides whether a
+    bearer token is world-readable.
+
+    IMPLEMENTED BUT NOT NATIVELY VALIDATED (section 1.1): the qualification target is Linux, and
+    the Windows branch is exercised on Linux through the injected ``os_name``/``runner`` seams.
+    Returns True when nothing needed doing.
+    """
+    if (os_name or os.name) != "nt":
+        return True
+    user = (os.environ.get("USERNAME") or "").strip()
+    if not user:
+        log.warning("USERNAME is unset, so %s keeps its inherited ACL", path.name)
+        return False
+    domain = (os.environ.get("USERDOMAIN") or "").strip()
+    principal = f"{domain}\\{user}" if domain else user
+    cmd = ["icacls", str(path), "/inheritance:r", "/grant:r", f"{principal}:(F)"]
+    try:
+        if runner is not None:
+            code = int(runner(cmd))
+        else:
+            import subprocess  # noqa: PLC0415 - Windows-only, kept out of the import path
+
+            code = subprocess.run(cmd, capture_output=True, timeout=20, check=False).returncode
+    except Exception as exc:  # noqa: BLE001 - never let ACL tightening break startup
+        log.warning("could not restrict %s to the current user: %s", path.name, exc)
+        return False
+    if code != 0:
+        log.warning("icacls refused to restrict %s (exit %s)", path.name, code)
+        return False
+    return True
+
+
+def _fsync_dir(directory: Path) -> None:
+    """fsync a directory so a rename into it is durable. A no-op where the platform refuses."""
+    try:
+        fd = os.open(str(directory), getattr(os, "O_DIRECTORY", os.O_RDONLY))
+    except OSError:
+        return                                   # Windows has no directory fsync; nothing to do
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def write_connection_descriptor(*, host: str | None = None, port: int | None = None,
+                                token: str | None = None,
+                                env: "Mapping[str, str] | None" = None,
+                                _acl: "Any" = None) -> Path | None:
+    """Publish this server's ``connection.private.json``. Returns the path, or None on failure.
+
+    Section 2.12's procedure, exactly, and each step is load-bearing:
+
+    1. a UNIQUE temporary sibling, ``O_CREAT|O_EXCL|O_WRONLY`` at 0o600 -- user-only from its first
+       byte. Writing it broadly and ``chmod``-ing afterward leaves a window in which the token is
+       world-readable, and a window is all an attacker needs;
+    2. write and ``fsync`` it;
+    3. ``os.replace`` onto the final name -- exclusive-create AT the final name would work exactly
+       once, and a restarted server could then never publish its new token and instance ID;
+    4. ``fsync`` the directory, so the rename itself survives a node dying;
+    5. deletion is :func:`remove_connection_descriptor`, which checks the instance ID first.
+
+    NEVER raises: a server that cannot publish a descriptor still serves, and the browser bootstrap
+    of section 2.11 is a complete authentication path on its own.
+    """
+    try:
+        directory = connection_private_path(env, create=True).parent
+    except (paths.PathsError, OSError) as exc:
+        log.warning("could not create the deployment runtime directory for %s: %s",
+                    paths.CONNECTION_PRIVATE_FILENAME, exc)
+        return None
+
+    resolved_host, resolved_port = bind_address(env)
+    identity = deployment_identity(env)
+    payload = {
+        "schema_version": CONNECTION_SCHEMA_VERSION,
+        "service": SERVICE_NAME,
+        "protocol_version": HEALTH_PROTOCOL_VERSION,
+        "version": __version__,
+        "instance_id": server_instance_id(),
+        "deployment_id": identity["deployment_id"],
+        "deployment_key": identity["deployment_key"],
+        "host": host if host is not None else resolved_host,
+        "port": int(port) if port is not None else resolved_port,
+        "pid": os.getpid(),
+        "token": token if token is not None else _server_token(),
+        "created_at": time.time(),
+    }
+    payload["base_url"] = f"http://{payload['host']}:{payload['port']}"
+
+    final = directory / paths.CONNECTION_PRIVATE_FILENAME
+    tmp = directory / f".{paths.CONNECTION_PRIVATE_FILENAME}.{uuid.uuid4().hex}.tmp"
+    data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    try:
+        fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        try:
+            os.write(fd, data)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        _restrict_to_current_user(tmp, runner=_acl)
+        os.replace(str(tmp), str(final))
+    except OSError as exc:
+        with contextlib.suppress(OSError):
+            os.unlink(str(tmp))
+        log.warning("could not publish %s: %s", final, exc)
+        return None
+    _fsync_dir(directory)
+    # The PATH, never the secret (gate 13). This one line is what a user needs in order to find
+    # their token; the token itself is deliberately absent from every log LM3 writes.
+    log.info("published the LM3 connection descriptor at %s (instance %s)",
+             final, payload["instance_id"])
+    return final
+
+
+def read_connection_descriptor(path: "Path | None" = None, *,
+                               env: "Mapping[str, str] | None" = None) -> dict | None:
+    """Read this deployment's private descriptor. Returns None when absent or unreadable."""
+    try:
+        target = Path(path) if path is not None else connection_private_path(env)
+    except (paths.PathsError, OSError):
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def remove_connection_descriptor(*, instance_id: str | None = None,
+                                 env: "Mapping[str, str] | None" = None) -> bool:
+    """Delete the descriptor ONLY when its instance ID is still ours (section 2.12, step 5).
+
+    The check is the whole point. Shutdown is not instantaneous and a user restarting the server is
+    the common case, so an unconditional unlink lets a dying predecessor delete the descriptor its
+    SUCCESSOR just published -- leaving a live server no client can authenticate against. A stale
+    descriptor from a crashed server is the lesser problem: the next start replaces it atomically.
+    """
+    try:
+        target = connection_private_path(env)
+    except (paths.PathsError, OSError):
+        return False
+    payload = read_connection_descriptor(target)
+    if payload is None:
+        return False
+    mine = instance_id if instance_id is not None else server_instance_id()
+    if str(payload.get("instance_id") or "") != mine:
+        log.debug("leaving %s alone: it belongs to instance %r, not %r",
+                  target.name, payload.get("instance_id"), mine)
+        return False
+    try:
+        os.unlink(str(target))
+    except OSError as exc:
+        log.debug("could not remove %s: %s", target, exc)
+        return False
+    _fsync_dir(target.parent)
+    return True
 
 
 def create_app(jobs: JobManager | None = None) -> Any:
@@ -628,6 +1307,11 @@ def create_app(jobs: JobManager | None = None) -> Any:
 
     Imported lazily so the base install (no ``fastapi``) can still import this module.
     """
+    # FIRST, before anything can serve a request: keep the bearer token out of uvicorn's access
+    # log (gate 13). Installed here rather than in serve() because the Electron shell spawns
+    # ``uvicorn ...:create_app --factory`` and never reaches serve().
+    install_access_log_redaction()
+
     import asyncio
     from contextlib import asynccontextmanager
 
@@ -699,13 +1383,20 @@ def create_app(jobs: JobManager | None = None) -> Any:
     async def _worker() -> None:
         """Run queued pipeline jobs ONE at a time, off the event loop."""
         from leafmachine3.machine3 import machine3
+        from leafmachine3.server.metrics_api import runtime_v2
 
         while True:
             job_id = await jobs_q.get()
             manager.mark_running(job_id)
             job = manager.get(job_id)
             try:
-                await run_in_threadpool(machine3, str(job.cfg_path))
+                if runtime_v2():
+                    # Out of process: the server is never a lease holder (invariant 13), and the
+                    # job inherits the section 2.4 handshake -- so a legacy job against a busy
+                    # deployment is REFUSED rather than started beside the run that holds it.
+                    await run_in_threadpool(_run_job_as_subprocess, job)
+                else:
+                    await run_in_threadpool(machine3, str(job.cfg_path))
                 manager.mark_done(job_id)
             except Exception as exc:  # noqa: BLE001 - surface to the job, keep the worker alive
                 log.exception("job %s failed", job_id)
@@ -717,15 +1408,31 @@ def create_app(jobs: JobManager | None = None) -> Any:
     async def lifespan(_app: "FastAPI"):
         worker = asyncio.create_task(_worker())
         _start_owner_watchdog()
+        # Section 2.12: the local-client authentication flow. Electron reads this file rather than
+        # inventing a token and hoping an existing server accepts it (section 2.11), so it has to
+        # exist before the first window opens. It is published here, not in create_app(), because
+        # create_app() also runs in-process in tests and in `import`-only contexts, and a bare
+        # import must not write a secret to disk.
+        write_connection_descriptor()
         try:
             yield
         finally:
             worker.cancel()
+            with contextlib.suppress(Exception):
+                remove_connection_descriptor()
 
     app = FastAPI(title="LeafMachine3", version=__version__, lifespan=lifespan)
 
+    # -- legacy /v1/jobs ---------------------------------------------------- #
+    # Section 4 Step 7 audits these four routes rather than deleting them: "removal is a decision
+    # about external users, not in-tree call sites". The in-tree evidence is that there are NO
+    # consumers (see :func:`note_legacy_jobs_use`), and the one capability they still hold alone is
+    # multipart UPLOAD -- ``POST /v1/run/start`` runs a settings file that is already on the
+    # server's filesystem. So they stay, instrumented, until a release names their removal.
     @app.post("/v1/jobs", dependencies=[Depends(require_token)])
-    async def create_job(files: list[UploadFile] | None = None) -> dict:
+    async def create_job(files: list[UploadFile] | None = None,
+                         user_agent: str = Header(default="")) -> dict:
+        note_legacy_jobs_use("POST /v1/jobs", user_agent)
         payload = [(f.filename or "upload.jpg", await f.read()) for f in (files or [])]
         job = manager.create(files=payload)
         await jobs_q.put(job.id)
@@ -735,7 +1442,8 @@ def create_app(jobs: JobManager | None = None) -> Any:
     # Starlette runs a sync endpoint in its threadpool, so the event loop stays free to keep the
     # status / logs / metrics streams flowing for every other client.
     @app.get("/v1/jobs/{jid}", dependencies=[Depends(require_token)])
-    def status(jid: str) -> dict:
+    def status(jid: str, user_agent: str = Header(default="")) -> dict:
+        note_legacy_jobs_use("GET /v1/jobs/{jid}", user_agent)
         try:
             return manager.status(jid)
         except KeyError:
@@ -749,7 +1457,8 @@ def create_app(jobs: JobManager | None = None) -> Any:
     # WHOLE app. (Same trap postprocess_api.task_events documents.)
     @app.get("/v1/jobs/{jid}/events", dependencies=[Depends(require_token)],
              response_class=StreamingResponse)
-    async def events(jid: str) -> Any:
+    async def events(jid: str, user_agent: str = Header(default="")) -> Any:
+        note_legacy_jobs_use("GET /v1/jobs/{jid}/events", user_agent)
         try:
             db_path = manager.db_path(jid)
         except KeyError:
@@ -772,7 +1481,8 @@ def create_app(jobs: JobManager | None = None) -> Any:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.get("/v1/jobs/{jid}/results", dependencies=[Depends(require_token)])
-    def results(jid: str) -> dict:
+    def results(jid: str, user_agent: str = Header(default="")) -> dict:
+        note_legacy_jobs_use("GET /v1/jobs/{jid}/results", user_agent)
         try:
             return manager.results(jid)
         except KeyError:
@@ -780,15 +1490,44 @@ def create_app(jobs: JobManager | None = None) -> Any:
 
     @app.get("/healthz")
     async def healthz() -> dict:
-        # `pid` is what lets a client that ATTACHED to an already-running server still stop it: with
-        # no process handle of its own, that pid is its only escalation path when the server is too
-        # wedged to honor POST /v1/shutdown.
-        # `paths` is DIAGNOSTIC ONLY (plan section 4, Step 1: "Expose resolved paths in startup
+        # UNAUTHENTICATED by design: this is the readiness probe every client polls before it
+        # holds the secret, so nothing here may be a capability. It carries IDENTITY (who am I,
+        # which deployment, which instance) and DIAGNOSTICS, and no field of it authorizes an
+        # action.
+        #
+        # `pid` IS DIAGNOSTIC ONLY. It used to be documented here as "what lets a client that
+        # ATTACHED to an already-running server still stop it" -- its only escalation path. That is
+        # the behavior section 2.5 deletes and invariant 12 forbids: a PID read out of a response
+        # body authorizes nothing, and a client that did not spawn this server has no control
+        # authority over it however wedged it looks. Step 5b has now removed the last consumer (the
+        # desktop shell no longer scrapes it), so the field survives purely for support logs and
+        # for `ps`, and says so on the wire. Step 7 may drop it.
+        # `paths` is DIAGNOSTIC ONLY too (plan section 4, Step 1: "Expose resolved paths in startup
         # logs and /healthz diagnostics"). It is what makes the Step 1 exit gate -- "from any
         # supported CWD every subsystem reports the same canonical settings path" -- checkable
-        # from outside the process. The rest of this body is untouched; section 4 Step 5b owns it.
-        return {"status": "ok", "version": __version__, "provider": _current_provider(),
-                "pid": os.getpid(), "paths": path_diagnostics()}
+        # from outside the process.
+        identity = deployment_identity()
+        return {
+            # Section 2.11 / Step 5b: service, protocol version, instance ID, deployment key and
+            # ownership mode. Together these are what let a client distinguish the three cases it
+            # actually faces on a port -- MY LM3 server, an LM3 server for a DIFFERENT deployment,
+            # and an unrelated service -- which used to be one undifferentiated "200 OK".
+            "service": SERVICE_NAME,
+            "status": "ok",
+            "version": __version__,
+            "protocol_version": HEALTH_PROTOCOL_VERSION,
+            "instance_id": server_instance_id(),
+            "deployment_id": identity["deployment_id"],
+            "deployment_key": identity["deployment_key"],
+            "ownership_mode": ownership_mode(),
+            "provider": _current_provider(),
+            "pid": os.getpid(),
+            # Stated on the wire, not only in a comment: a reader of this body is exactly who used
+            # to be tempted to signal that pid, and a field that says "diagnostic only" is harder
+            # to misread than a field that merely stopped being documented.
+            "pid_is_diagnostic_only": True,
+            "paths": path_diagnostics(),
+        }
 
     @app.post("/v1/shutdown", dependencies=[Depends(require_token)])
     async def shutdown(request: Request) -> dict:
@@ -810,10 +1549,14 @@ def create_app(jobs: JobManager | None = None) -> Any:
     # The profiler benchmarks the real hardware and rewrites hardware_settings.yaml, so exactly
     # one may be in flight: two at once measure each other's load and race on the same file.
     setup_tasks: set = set()
+    #: job id -> the retained control handle for its ``lm3-setup`` child (section 2.5). Populated
+    #: only under runtime v2; it is what makes Stop able to kill the setup/calibration tree.
+    setup_children: dict = {}
 
     @app.post("/v1/setup", dependencies=[Depends(require_token)])
     async def setup(optimize: bool = True, force: bool = False, calibrate: bool = False) -> dict:
         from leafmachine3.core.config import Config
+        from leafmachine3.server.metrics_api import runtime_v2
         from leafmachine3.setup.hardware_setup import run_setup
 
         running = next((j for j in manager.jobs_of_kind("setup")
@@ -821,6 +1564,37 @@ def create_app(jobs: JobManager | None = None) -> Any:
         if running is not None:
             raise HTTPException(status_code=409,
                                 detail=f"a hardware profile is already running (job {running.id})")
+
+        if runtime_v2():
+            # Section 2.13 requires a RESOLVED config, so the resolver's refusal is the answer:
+            # it names the file it looked for, where an unhandled PathsError would be a 500 and
+            # ``run_setup(None, ...)`` an AttributeError surfaced as an opaque job error.
+            try:
+                job = manager.create_setup()
+            except paths.PathsError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"hardware setup needs a canonical settings file -- {exc}") from exc
+
+            # Section 2.13: a dedicated lm3-setup subprocess with a retained handle and its own
+            # process group. The config is RESOLVED here, not passed as None -- run_setup
+            # dereferences cfg at _fingerprint() before any guard, so None is an AttributeError
+            # surfaced as an opaque job error rather than a message naming the missing file.
+            try:
+                child = launch_setup_subprocess(job, optimize=optimize, force=force,
+                                                calibrate=calibrate)
+            except FileNotFoundError as exc:
+                manager.mark_error(job.id, str(exc))
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except OSError as exc:
+                manager.mark_error(job.id, str(exc))
+                raise HTTPException(status_code=500,
+                                    detail=f"could not start lm3-setup: {exc}") from exc
+            manager.mark_running(job.id)
+            setup_children[job.id] = child
+            threading.Thread(target=watch_setup_subprocess, args=(job, child, manager),
+                             name="lm3-setup-watch", daemon=True).start()
+            return {"job_id": job.id}
 
         job = manager.create_setup()
 
@@ -845,11 +1619,45 @@ def create_app(jobs: JobManager | None = None) -> Any:
 
     @app.get("/v1/setup/events", dependencies=[Depends(require_token)])
     async def setup_events(jid: str) -> dict:
+        from leafmachine3.server.metrics_api import runtime_v2
+
         try:
             job = manager.get(jid)
         except KeyError:
             raise HTTPException(status_code=404, detail="unknown setup job")
+        if runtime_v2():
+            # Section 2.13: the append-only JSONL log, replayed. It survives a UI disconnect and a
+            # server restart, and it cannot fill a pipe and stall the subprocess -- which is why it
+            # was chosen over a live channel.
+            # Off the loop: it is a synchronous file read, and the UI polls it throughout a
+            # multi-minute calibration.
+            replayed = await run_in_threadpool(read_setup_events, setup_event_log_path(job))
+            return {"job_id": jid, "state": job.state, "events": replayed}
         return {"job_id": jid, "state": job.state, "events": job.events}
+
+    @app.post("/v1/setup/stop", dependencies=[Depends(require_token)])
+    async def setup_stop(jid: Optional[str] = None) -> dict:
+        """Terminate the setup/calibration tree, and leave the server serving (section 2.13).
+
+        Authority is the retained handle and nothing else (section 2.5): a setup this process did
+        not launch -- one from a previous server, say -- is observable and is not stoppable here.
+        """
+        from leafmachine3.server.metrics_api import runtime_v2
+
+        if not runtime_v2():
+            raise HTTPException(
+                status_code=409,
+                detail="hardware setup runs inside the server process; there is no child to stop")
+        live = [(job_id, child) for job_id, child in setup_children.items()
+                if child.alive and (jid is None or job_id == jid)]
+        if not live:
+            raise HTTPException(status_code=409, detail="no managed hardware setup to stop")
+        stopped: list[str] = []
+        for job_id, child in live:
+            child.stopped_by_user = True
+            await run_in_threadpool(child.terminate)
+            stopped.append(job_id)
+        return {"stopped": stopped}
 
     @app.get("/v1/hardware", dependencies=[Depends(require_token)])
     def hardware() -> dict:                          # reads + parses a YAML file: keep it off the loop
@@ -863,10 +1671,14 @@ def create_app(jobs: JobManager | None = None) -> Any:
     from leafmachine3.server import (            # noqa: WPS433 - lazy by design
         metrics_api, models_api, postprocess_api, progress_api, results_api, settings_api,
     )
-    # ORDER MATTERS: results_api and progress_api both define GET /v1/runs. results_api's listing is
-    # the richer one (it indexes every run folder and assigns the stable `id` that all its other
-    # /v1/runs/{id}/... routes key off), so it must be registered FIRST or the Results tab receives
-    # entries with no id and can never select a run.
+    # ORDER CARRIES NO MEANING. It used to: results_api and progress_api both defined
+    # ``GET /v1/runs``, whoever was registered first shadowed the other, and a comment here asked
+    # the next reader not to sort the tuple -- so an innocuous tidy-up would have handed the Results
+    # tab a listing with no run ids and nothing would have failed at the point of the change. That
+    # is the "registration-order workaround" section 4 Step 4 says to delete, and it is deleted at
+    # the source: section 5 consolidates the path onto ``results_api``, and progress_api no longer
+    # defines it. Two routers must never answer one path again; if one ever does, fix the duplicate
+    # rather than reintroducing a load-bearing tuple order.
     for _mod in (settings_api, results_api, progress_api, postprocess_api, metrics_api, models_api):
         try:                                     # every router module exposes router(dependencies=)
             app.include_router(_mod.router(dependencies=_auth))
@@ -984,7 +1796,12 @@ def serve(host: str = "127.0.0.1", port: int = 8765, *, jobs_root: Path | None =
     resolved = canonical_settings_path(settings, seed=True)
     os.environ[paths.ENV_SETTINGS] = str(resolved)
     os.environ.pop(paths.LEGACY_ENV_ALIASES[paths.ENV_SETTINGS], None)   # folded in above
-    log.info("lm3 serve: settings %s", resolved)
+    # State the bound address for connection.private.json (section 2.12). The application object
+    # never sees these arguments -- uvicorn does -- so without this the descriptor would have to
+    # GUESS the port, and a client reading it would be told to talk to the wrong server.
+    os.environ[ENV_BIND_HOST] = str(host)
+    os.environ[ENV_BIND_PORT] = str(port)
+    log.info("lm3 serve: settings %s, binding %s:%s", resolved, host, port)
 
     app = create_app(JobManager(jobs_root) if jobs_root else None)
     _server_token()                                  # ensure a token is minted + logged before start
@@ -997,14 +1814,26 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     parser = argparse.ArgumentParser(prog="lm3 serve", description="Run the local LeafMachine3 server.")
     parser.add_argument("--host", default="127.0.0.1", help="bind address (loopback by default)")
-    parser.add_argument("--port", type=int, default=8765, help="port")
+    parser.add_argument("--port", type=int, default=None,
+                        help="port (default: this deployment's port -- 8765 for the default "
+                             "deployment; a NAMED deployment must set LM3_PORT, section 2.1)")
     parser.add_argument("--jobs-root", default=None, help="directory for staged job dirs")
     parser.add_argument("--config", default=None,
                         help="LM3_settings.yaml to serve (default: the canonical resolved path)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    serve(args.host, args.port, jobs_root=Path(args.jobs_root) if args.jobs_root else None,
+    # Section 2.1's port rule, enforced rather than defaulted: "starting a named non-default
+    # deployment without one is a startup error, not a silent collision on 8765". Two deployments
+    # that quietly share a port is the failure /healthz deployment verification exists to catch as
+    # a LAST defense -- this is the first one.
+    try:
+        port = args.port if args.port is not None else paths.resolve_port()
+    except paths.PathsError as exc:
+        print(f"lm3 serve: {exc}", file=sys.stderr)
+        return 2
+
+    serve(args.host, port, jobs_root=Path(args.jobs_root) if args.jobs_root else None,
           settings=args.config)
     return 0
 

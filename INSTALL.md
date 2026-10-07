@@ -77,6 +77,19 @@ the first window whenever a model is missing or a newer one is pinned.
 
 While the model repos are private you must be logged in (`hf auth login`, or `HF_TOKEN`).
 
+**Alternate models.** Published non-default models install only on request, and the command prints
+the settings lines that select them:
+
+```bash
+lm3 models install --list-alternates
+lm3 models install --model specimen_segmenter=yolo26x_seg_1280
+```
+
+The specimen segmenter is chosen by name: `modules.specimen_segmenter.model.key` (for example
+`unetpp_effb7_1024`, `birefnet_hr_swinl_1024`, `yolo26x_seg_1280`) decides how each sheet is
+prepared for the model, so every model gets the resize, padding and normalization it was trained
+with. `model.path` must point at that model's file.
+
 **Docker / HPC.** Set `LM3_MODELS_DIR` to a persistent, mounted folder and prefetch on a node with
 network access: `lm3 models install --dest "$LM3_MODELS_DIR" --yes`. Compute jobs then run with
 the same `LM3_MODELS_DIR` and never touch the network; `lm3 models verify` confirms the folder.

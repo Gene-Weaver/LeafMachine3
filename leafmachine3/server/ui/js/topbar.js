@@ -27,11 +27,16 @@
 
    Events dispatched on `document` (all bubbling CustomEvents):
        lm3:topbar-ready   detail {topbar, primary}
-       lm3:status         detail = the /v1/status snapshot, on every frame
-       lm3:run            detail = the /v1/run/active record, only when it moves
+       lm3:runtime        detail {runtime, view} — the registry view and section 2.6's decision
+                          from it, on every change. THIS is what the tabs follow: which run to
+                          show, whether it is live, and whether control is permitted.
+       lm3:status         detail = the /v1/status snapshot, on every frame (PROGRESS ONLY —
+                          a ledger reading is an observation, never an authority; section 2.5)
        lm3:navigate       detail {tab:"status"|"settings", module?, path?}
        lm3:focus-module   detail {key, name, order, module}
        lm3:settings-saved detail {path, value, settings}
+       lm3:prepare-next-run detail {next} — the user is setting up the NEXT run. It stops
+                          nothing and clears nothing that belongs to the run in progress.
    ========================================================================== */
 
 import {
@@ -54,12 +59,12 @@ const RUN_STATE_BADGE = {
   idle: "", running: "info", stopping: "warn", done: "ok", error: "bad",
 };
 
-/* Polling cadence for the run record. The status SSE carries the fine-grained
-   progress; this record only supplies pid / exit code / launcher errors, which
-   move rarely — so we ask often while something is in flight and rarely when
-   nothing is. */
+/* Polling cadence for GET /v1/runtime. The status SSE carries the fine-grained progress; the
+   runtime record carries IDENTITY and AUTHORITY (which run holds the lease, may this window stop
+   it), which move rarely — so we ask often while something is in flight and rarely when nothing
+   is. A CLI run that starts while the GUI is idle is therefore visible within RUN_POLL_IDLE_MS. */
 const RUN_POLL_ACTIVE_MS = 4000;
-const RUN_POLL_IDLE_MS = 15000;
+const RUN_POLL_IDLE_MS = 8000;
 
 
 /* ==========================================================================
@@ -463,6 +468,325 @@ function makeTip() {
 
 
 /* ==========================================================================
+   THE RUNTIME VIEW — the pure half of section 2.6, exported and unit-tested
+   --------------------------------------------------------------------------
+   Everything below this banner is a pure function of `GET /v1/runtime`. No DOM,
+   no fetch, no module state — which is the point: "is a run happening, may I
+   stop it, which project am I looking at" is the decision this whole refactor
+   is about, and it is testable under plain node exactly as the renderer runs it.
+
+   The rules it encodes, in the plan's own words:
+
+     section 2.6  default mode is follow-active; a `pipeline` root follows its
+                  project DB and logs; a `hardware_setup` root shows a tuning
+                  state and must NOT switch project history to `_lm3_calibration`;
+                  an unknown/future activity disables Start, refuses control and
+                  shows a compatibility warning; historical selection pauses
+                  follow-active with a visible way back.
+     section 2.5  control authority is handle ownership. `can_stop` is the
+                  server's answer and the renderer never re-derives it — least
+                  of all from a pid. It may only NARROW that answer: refusing
+                  Stop on a record this build cannot interpret is not a second
+                  authority, it is sections 2.6/2.9's "refuse control" applied
+                  to the renderer's own `known` test, which no server computes.
+                  Widening `can_stop` is what 2.5 forbids; narrowing it fails
+                  safe in the only direction 2.9 allows.
+     section 2.9  a newer schema means: the lock still decides occupancy,
+                  nothing unknown is interpreted, every control action is off.
+     invariant 5  identity comes from the lease record, never from mutable YAML
+                  and never from a filesystem recency guess.
+     invariant 6  a `hardware_setup` root carries no project block at all.
+   ========================================================================== */
+
+/** `view.mode` — which run the GUI is describing, and why. */
+export const VIEW_MODE = Object.freeze({
+  FOLLOW: "follow-active",     // the default: whatever holds the deployment lease
+  HISTORY: "history",          // the user picked a finished run; follow-active is PAUSED
+  INCOMPATIBLE: "incompatible",// section 2.9: a record this build must not interpret
+});
+
+/** Activities this build understands. Anything else is section 2.6's "unknown/future" row. */
+export const KNOWN_ACTIVITIES = Object.freeze(["pipeline", "hardware_setup", "calibration_pipeline"]);
+
+/* Calibration writes a real run directory with a real ledger, and it is NOT the user's project.
+   Section 2.2 names it so the UI can never mistake it for one; this is the renderer's half of that. */
+export const CALIBRATION_RUN_NAME = "_lm3_calibration";
+
+const ACTIVITY_LABEL = {
+  pipeline: "LM3 pipeline",
+  hardware_setup: "Hardware setup",
+  calibration_pipeline: "VRAM calibration",
+};
+
+/**
+ * One record's project identity, in the single reference shape every tab keys off.
+ *
+ * Returns null when the activity has no project (invariant 6) and when the project IS the
+ * calibration scratch — belt and braces beside the activity test above, because a record whose
+ * activity string this build does not know still must not put `_lm3_calibration` in the run picker.
+ *
+ * section 6 item 59: read `active_db_path` while running and `archived_db_path` after
+ * finalization, never a scratch path that has already been deleted.
+ */
+export function projectRef(record, source, live) {
+  if (!record || typeof record !== "object") return null;
+  const p = record.project;
+  if (!p || typeof p !== "object") return null;
+  const name = String(p.run_name || "").trim();
+  if (!name || name === CALIBRATION_RUN_NAME) return null;
+  return {
+    source,                                 // "active" | "last" | "history"
+    live: !!live,
+    run_id: record.run_id || null,
+    activity: record.activity || null,
+    state: record.state || null,
+    run_name: name,
+    run_dir: p.run_dir || p.artifact_dir || null,
+    artifact_dir: p.artifact_dir || p.run_dir || null,
+    db_path: live ? (p.active_db_path || p.archived_db_path || null)
+                  : (p.archived_db_path || p.active_db_path || null),
+    log_path: p.log_path || null,
+    input_dirs: Array.isArray(p.input_dirs) ? p.input_dirs.slice() : [],
+    config_path: (record.config && record.config.path) || null,
+  };
+}
+
+/** `GET /v1/runtime` -> the shape the renderer holds. Tolerates missing keys and nulls (2.9). */
+export function normalizeRuntime(payload) {
+  const rt = (payload && typeof payload === "object") ? payload : {};
+  const raw = (rt.active && typeof rt.active === "object") ? rt.active : null;
+  let active = null;
+  if (raw) {
+    const activity = raw.activity || (raw.record && raw.record.activity) || null;
+    active = {
+      occupied: raw.occupied !== false,
+      compatible: raw.compatible !== false,
+      // A record we could not read at all is not a FUTURE activity -- it is an occupied
+      // deployment with no detail, which `occupied` already says. Only a named activity this
+      // build does not know trips section 2.6's unknown row.
+      known: !activity || KNOWN_ACTIVITIES.includes(activity),
+      classification: raw.classification || null,
+      schemaVersion: raw.schema_version === undefined ? null : raw.schema_version,
+      message: raw.message || null,
+      run_id: raw.run_id || null,
+      activity,
+      state: raw.state || "unknown",
+      canStop: raw.can_stop === true,
+      canStopReason: raw.can_stop_reason || null,
+      record: raw.record || null,
+      project: projectRef(raw.record, "active", true),
+      currentChild: raw.current_child || null,
+      lastChild: raw.last_child || null,
+    };
+  }
+  const lastRecord = (rt.last && typeof rt.last === "object") ? rt.last : null;
+  return {
+    ok: true,
+    supported: true,             // this answer came from GET /v1/runtime itself
+    active,
+    last: lastRecord ? {
+      run_id: lastRecord.run_id || null,
+      activity: lastRecord.activity || null,
+      state: lastRecord.state || null,
+      finished_at: lastRecord.finished_at || null,
+      returncode: lastRecord.returncode === undefined ? null : lastRecord.returncode,
+      error: lastRecord.error || null,
+      record: lastRecord,
+      project: projectRef(lastRecord, "last", false),
+    } : null,
+    nextRun: (rt.next_run_settings && typeof rt.next_run_settings === "object")
+      ? rt.next_run_settings : null,
+    server: (rt.server && typeof rt.server === "object") ? rt.server : null,
+    diagnostics: (rt.diagnostics && typeof rt.diagnostics === "object") ? rt.diagnostics : null,
+  };
+}
+
+/**
+ * The same shape, synthesized from the legacy `GET /v1/run/active` record.
+ *
+ * Used only when `/v1/runtime` 404s — an older server, or one with `LM3_RUNTIME_V2` off. The
+ * difference is not cosmetic and is not hidden: that record describes ONLY runs this server
+ * launched, so a CLI run is invisible in it. `supported: false` is what the UI reads to say so
+ * instead of quietly reporting "idle" the way it used to.
+ */
+export function legacyRuntime(rec) {
+  const r = (rec && typeof rec === "object") ? rec : {};
+  const project = r.run_name ? {
+    source: r.active ? "active" : "last",
+    live: !!r.active,
+    run_id: null,
+    activity: "pipeline",
+    state: r.state || null,
+    run_name: String(r.run_name),
+    run_dir: r.run_dir || null,
+    artifact_dir: r.run_dir || null,
+    db_path: r.db_path || null,
+    log_path: r.log_path || null,
+    input_dirs: Array.isArray(r.input_dirs) ? r.input_dirs.slice() : [],
+    config_path: r.config_path || null,
+  } : null;
+  return {
+    ok: true,
+    supported: false,
+    active: r.active ? {
+      occupied: true, compatible: true, known: true, classification: null, schemaVersion: null,
+      message: null,
+      run_id: null,
+      activity: "pipeline",
+      state: r.state || "running",
+      // The legacy route only ever described this server's own child, so "we launched it" is the
+      // same claim the old UI made -- no wider, no narrower.
+      canStop: true,
+      canStopReason: "this server launched the run",
+      record: null,
+      project,
+      currentChild: null, lastChild: null,
+    } : null,
+    last: (!r.active && project) ? {
+      run_id: null, activity: "pipeline", state: r.state || null,
+      finished_at: r.finished_iso || null,
+      returncode: r.returncode === undefined ? null : r.returncode,
+      error: r.error || null,
+      record: null, project,
+    } : null,
+    nextRun: null,
+    server: null,
+    diagnostics: null,
+  };
+}
+
+/** Nothing is known yet (first paint, or the server is unreachable). */
+export function emptyRuntime() {
+  return { ok: false, supported: false, active: null, last: null,
+           nextRun: null, server: null, diagnostics: null };
+}
+
+export function activityLabel(activity) {
+  if (!activity) return "LM3";
+  return ACTIVITY_LABEL[activity] || activity;
+}
+
+/**
+ * `view` — the whole of section 2.6 as one pure decision.
+ *
+ * @param {object} runtime  normalizeRuntime() / legacyRuntime() output
+ * @param {{selected?:object|null, busy?:string|null, controlApi?:boolean}} [opts]
+ *        `selected` is a run the USER picked out of history; its presence is what pauses
+ *        follow-active, and only an explicit action can set or clear it (invariant 7).
+ * @returns {{mode:string, runRef:object|null, followPaused:boolean, canStart:boolean,
+ *            startReason:string, canStop:boolean, stopReason:string, machine:object,
+ *            warning:string|null, occupied:boolean, live:boolean}}
+ */
+export function deriveView(runtime, opts = {}) {
+  const { selected = null, busy = null, controlApi = true } = opts;
+  const rt = runtime || emptyRuntime();
+  const active = rt.active || null;
+  const last = rt.last || null;
+
+  const occupied = !!(active && active.occupied);
+  const incompatible = !!(active && (!active.compatible || !active.known));
+
+  /* --- the Machine panel's tuning state (section 2.6, row 2) --------------- */
+  const tuning = !!(active && active.activity === "hardware_setup" && active.occupied);
+  const machine = {
+    tuning,
+    run_id: tuning ? active.run_id : null,
+    state: tuning ? active.state : null,
+    // The calibration subactivity, when one is running under it. Shown as PROGRESS of the tuning,
+    // never as a project: its run name is `_lm3_calibration` and it is scratch.
+    child: tuning ? (active.currentChild || active.lastChild || null) : null,
+    message: tuning ? "This machine is being profiled — LM3 Setup is running." : null,
+  };
+
+  /* --- which project the GUI describes ------------------------------------ */
+  // A hardware_setup root has no project block at all (invariant 6), so there is nothing here to
+  // switch project history TO -- and its calibration child is deliberately not consulted. The last
+  // finished run keeps the Status/Results/Postprocessing tabs pointed at the user's own work while
+  // the machine is tuned, which is exactly what section 2.6 asks for.
+  const activeProject = (active && active.activity === "pipeline") ? active.project : null;
+  const lastProject = last ? last.project : null;
+
+  let mode = VIEW_MODE.FOLLOW;
+  if (incompatible) mode = VIEW_MODE.INCOMPATIBLE;
+  else if (selected) mode = VIEW_MODE.HISTORY;
+
+  const runRef = selected || activeProject || lastProject || null;
+
+  /* --- control ------------------------------------------------------------ */
+  let canStart = true;
+  let startReason = "Launch LM3 with the settings shown here";
+  if (!controlApi) {
+    canStart = false;
+    startReason = "Run control is not mounted on this LM3 server (POST /v1/run/start is missing).";
+  } else if (busy) {
+    canStart = false;
+    startReason = busy === "starting" ? "Starting…" : "Stopping…";
+  } else if (incompatible) {
+    canStart = false;
+    startReason = "This runtime was created by a newer LM3 — this build must not act on it.";
+  } else if (occupied) {
+    canStart = false;
+    startReason = active && active.activity === "hardware_setup"
+      ? "The machine is being profiled — LM3 Setup holds this deployment."
+      : "This deployment already has a run in progress. Only one LM3 run holds it at a time.";
+  }
+
+  // `&& !incompatible` is the renderer NARROWING the server's answer, never widening it (see the
+  // section 2.5 note above). `known` is this build's own test -- the server never sends it -- so a
+  // newer server that knows an activity this build does not will happily answer `compatible: true,
+  // can_stop: true` for it. Sections 2.6 and 2.9 both say the same thing about such a record: refuse
+  // control. Gating Start alone would leave Stop live on the one record we just declared
+  // uninterpretable.
+  const canStop = !!(active && active.canStop) && !busy && controlApi && !incompatible;
+  let stopReason;
+  if (!active) stopReason = "No LM3 run is active.";
+  else if (busy === "stopping") stopReason = "Stopping…";
+  else if (!controlApi) stopReason = "Run control is not mounted on this LM3 server.";
+  else if (incompatible) {
+    // Quote section 2.9, not `can_stop_reason`: that field explains an OWNERSHIP refusal and in this
+    // scenario is typically null (the server thinks Stop is fine), so the ownership fallback below
+    // would state something false. Split the same two ways the warning does, so an activity this
+    // build has not heard of is not blamed on a schema version.
+    stopReason = active.known
+      ? "This runtime was created by a newer LM3 — this build must not act on it."
+      : `This LM3 does not recognize the activity "${active.activity}" — this build must not `
+        + "act on it.";
+  }
+  else if (canStop) stopReason = "Stop the active run (it stays resumable)";
+  else {
+    // Never invent one: section 2.6's failure mode is "you cannot stop this" with no reason, and
+    // the server writes `can_stop_reason` for a person precisely so the UI can quote it.
+    stopReason = active.canStopReason
+      || "This run was not launched by this server, so this window cannot stop it.";
+  }
+
+  let warning = null;
+  if (incompatible) {
+    warning = active.message
+      || (active.known
+        ? "This runtime was created by a newer LM3. Update LM3 to see and control it."
+        : `This LM3 does not recognize the activity "${active.activity}". Update LM3 to see and `
+          + "control it.");
+  } else if (rt.ok && !rt.supported) {
+    warning = "This LM3 server reports only runs it started itself. A run started from the "
+            + "command line will not appear here.";
+  }
+
+  return {
+    mode,
+    runRef,
+    followPaused: mode === VIEW_MODE.HISTORY,
+    canStart, startReason,
+    canStop, stopReason,
+    machine,
+    warning,
+    occupied,
+    live: !!(runRef && runRef.live),
+  };
+}
+
+
+/* ==========================================================================
    initTopBar
    ========================================================================== */
 
@@ -477,11 +801,21 @@ export function initTopBar(root, opts = {}) {
   const { bar, strip } = resolveMounts(root);
 
   /* ---------------------------------------------------------------- state */
+  /* The state Step 6 specifies, and nothing that duplicates it.
+     `runtime` is the registry (WHAT is happening and WHO may control it), `view` is section 2.6's
+     decision from it (WHICH run this window is describing), `snapshot` is progress detail for the
+     run `view` names -- an observation, never an authority. There is no `state.run` and no sticky
+     `state.newRun`: the first was a per-server projection that could not see a CLI run, and the
+     second existed only to suppress a feed the client itself had walked away from. */
   const state = {
-    snapshot: null,           // last /v1/status snapshot
+    runtime: emptyRuntime(),  // normalizeRuntime(GET /v1/runtime), or legacyRuntime() on a 404
+    view: deriveView(emptyRuntime()),
+    selected: null,           // a run the USER picked out of history -> pauses follow-active
+    snapshot: null,           // last /v1/status snapshot — PROGRESS DETAIL ONLY
     snapshotAt: 0,            // performance.now() when it arrived (for local ticking)
-    run: null,                // last /v1/run/active record
-    runApi: true,             // false once /v1/run/* answers 404 (module not mounted)
+    runtimeSeen: false,       // has ANY runtime answer landed yet (the first one always publishes)
+    runtimeApi: true,         // false once GET /v1/runtime AND /v1/run/active both answer 404
+    runtimeV2: true,          // false once /v1/runtime 404s: we are on the legacy projection
     settings: null,           // last GET /v1/settings (values + effective + mtime)
     settingsApi: true,
     hardware: null,           // gpus for the device picker
@@ -492,7 +826,7 @@ export function initTopBar(root, opts = {}) {
     wasRunning: false,        // for the idle -> running edge that triggers the auto-collapse
     trackKeys: "",            // signature of the rendered segment list
     closeStatus: null,        // SSE closer
-    statusDb: null,           // db path the stream is pinned to
+    statusPin: "",            // the run the status stream is pinned to (db path, or "")
     runTimer: null,
     tickTimer: null,
     destroyed: false,
@@ -507,14 +841,19 @@ export function initTopBar(root, opts = {}) {
 
   /* ------------------------------------------------------------ boot data */
   loadHealth();
-  // On open, the paths in the strip already point somewhere -- at the project the last run left
-  // behind. openFresh() clears the name so this opens ready for a NEW run instead.
-  loadSettings().then(() => { renderTrack(); openFresh(); });
+  loadSettings().then(() => renderTrack());
   loadHardware();
-  connectStatus(null);
-  pollRun();
+  /* The runtime record is read FIRST, and the status stream is opened from its answer, so the
+     stream is pinned to the right ledger from frame one. Opening the app is an OBSERVATION: it
+     starts nothing, blanks nothing and writes nothing (invariants 8 and 9). If a CLI run holds
+     the deployment, this is the poll that shows it. */
+  pollRuntime().then(() => { if (!state.closeStatus) connectStatus(state.view.runRef); });
   state.tickTimer = setInterval(tickClocks, 1000);
   window.addEventListener("resize", onResize, { passive: true });
+  /* The Results tab's run picker is the only place a HISTORICAL run can be chosen, and section 2.6
+     requires that choice to pause follow-active for the whole window rather than for one tab. It
+     asks here rather than reaching into this module, and `{ref: null}` is the way back. */
+  document.addEventListener("lm3:select-run", onSelectRunEvent);
 
   dispatch("lm3:topbar-ready", { topbar: bar, primary: strip });
 
@@ -765,18 +1104,36 @@ export function initTopBar(root, opts = {}) {
     go("status", { module: key });
   }
 
-  /** Repaint everything that depends on the status snapshot. */
+  /**
+   * Repaint everything that depends on the status snapshot.
+   *
+   * WHAT is happening comes from `state.view` (the lease record); the snapshot supplies HOW FAR
+   * ALONG it is. That split is section 2.5's "a ledger reading is an observation, never an
+   * authority" made concrete: before this, a killed run whose ledger still said `running` read as
+   * a live run, and a CLI run the server never launched read as idle.
+   */
   function renderStatus() {
     const s = state.snapshot;
+    const v = state.view;
+    const rec = state.runtime.active;
     renderTrack();
 
-    const running = s && s.state === "running";
-    const starting = state.busy === "starting" || (!!(state.run && state.run.active) && (!s || !s.ready));
+    // Tuning is a machine state, not a project state: say so on the bar and leave project history
+    // alone (section 2.6). The Machine panel carries the detail.
+    if (v.machine.tuning) return renderTuningStatus();
+
+    const liveRun = !!(v.runRef && v.runRef.live);
+    const running = liveRun || (s && s.state === "running");
+    const starting = state.busy === "starting"
+      || (!!rec && rec.state === "starting")
+      || (liveRun && (!s || !s.ready));
 
     /* ---- the "what is LM3 doing" line ---- */
     let what = "Idle", who = "No run yet", whoDim = true, count = null, countCls = "x";
-    if (starting && !(s && s.active)) {
-      what = "Starting"; who = (state.run && state.run.run_name) || "LM3"; whoDim = false;
+    if (v.mode === VIEW_MODE.INCOMPATIBLE) {
+      what = "Unavailable"; who = "a newer LM3 holds this deployment"; whoDim = false;
+    } else if (starting && !(s && s.active)) {
+      what = "Starting"; who = (v.runRef && v.runRef.run_name) || "LM3"; whoDim = false;
     } else if (s && s.active) {
       what = s.stale ? "Stalled" : "Running";
       who = s.active.name;
@@ -790,7 +1147,10 @@ export function initTopBar(root, opts = {}) {
     } else if (s && s.state === "error") {
       what = "Failed"; who = s.run_name || "run"; whoDim = false; countCls = "e"; count = "see console";
     } else if (s && s.run_name) {
-      what = "Last run"; who = s.run_name; whoDim = false;
+      what = v.followPaused ? "Selected run" : "Last run"; who = s.run_name; whoDim = false;
+    } else if (v.runRef) {
+      what = v.runRef.live ? "Running" : (v.followPaused ? "Selected run" : "Last run");
+      who = v.runRef.run_name; whoDim = false;
     }
     refs.nowWhat.textContent = what;
     refs.nowWho.textContent = who;
@@ -826,19 +1186,57 @@ export function initTopBar(root, opts = {}) {
       if (t.session_pct !== null && t.session_pct !== undefined && Math.abs(t.session_pct - (overall || 0)) > 0.5) {
         left.push(`this session ${pctText(t.session_pct, 0)}`);
       }
+    } else if (v.mode === VIEW_MODE.INCOMPATIBLE) {
+      left.push(v.warning);
+    } else if (v.occupied) {
+      left.push("A run holds this deployment — waiting for its first progress frame");
     } else {
-      left.push(state.runApi ? "No LM3 run yet — set the folders below and press Start" : "No LM3 run yet");
+      left.push(state.runtimeApi ? "No LM3 run yet — set the folders below and press Start" : "No LM3 run yet");
     }
     refs.metaLeft.textContent = left.join(" · ");
 
     const right = [];
     if (s && s.run_name) right.push(s.run_name);
+    else if (v.runRef) right.push(v.runRef.run_name);
     if (s && s.started_ts) right.push(`started ${new Date(s.started_ts * 1000).toLocaleTimeString("en-US", { hour12: false })}`);
     if (s && s.active && s.active.rate_per_s) right.push(`${fmtNum(s.active.rate_per_s, { digits: 2 })} img/s`);
     if (s && s.stale) right.push(`silent for ${fmtDuration(s.stale_for_s)}`);
     refs.metaRight.textContent = right.join("  ·  ");
 
     renderRunControls();
+    renderViewBanner();
+    renderMachineState();
+  }
+
+  /**
+   * The bar while a `hardware_setup` root holds the deployment.
+   *
+   * Section 2.6 gives this its own row for a reason: tuning is not work on anybody's specimens
+   * (invariant 6 gives the record no project block at all), so the module timeline, the image
+   * counters and the project name must NOT be repainted from it — and the calibration subactivity
+   * that runs underneath it must never reach the project views under its `_lm3_calibration` name.
+   */
+  function renderTuningStatus() {
+    const m = state.view.machine;
+    refs.nowWhat.textContent = "Tuning";
+    refs.nowWho.textContent = "this machine (LM3 Setup)";
+    refs.nowWho.style.color = "";
+    refs.nowCount.style.display = m.child ? "" : "none";
+    refs.nowCount.className = "pill s";
+    refs.nowCount.textContent = m.child ? "calibrating" : "";
+    refs.statImages.set("–");
+    refs.statOverall.set("–");
+    refs.statElapsed.set("–");
+    refs.statEta.set("–");
+    refs.bar.className = "bar lg acc2 running indeterminate";
+    refs.fill.style.width = "100%";
+    refs.fillLabel.textContent = "profiling…";
+    refs.metaLeft.textContent = m.message;
+    refs.metaRight.textContent = state.view.runRef
+      ? `project history still shows ${state.view.runRef.run_name}` : "";
+    renderRunControls();
+    renderViewBanner();
+    renderMachineState();
   }
 
   /**
@@ -848,6 +1246,9 @@ export function initTopBar(root, opts = {}) {
    */
   function tickClocks() {
     const s = state.snapshot;
+    // While the machine is being tuned the clocks belong to no project (section 2.6); the 1s
+    // interval must not repaint the last run's elapsed/ETA over the tuning readout.
+    if (state.view.machine.tuning) return;
     if (!s || !s.ready) {
       refs.statElapsed.set("–");
       refs.statEta.set("–");
@@ -944,10 +1345,34 @@ export function initTopBar(root, opts = {}) {
     refs.stopBtn.addEventListener("click", stopRun);
     // The run controls do NOT live in this strip: they are docked into the tab bar (see
     // mountRunControls) so they stay reachable when the strip is collapsed during a run.
+    /* Invariant 8, said out loud and permanently: these fields are the NEXT run's settings.
+       Nothing here describes the run in progress -- a running job is pinned to the launch manifest
+       written at its start (section 3.4), so editing this file cannot reach it, and the GUI used to
+       leave that to be inferred. The line sharpens while a run holds the deployment. */
+    refs.nextLabel = el("div.nextrun", {
+      style: {
+        // `.primary` is a 3-column GRID (app.css) and `.pfields` is `display:contents`, so the six
+        // fields are grid items in their own right. Spanning every column puts this on a row of
+        // its own AFTER the device selector -- the last field -- however the grid reflows, rather
+        // than leaving it to occupy one third of a row and wrap inside it.
+        gridColumn: "1 / -1",
+        // One line, always. The label reads as a sentence ("Next run — edits apply to the next run
+        // you start — → <path>"), and a sentence broken across lines mid-clause reads as three
+        // unrelated fragments. It has the full width to work with now, and the two text spans
+        // ellipsize rather than wrap if it ever runs out.
+        display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap",
+        minWidth: "0", overflow: "hidden",
+        padding: "6px 0 0", fontSize: "12.2px", color: "var(--mute)",
+      },
+    });
+    refs.warnRow = el("div.card.warn", { hidden: true, style: { margin: "0 0 8px" } });
     refs.fieldsWrap = el("div.pfields",
       refs.fields.input.node, refs.fields.runName.node, refs.fields.output.node, refs.fields.tmp.node,
       cfgField, devField);
-    append(strip, [refs.fieldsWrap]);
+    // The next-run label comes AFTER the fields, so it trails the device selector rather than
+    // heading the strip.
+    append(strip, [refs.warnRow, refs.fieldsWrap, refs.nextLabel]);
+    renderNextRunLabel();
     mountRunControls();
     applyCollapsed(loadCollapsed());
   }
@@ -995,19 +1420,32 @@ export function initTopBar(root, opts = {}) {
 
     refs.newRunBtn = el("button.btn.sm.ghost", {
       type: "button",
-      title: "Clear the GUI and set up a new run",
-      onclick: startNewRun,
-    }, "✚  New run");
+      title: "Set up the NEXT run. Nothing running is stopped and nothing on disk is changed.",
+      onclick: prepareNextRun,
+    }, "✚  Prepare next run");
 
     refs.closeBtn = el("button.btn.sm.danger.ghost", {
       type: "button",
-      title: "Stop any running LM3 job and close the app",
+      // Invariant 9, stated on the control itself: closing the window is not a way to stop a run.
+      title: "Close this window. A running LM3 job keeps running.",
       onclick: closeApp,
     }, "✕  Close");
+
+    /* "Following the active run" / "Viewing a finished run — Return to the active run".
+       Section 2.6 requires that a historical selection pause follow-active EXPLICITLY and that
+       the way back be visible; without this the only way out of a pinned view is a reload. */
+    refs.followBtn = el("button.btn.sm.accent", {
+      type: "button",
+      title: "Stop viewing this finished run and follow the run that holds the deployment",
+      onclick: followActive,
+    }, "↩  Return to the active run");
+    refs.followBtn.hidden = true;
+    refs.viewBadge = el("span.badge", { title: "Which run this window is describing" }, "Following");
 
     const ctl = el("div.runctl",
       refs.collapseBtn,
       el("span.sep"),
+      refs.viewBadge, refs.followBtn,
       refs.runChip, refs.stateBadge, refs.startBtn, refs.stopBtn);
 
     // sits at the far right of the tab bar, beside the connection indicator
@@ -1023,148 +1461,61 @@ export function initTopBar(root, opts = {}) {
   }
 
   /**
-   * Clear the GUI down to "nothing has run yet" and set up for a new run.
+   * "Prepare next run" — what "New run" became (Step 6).
    *
-   * The reset is CLIENT-SIDE and deliberately sticky. When no job is active the
-   * server discovers the newest run off disk and keeps reporting it, so simply
-   * blanking the bar would be undone by the next status frame ~4s later. Instead
-   * `state.newRun` detaches the top bar from the feed until a snapshot actually
-   * says "running" -- which is the moment a NEW run exists.
+   * It stops nothing (invariant 9: stopping a run is a separate, explicit action), clears nothing
+   * that belongs to the run in progress, and blanks no field. The old button did all three: it
+   * offered to stop the job, emptied `project.run_name` in the GUI *without writing it*, and then
+   * held a sticky client-side suppression over the status feed so the server could not contradict
+   * the blanking. That combination is what made the yaml and the screen disagree — the field said
+   * nothing while the file still named the previous project, one press of Start from resuming it.
    *
-   * Settings are deliberately untouched: a new run is nearly always the same
-   * pipeline configuration pointed at new input.
+   * What it does instead: unfold the strip, put the caret in the project name, and offer a name
+   * that is free. Every edit goes through the same commit path as any other settings edit, which
+   * WRITES it — and applies to the next run only (invariant 8), which the strip now says.
    */
-  async function startNewRun() {
-    const running = state.snapshot && state.snapshot.state === "running";
-    const ok = await confirmModal({
-      title: "Start a new run",
-      message: running
-        ? "Stop the running LM3 job and set up a new run?"
-        : "Clear the GUI and set up a new run?",
-      detail: running
-        ? "The current run is checkpointed before it stops, so it stays resumable — retype its "
-          + "name and press Start LM3 to continue it. Your settings are not changed."
-        : "The stage bar, console, results view and postprocessing history are cleared, and the "
-          + "project name is emptied so the new run cannot resume the old one. Your settings are "
-          + "not changed.",
-      confirmLabel: running ? "Stop and start new" : "Start new",
-      danger: running,
-    });
-    if (!ok) return;
-
-    if (running) {
-      refs.newRunBtn.disabled = true;
-      refs.newRunBtn.textContent = "Stopping…";
-      try {
-        await api.stopRun();
-        for (let i = 0; i < 20; i += 1) {
-          const st = await api.getStatus().catch(() => null);
-          if (!st || st.state !== "running") break;
-          await new Promise((r) => setTimeout(r, 500));
-        }
-      } catch (err) {
-        toast("Could not stop the run", String((err && err.message) || err), { kind: "bad" });
-      } finally {
-        refs.newRunBtn.disabled = false;
-        refs.newRunBtn.textContent = "";
-        append(refs.newRunBtn, ["✚  New run"]);
-      }
+  function prepareNextRun() {
+    applyCollapsed(false);
+    state.userPinnedOpen = true;          // do not fold it away under the user mid-edit
+    const f = refs.fields && refs.fields.runName;
+    if (f && f.input) {
+      f.input.focus();
+      f.input.select();
     }
-
-    resetForNewRun({ stopped: running });
+    dispatch("lm3:prepare-next-run", { next: state.runtime.nextRun || null });
+    toast("Setting up the next run",
+      state.view.occupied
+        ? "The run in progress is untouched. Your edits apply to the NEXT run you start."
+        : "Name the project, then press Start LM3. Your edits apply to the next run.",
+      { kind: "ok" });
   }
 
   /**
-   * The reset itself. Shared by the "New run" button and by opening the app (see openFresh), so
-   * the two cannot drift apart -- "as if you had pressed New run" has to keep meaning that.
+   * Close the window. It never stops a pipeline — invariant 9, and the plan says so twice.
    *
-   * Settings are deliberately untouched, and the emptied name is NOT written to the yaml: the
-   * field is blanked in the GUI only, and startRun() refuses an empty name, so nothing can start
-   * under the old project by accident.
+   * The old path stopped the run, waited up to 10 s for the ledger to drain, and only then quit,
+   * which made "I am done looking at this" and "kill the job" the same gesture. A run started from
+   * the CLI outlived the GUI anyway, so the behavior was not even consistent with itself.
    */
-  function resetForNewRun({ stopped = false, announce = true } = {}) {
-    state.newRun = true;
-    state.snapshot = null;
-    state.run = null;
-    state.busy = null;
-    renderStatus();
-
-    // Empty the run name so Start cannot silently resume the previous project.
-    const nameField = refs.fields && refs.fields.runName;
-    if (nameField) {
-      setFieldValue(nameField, "");
-      checkField(nameField);
-      applyCollapsed(false);            // the strip folds away during a run; unfold it to type
-      if (nameField.input) { nameField.input.focus(); }
-    }
-    // applySettings() only repaints the chip when settings are reloaded, so set it
-    // here too or the tab bar keeps advertising the project we just walked away from.
-    if (refs.runChip) refs.runChip.textContent = "unnamed";
-
-    // Each tab owns its own history; they clear themselves on this event.
-    dispatch("lm3:newrun", { stopped });
-    if (announce) toast("Ready for a new run", "Name the project, then press Start LM3.", { kind: "ok" });
-  }
-
-  /**
-   * Opening the app IS starting a new run, so it opens in the state the New run button produces:
-   * no project name, nothing on the stage bar.
-   *
-   * Without this the name box comes up holding the LAST project's name (it lives in the settings
-   * yaml, which a run writes), one press of Start away from silently resuming or overwriting it.
-   *
-   * The exception is a job still running headless -- the GUI is the only way to watch it, so a
-   * live run is shown, not blanked. `state.newRun` would recover on its own if a running frame
-   * arrived a moment later, but the emptied NAME would not, so this asks first rather than
-   * blanking optimistically and hoping.
-   */
-  async function openFresh() {
-    let rec = null;
-    try {
-      rec = await api.get("/v1/run/active", { timeout: 10000 });
-    } catch (_) {
-      /* no metrics_api, or offline: fall through and open clean, which is the safe default */
-    }
-    if (rec && rec.active) {
-      offerExistingProject();          // (bails by itself while something is running)
-      return;
-    }
-    resetForNewRun({ announce: false });   // no toast: nothing happened, this is just how it opens
-  }
-
-  /** Stop a running LM3 job (and WAIT for it) before quitting the desktop shell. */
   async function closeApp() {
-    const running = state.snapshot && state.snapshot.state === "running";
-    // confirmModal, not window.confirm(): a native modal blocks this page's SSE handlers.
+    const live = !!(state.view.runRef && state.view.runRef.live) || state.view.occupied;
     const ok = await confirmModal({
       title: "Close LeafMachine3",
-      message: running ? "Stop the running LM3 job and close the app?" : "Close LeafMachine3?",
-      detail: running
-        ? "The run is checkpointed before it stops, so it stays resumable — reopen and press "
-          + "Start LM3 to continue from where it left off."
-        : "No LM3 job is running.",
-      confirmLabel: running ? "Stop and close" : "Close",
-      danger: true,
+      message: "Close this window?",
+      detail: live
+        ? "The LM3 run keeps running — closing this window does not stop it. Reopen the app at any "
+          + "time to keep watching it, or press Stop first if you want it to end."
+        : "No LM3 run is active.",
+      confirmLabel: "Close",
     });
     if (!ok) return;
 
     refs.closeBtn.disabled = true;
-    refs.closeBtn.textContent = running ? "Stopping…" : "Closing…";
-    if (running) {
-      try {
-        await api.stopRun();
-        // give LM3 a moment to checkpoint the ledger so the run stays resumable
-        for (let i = 0; i < 20; i += 1) {
-          const s = await api.getStatus().catch(() => null);
-          if (!s || s.state !== "running") break;
-          await new Promise((r) => setTimeout(r, 500));
-        }
-      } catch (err) {
-        toast("Could not stop the run", String((err && err.message) || err), { kind: "bad" });
-      }
-    }
+    refs.closeBtn.textContent = "Closing…";
     const desktop = window.lm3desktop;
-    if (desktop && typeof desktop.quit === "function") desktop.quit({ running });
+    // `running` is passed so the shell can word its own confirmation honestly; the shell stops
+    // only a SERVER it spawned (invariant 10) and never an LM3 run.
+    if (desktop && typeof desktop.quit === "function") desktop.quit({ running: live });
     else window.close();          // plain browser: best effort
   }
 
@@ -1377,7 +1728,9 @@ export function initTopBar(root, opts = {}) {
       return;                                              // 404 -> nothing there, nothing to ask
     }
     if (!rec || !(rec.has_db || rec.has_reports)) return;
-    if (state.snapshot && state.snapshot.state === "running") return;   // mid-run: not the moment
+    // Mid-run is not the moment. Asked of the RECORD, not of a ledger reading: a run this server
+    // did not launch holds the deployment just as firmly as one it did.
+    if (state.view.occupied) return;
 
     showExistingProjectDialog(rec, name);
   }
@@ -1579,10 +1932,46 @@ export function initTopBar(root, opts = {}) {
     }
     refs.deviceSel.disabled = ro;
 
-    refs.runChip.textContent = state.newRun
-      ? "unnamed"                       // the reset emptied the field; do not show the old name
-      : String(deepGet(eff, "project.run_name", "") || "unnamed");
+    /* The chip names the run this window is DESCRIBING, not the value in the yaml. During a run
+       those are two different things the moment anybody edits the settings file, and showing the
+       yaml there is what let a mid-run rename look as though the running job had been renamed. */
+    renderRunChip();
+    renderNextRunLabel();
     renderDeviceOptions();
+  }
+
+  /**
+   * The "these are the NEXT run's settings" label (invariant 8, section 2.6).
+   *
+   * It is a LABEL, not plumbing: section 3.4 already guarantees a running job cannot be affected
+   * by an edit here, because it was pinned to its launch manifest when it started. What was
+   * missing was any way for the user to know that -- the strip presented itself as the state of
+   * the world, and the Settings tab (3,000 lines) contains no notion of a run being in progress
+   * at all.
+   */
+  function renderNextRunLabel() {
+    if (!refs.nextLabel) return;
+    const next = state.runtime.nextRun;
+    const occupied = state.view.occupied;
+    clear(refs.nextLabel);
+    // `flex:0 0 auto` on the badges and `min-width:0` + ellipsis on the two text spans: with
+    // `flex-wrap:nowrap` above, something has to give when the window is narrow, and truncating
+    // the prose is better than truncating the badge that says what this row IS. The full path
+    // stays available in the tooltip either way.
+    const ellipsize = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: "0" };
+    append(refs.nextLabel, [
+      el("span.badge.info", { style: { flex: "0 0 auto" } }, "Next run"),
+      el("span", { style: { ...ellipsize, flex: "0 1 auto" } }, occupied
+        ? "Edits here apply to the NEXT run you start — the run in progress is unaffected."
+        : "Edits here apply to the next run you start."),
+      next && next.run_dir
+        ? el("span.mono.dim", { title: next.run_dir, style: { ...ellipsize, flex: "0 1 auto" } },
+             `→ ${fmtPath(next.run_dir, 3)}`)
+        : null,
+      next && next.error
+        ? el("span.badge.warn", { title: next.error, style: { flex: "0 0 auto" } }, "unresolved")
+        : null,
+    ]);
   }
 
   function setFieldValue(f, value) {
@@ -1616,55 +2005,158 @@ export function initTopBar(root, opts = {}) {
      ====================================================================== */
 
   function renderRunControls() {
-    // pollRun() keeps refreshing /v1/run/active, which still describes the run we
-    // just walked away from -- so after "New run" the chip reads idle until either
-    // Start is pressed or a real run appears.
-    const r = (state.newRun && state.busy !== "starting") ? null : state.run;
+    const v = state.view;
+    const rec = state.runtime.active;
     const s = state.snapshot;
-    const active = !!(r && r.active) || state.busy === "starting";
-    let key = (r && r.state) || "idle";
-    if (state.busy === "starting") key = "running";
-    if (state.busy === "stopping") key = "stopping";
 
-    let label = RUN_STATE_TEXT[key] || key;
-    let cls = RUN_STATE_BADGE[key] || "";
-    if (state.busy === "starting") label = "Starting";
-    else if (state.busy === "stopping") label = "Stopping";
-    else if (active && s && s.stale) { label = "Stalled"; cls = "warn"; }
-    else if (r && r.adopted && active) label = "Running (adopted)";
+    /* The badge describes the ACTIVITY that holds the deployment, from the record. It used to be
+       derived from `/v1/run/active`, which knows only about runs this server launched -- so during
+       a CLI run the stage bar animated "Running" while this badge said "Idle" and Stop was
+       disabled: one control surface contradicting itself. */
+    let key = "idle";
+    let label = "Idle";
+    let cls = "";
+    if (state.busy === "starting") { key = "running"; label = "Starting"; cls = "info"; }
+    else if (state.busy === "stopping") { key = "stopping"; label = "Stopping"; cls = "warn"; }
+    else if (v.mode === VIEW_MODE.INCOMPATIBLE) { label = "Unavailable"; cls = "warn"; }
+    else if (v.machine.tuning) { label = "Tuning machine"; cls = "info"; }
+    else if (rec && rec.occupied) {
+      key = rec.state === "stopping" ? "stopping" : "running";
+      label = RUN_STATE_TEXT[key] || key;
+      cls = RUN_STATE_BADGE[key] || "info";
+      if (rec.state === "starting") label = "Starting";
+      if (s && s.stale) { label = "Stalled"; cls = "warn"; }
+    } else if (state.runtime.last) {
+      key = state.runtime.last.state === "error" ? "error" : "done";
+      label = RUN_STATE_TEXT[key] || key;
+      cls = RUN_STATE_BADGE[key] || "";
+    }
 
     refs.stateBadge.className = `badge dotd${cls ? ` ${cls}` : ""}`;
     refs.stateBadge.textContent = label;
-    refs.stateBadge.title = runTitle(r);
+    refs.stateBadge.title = runTitle();
 
-    refs.startBtn.disabled = active || !state.runApi || !!state.busy;
-    refs.stopBtn.disabled = !active || !state.runApi || state.busy === "stopping";
-    refs.startBtn.textContent = active ? "▶  Running" : "▶  Start LM3";
-    if (!state.runApi) {
-      refs.startBtn.title = "Run control is not mounted on this LM3 server (POST /v1/run/start is missing).";
-      refs.stopBtn.title = refs.startBtn.title;
-    } else {
-      refs.startBtn.title = "Launch LM3 with the settings shown here";
-      refs.stopBtn.title = "Stop the active run (it stays resumable)";
-    }
+    refs.startBtn.disabled = !v.canStart;
+    refs.stopBtn.disabled = !v.canStop;
+    refs.startBtn.textContent = v.occupied ? "▶  Running" : "▶  Start LM3";
+    refs.startBtn.title = v.startReason;
+    // Section 2.6's failure mode is a disabled Stop with no explanation. The server writes
+    // `can_stop_reason` for a person; quote it rather than inventing one.
+    refs.stopBtn.title = v.stopReason;
+    renderRunChip();
   }
 
-  function runTitle(r) {
-    if (!r) return "";
+  /** The run chip names the run being DESCRIBED, with its identity in the tooltip. */
+  function renderRunChip() {
+    if (!refs.runChip) return;
+    const ref = state.view.runRef;
+    refs.runChip.textContent = ref ? ref.run_name : "no run selected";
+    refs.runChip.className = `chip${ref && ref.live ? " ok" : ""}`;
+    refs.runChip.title = ref
+      ? runTitle()
+      : "No run to show yet — name a project below and press Start LM3";
+  }
+
+  /** "Following the active run" vs "Viewing a finished run", plus the way back. */
+  function renderViewBanner() {
+    const v = state.view;
+    /* The compatibility warning is rendered FIRST and unconditionally: it is section 2.9's
+       "display: this runtime was created by a newer LM3", and it must survive a layout in which
+       the docked run controls were never mounted (no .tabbar). */
+    if (refs.warnRow) {
+      refs.warnRow.hidden = !v.warning;
+      refs.warnRow.textContent = v.warning || "";
+    }
+    if (!refs.viewBadge) return;
+    if (v.mode === VIEW_MODE.INCOMPATIBLE) {
+      refs.viewBadge.className = "badge warn";
+      refs.viewBadge.textContent = "Incompatible";
+      refs.viewBadge.title = v.warning || "";
+    } else if (v.followPaused) {
+      refs.viewBadge.className = "badge info";
+      refs.viewBadge.textContent = "Viewing a finished run";
+      refs.viewBadge.title = "Follow-active is paused. Everything on screen describes "
+        + `${v.runRef ? v.runRef.run_name : "the run you selected"}.`;
+    } else {
+      refs.viewBadge.className = "badge";
+      refs.viewBadge.textContent = v.live ? "Following the active run" : "Last run";
+      refs.viewBadge.title = v.live
+        ? "Status, logs, results and postprocessing all follow the run that holds this deployment."
+        : "No run is active; this is the most recent one.";
+    }
+    refs.followBtn.hidden = !v.followPaused;
+  }
+
+  /**
+   * The Machine panel's tuning state (section 2.6, row 2).
+   *
+   * The panel itself is perfmon.js, which is outside this step's ownership, so the state is
+   * rendered into a node this module owns and re-attaches on every paint -- perfmon clears its
+   * host when it (re)initializes, and self-healing beats a mount-order dependency.
+   */
+  function renderMachineState() {
+    const m = state.view.machine;
+    const host = document.querySelector(".perfpanel") || document.getElementById("perfpanel");
+    if (!host) return;
+    if (!m.tuning) {
+      if (refs.machineState && refs.machineState.parentNode) refs.machineState.remove();
+      return;
+    }
+    if (!refs.machineState) {
+      refs.machineState = el("div.lm3-machinestate", {
+        role: "status",
+        style: {
+          display: "flex", alignItems: "center", gap: "10px",
+          padding: "6px 12px", borderBottom: "1px solid var(--line)",
+          background: "var(--panel)", color: "var(--mute)", fontSize: "12.3px",
+        },
+      });
+    }
+    if (refs.machineState.parentNode !== host) host.insertBefore(refs.machineState, host.firstChild);
+    const child = m.child;
+    clear(refs.machineState);
+    append(refs.machineState, [
+      el("span.badge.info", "Tuning"),
+      el("span", m.message),
+      child ? el("span.mono.dim", `calibration ${child.state}`) : null,
+      el("span.spacer"),
+      el("span.dim", "Start is held until it finishes."),
+    ]);
+  }
+
+  /**
+   * The identity of the run being described, for the badge/chip tooltip.
+   *
+   * `pid` is deliberately absent. It used to be printed here beside "Running (adopted)", which
+   * together were the user-visible claim that a pid means ownership -- the claim section 2.5
+   * deletes. What authorizes a stop is a retained handle, and the server says so in
+   * `can_stop_reason`; that is what is quoted instead.
+   */
+  function runTitle() {
+    const v = state.view;
+    const ref = v.runRef;
+    const rec = state.runtime.active;
     const bits = [];
-    if (r.run_name) bits.push(`run ${r.run_name}`);
-    if (r.pid) bits.push(`pid ${r.pid}`);
-    if (r.returncode !== null && r.returncode !== undefined) bits.push(`exit ${r.returncode}`);
-    if (r.error) bits.push(r.error);
-    if (r.run_dir) bits.push(r.run_dir);
+    if (ref) {
+      bits.push(`run ${ref.run_name}`);
+      if (ref.run_id) bits.push(`run id ${ref.run_id}`);
+      if (ref.activity && ref.activity !== "pipeline") bits.push(`activity ${activityLabel(ref.activity)}`);
+      if (ref.run_dir) bits.push(ref.run_dir);
+      if (ref.db_path) bits.push(ref.db_path);
+      if (ref.config_path) bits.push(`settings ${ref.config_path}`);
+    }
+    if (rec && rec.record && rec.record.returncode !== null && rec.record.returncode !== undefined) {
+      bits.push(`exit ${rec.record.returncode}`);
+    }
+    if (rec && rec.record && rec.record.error) bits.push(rec.record.error);
+    bits.push(v.canStop ? "Stop: available" : `Stop: ${v.stopReason}`);
     return bits.join("\n");
   }
 
   async function startRun() {
-    if (state.busy) return;
-    // "New run" empties the name field but does NOT write the empty value to
-    // LM3_settings.yaml, so flushPending() would see nothing to commit and the
-    // run would quietly start under the PREVIOUS project name. Refuse instead.
+    if (state.busy || !state.view.canStart) return;
+    // A run writes to <output>/<project name>/, so an empty name cannot start one. Nothing blanks
+    // this field any more, so this is a plain validation, not a guard against our own reset.
     const nameField = refs.fields && refs.fields.runName;
     if (nameField && !String(nameField.input.value || "").trim()) {
       setInputError(nameField, true);
@@ -1674,7 +2166,7 @@ export function initTopBar(root, opts = {}) {
         + "needs a name before it can start.", { kind: "warn" });
       return;
     }
-    state.newRun = false;   // pressing Start re-attaches the top bar to the live feed
+    state.selected = null;  // starting a run means following it (section 2.6, follow-active)
     state.busy = "starting";
     renderRunControls();
     try {
@@ -1683,13 +2175,20 @@ export function initTopBar(root, opts = {}) {
          name, temp dir and module toggles come from LM3_settings.yaml, which
          flushPending() has just made sure is current. */
       const rec = await api.post("/v1/run/start", {}, { timeout: 60000 });
-      applyRun(rec);   /* re-pins the status stream to rec.db_path */
-      toast("LM3 started", `Run ${rec.run_name || ""} — pid ${rec.pid || "?"}`, { kind: "ok" });
+      toast("LM3 started", `Run ${rec.run_name || ""}`, { kind: "ok" });
     } catch (err) {
       if (err.status === 409) {
-        toast("A run is already active", "Stop it before starting another.", { kind: "warn" });
+        /* Section 2.4: the 409 carries the WINNER. Naming it is the difference between "something
+           went wrong" and "your CLI run in the other terminal already owns this deployment". */
+        const d = err.body && err.body.detail;
+        const winner = d && typeof d === "object" ? d.active : null;
+        toast("This deployment is busy",
+          winner && winner.run_id
+            ? `${activityLabel(winner.activity)} "${(winner.project && winner.project.run_name) || winner.run_id}" already holds it.`
+            : "Another LM3 activity already holds this deployment.",
+          { kind: "warn", ms: 9000 });
       } else if (err.isNotFound) {
-        state.runApi = false;
+        state.runtimeApi = false;
         toast("Run control unavailable", "This LM3 server does not expose POST /v1/run/start.", { kind: "bad" });
       } else {
         toast("LM3 did not start", errText(err), { kind: "bad", ms: 12000 });
@@ -1697,12 +2196,12 @@ export function initTopBar(root, opts = {}) {
     } finally {
       state.busy = null;
       renderRunControls();
-      pollRun();
+      await pollRuntime();
     }
   }
 
   async function stopRun() {
-    if (state.busy) return;
+    if (state.busy || !state.view.canStop) return;
     const yes = await confirmModal({
       title: "Stop LM3?",
       message: "Stop the active run now?",
@@ -1715,46 +2214,115 @@ export function initTopBar(root, opts = {}) {
     state.busy = "stopping";
     renderRunControls();
     try {
-      const rec = await api.post("/v1/run/stop", { grace_s: 10 }, { timeout: 40000 });
-      applyRun(rec);
+      await api.post("/v1/run/stop", { grace_s: 10 }, { timeout: 40000 });
       toast("LM3 stopped", "The run is resumable — press Start to continue it.", { kind: "warn" });
     } catch (err) {
-      if (err.status === 409) toast("Nothing to stop", "No LM3 run is active.", { kind: "warn" });
-      else toast("Could not stop LM3", errText(err), { kind: "bad" });
+      if (err.status === 409) {
+        /* Two different 409s: nothing to stop, and "this window did not launch that run" -- the
+           observer-only refusal section 2.5 requires. They are not the same news. */
+        const d = err.body && err.body.detail;
+        const reason = d && typeof d === "object" ? d.reason : null;
+        if (reason === "observer-only") {
+          toast("This window cannot stop that run",
+            (d && d.message) || "It was not launched by this server. Stop it where it was started.",
+            { kind: "warn", ms: 9000 });
+        } else {
+          toast("Nothing to stop", "No LM3 run is active.", { kind: "warn" });
+        }
+      } else toast("Could not stop LM3", errText(err), { kind: "bad" });
     } finally {
       state.busy = null;
       renderRunControls();
-      pollRun();
+      await pollRuntime();
     }
   }
 
-  function applyRun(rec) {
-    const before = state.run;
-    state.run = rec;
-    const moved = !before
-      || before.state !== rec.state
-      || before.pid !== rec.pid
-      || before.run_name !== rec.run_name
-      || before.returncode !== rec.returncode;
+  /**
+   * Adopt a new runtime view and let everything else fall out of it.
+   *
+   * This is the one place the GUI learns what is happening. It re-derives section 2.6's decision,
+   * re-pins the status/log streams when the run being described moves, and publishes `lm3:runtime`
+   * so the tabs follow the same run rather than each guessing from their own unpinned stream.
+   */
+  function applyRuntime(runtime) {
+    const before = state.view;
+    state.runtime = runtime;
+
+    /* A selection is only honored while it still refers to a run that exists AND is not the run
+       that now holds the lease -- otherwise "return to the active run" would be a no-op button
+       next to a paused view of the very run it is following. */
+    const activeRef = runtime.active && runtime.active.activity === "pipeline"
+      ? runtime.active.project : null;
+    if (state.selected && activeRef && sameRun(state.selected, activeRef)) state.selected = null;
+
+    state.view = deriveView(runtime, {
+      selected: state.selected,
+      busy: state.busy,
+      controlApi: state.runtimeApi,
+    });
+
+    // The FIRST answer always publishes, however empty: the tabs have to learn "nothing is
+    // running" as definitely as they learn "this run is". Everything after that publishes only on
+    // a real change, so a 4-second poll is not a 4-second repaint of every tab.
+    const first = !state.runtimeSeen;
+    state.runtimeSeen = true;
+    const moved = first
+      || !sameRun(before.runRef, state.view.runRef)
+      || before.mode !== state.view.mode
+      || before.live !== state.view.live
+      || before.occupied !== state.view.occupied
+      || before.canStop !== state.view.canStop;
+
+    if (!sameRun(before.runRef, state.view.runRef)) connectStatus(state.view.runRef);
     if (moved) {
-      dispatch("lm3:run", rec);
-      if (before && before.active && !rec.active) {
-        if (rec.state === "error") {
-          toast("LM3 failed", rec.error || `exit code ${rec.returncode}`, { kind: "bad", ms: 12000 });
-        } else if (!rec.stopped_by_user) {
-          toast("LM3 complete", `Run ${rec.run_name || ""} finished`, { kind: "ok" });
-        }
-      }
-      /* Follow the launcher's own resolution of the ledger path — it applied
-         Config.load with the same overrides machine3 will, including the
-         `tmp_dir: auto` rule, so it beats re-deriving <output>/<run_name>.
-         Only while the run is ACTIVE: once it ends we stay pinned to the run
-         the user just watched instead of snapping to whatever discovery finds. */
-      if (rec.active && rec.db_path && rec.db_path !== state.statusDb) connectStatus(rec.db_path);
+      dispatch("lm3:runtime", { runtime: state.runtime, view: state.view });
+      announceCompletion(before, state.view);
+      /* Invariant 8's label is rendered from the settings load AND from here, because whether a
+         run is in progress is a runtime fact, not a settings one: without this the strip keeps
+         saying "edits apply to the next run you start" in the neutral wording while a CLI run it
+         cannot affect is under way. `occupied` is in `moved` above for the same reason -- a
+         `hardware_setup` root takes the deployment without moving `runRef` at all. */
+      renderNextRunLabel();
     }
-    renderRunControls();
+    renderStatus();
   }
 
+  /** Two run references describe the same run when their identity matches; path is the fallback. */
+  function sameRun(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    if (a.run_id && b.run_id) return a.run_id === b.run_id;
+    return a.run_name === b.run_name && String(a.db_path || "") === String(b.db_path || "");
+  }
+
+  /** The live -> finished edge, said once. */
+  function announceCompletion(before, now) {
+    if (!before.live || now.live || !before.runRef) return;
+    const last = state.runtime.last;
+    if (!last || !sameRun(last.project, before.runRef)) return;
+    if (last.state === "error") {
+      toast("LM3 failed", last.error || `exit code ${last.returncode}`, { kind: "bad", ms: 12000 });
+    } else if (last.state === "done") {
+      toast("LM3 complete", `Run ${before.runRef.run_name} finished`, { kind: "ok" });
+    }
+  }
+
+  /**
+   * Pause follow-active on an explicit historical selection (section 2.6, invariant 7).
+   * `ref` is the shared run-reference shape; null resumes following.
+   */
+  function selectRun(ref) {
+    state.selected = ref || null;
+    applyRuntime(state.runtime);
+  }
+
+  /** The visible way back out of a historical selection. */
+  function followActive() {
+    if (!state.selected) return;
+    state.selected = null;
+    applyRuntime(state.runtime);
+    toast("Following the active run", "", { kind: "ok", ms: 2600 });
+  }
 
   /* ======================================================================
      DATA LOADING
@@ -1805,35 +2373,47 @@ export function initTopBar(root, opts = {}) {
   }
 
   /**
-   * Subscribe to the status stream. `db` pins it to one project ledger — worth
-   * doing the moment the launcher tells us where the ledger IS, because
-   * otherwise progress_api has to discover the run off disk and a brand-new
-   * run is invisible until its first write.
+   * Subscribe to the status stream for the run `view` names.
+   *
+   * The pin is not an optimization: unpinned, progress_api has to resolve the run itself, and the
+   * top bar, the Status tab and the Console can each end up describing a different one. Pinning
+   * every consumer to the SAME reference is what makes invariant 7 ("status, logs, results and
+   * postprocessing targets follow the active record") true across tabs rather than per module.
    */
-  function connectStatus(db) {
+  function connectStatus(ref) {
     if (state.destroyed) return;
+    const pin = ref && ref.db_path ? String(ref.db_path) : "";
+    // Captured BEFORE the pin moves, so the clear below is CONDITIONAL. An unconditional clear
+    // would also fire on the boot fall-through (`closeStatus` still null, pin unchanged) and on a
+    // re-pin to the same ledger, neither of which is a new run.
+    const moved = pin !== state.statusPin;
+    if (state.closeStatus && pin === state.statusPin) return;
     if (state.closeStatus) { state.closeStatus(); state.closeStatus = null; }
-    state.statusDb = db || null;
+    state.statusPin = pin;
+    if (moved) {
+      /* A different ledger means everything on screen belongs to the previous run -- the Status
+         tab performs the same clear on the same edge (`resetForNewRun`, tabs/status.js). Without
+         it, `renderRunChip` names the NEW run while, in that very repaint, the counters, ETA,
+         progress bar and module timeline still come from the OLD run's snapshot, and `tickClocks`
+         keeps repainting that mixture once a second until the first frame for the new run lands
+         (`stream_status` reads the whole ledger before it yields one, so the window is real).
+         Section 9 requires the run name and the active stage and progress to AGREE. Cleared, the
+         bar falls back to its neutral "waiting for its first progress frame" rendering. */
+      state.snapshot = null;
+      state.snapshotAt = 0;
+    }
     setConn("wait");
     state.closeStatus = api.sse("/v1/status/stream", {
-      params: db ? { db } : undefined,
+      params: pin ? { db: pin } : undefined,
       onOpen: () => setConn("up"),
       onError: () => setConn("down"),
       onMessage: (frame) => {
         if (!frame || frame.type !== "status" || !frame.snapshot) return;
         setConn("up");
-        // After "New run" -- and on launch -- the feed still describes the PREVIOUS run (the
-        // server discovers it off disk). Ignore it until something is actually running.
-        //
-        // "running" alone is not enough: a run that was killed mid-flight leaves its ledger
-        // saying `running` forever, so that frame re-attaches instantly and undoes the reset.
-        // `stale` is the server's own "nothing has written to this ledger lately" flag -- a live
-        // run keeps clearing it, an abandoned one never does. Pressing Start does not rely on
-        // any of this; startRun() clears state.newRun itself.
-        if (state.newRun) {
-          if (frame.snapshot.state !== "running" || frame.snapshot.stale) return;
-          state.newRun = false;
-        }
+        /* Every frame is taken. The sticky suppression that used to sit here dropped `done`,
+           `error`, `idle` and stale-running frames on the floor so a client-side reset could not
+           be contradicted by the server -- which is precisely why a finished CLI run had no
+           representation in this renderer at all. */
         state.snapshot = frame.snapshot;
         state.snapshotAt = performance.now();
         onRunStateEdge(frame.snapshot);
@@ -1849,7 +2429,9 @@ export function initTopBar(root, opts = {}) {
    * user who deliberately expands mid-run is left alone until the next run.
    */
   function onRunStateEdge(snap) {
-    const running = !!snap && snap.state === "running";
+    // The RECORD decides whether a run is happening (section 2.5); the snapshot is only here for
+    // the case where the runtime route is unavailable and the ledger is all we have.
+    const running = state.view.occupied || (!!snap && snap.state === "running" && !snap.stale);
     if (running && !state.wasRunning) {
       state.userPinnedOpen = false;
       applyCollapsed(true);
@@ -1866,29 +2448,43 @@ export function initTopBar(root, opts = {}) {
     refs.conn.textContent = kind === "up" ? "live" : kind === "wait" ? "connecting" : "offline";
   }
 
-  /** Poll the run record; fast while something is in flight, slow when idle. */
-  async function pollRun() {
+  /**
+   * Poll `GET /v1/runtime`; fast while something is in flight, slower when nothing is.
+   *
+   * On 404 it falls back to `GET /v1/run/active` and marks the view unsupported: an older server,
+   * or one with `LM3_RUNTIME_V2` off, can only describe runs it launched itself, and saying so is
+   * better than silently reporting "idle" during somebody's CLI run.
+   */
+  async function pollRuntime() {
     if (state.destroyed) return;
     if (state.runTimer) { clearTimeout(state.runTimer); state.runTimer = null; }
-    if (!state.runApi) return;
-    try {
-      const rec = await api.get("/v1/run/active", { timeout: 10000 });
-      applyRun(rec);
-    } catch (err) {
-      if (err.isNotFound) {
-        /* metrics_api is not mounted — say so on the buttons rather than
-           retrying a route that will never exist */
-        state.runApi = false;
-        renderRunControls();
-        return;
+    if (state.runtimeApi) {
+      try {
+        if (state.runtimeV2) {
+          applyRuntime(normalizeRuntime(await api.getRuntime()));
+        } else {
+          applyRuntime(legacyRuntime(await api.getActiveRun()));
+        }
+      } catch (err) {
+        if (err.isNotFound && state.runtimeV2) {
+          state.runtimeV2 = false;
+          await pollRuntime();
+          return;
+        }
+        if (err.isNotFound) {
+          /* Neither route exists: this server has no run control at all. Say it on the buttons
+             instead of retrying a route that will never be there. */
+          state.runtimeApi = false;
+          applyRuntime(emptyRuntime());
+        }
+        /* offline: the connection dot already says so — keep polling */
       }
-      /* offline: the connection dot already says so — keep polling */
     }
     if (state.destroyed) return;
-    const active = !!(state.run && state.run.active) || !!state.busy;
-    state.runTimer = setTimeout(() => pollRun(), active ? RUN_POLL_ACTIVE_MS : RUN_POLL_IDLE_MS);
+    const fast = state.view.occupied || !!state.busy;
+    state.runTimer = setTimeout(() => { void pollRuntime(); },
+                                fast ? RUN_POLL_ACTIVE_MS : RUN_POLL_IDLE_MS);
   }
-
 
   /* ======================================================================
      NAVIGATION + TEARDOWN
@@ -1904,12 +2500,20 @@ export function initTopBar(root, opts = {}) {
     document.dispatchEvent(new CustomEvent(name, { detail, bubbles: true }));
   }
 
+  function onSelectRunEvent(ev) {
+    const d = (ev && ev.detail) || {};
+    if (!d.ref) followActive();
+    else selectRun(d.ref);
+  }
+
   function destroy() {
     state.destroyed = true;
+    document.removeEventListener("lm3:select-run", onSelectRunEvent);
     if (state.closeStatus) state.closeStatus();
     if (state.runTimer) clearTimeout(state.runTimer);
     if (state.tickTimer) clearInterval(state.tickTimer);
     window.removeEventListener("resize", onResize);
+    if (refs.machineState && refs.machineState.parentNode) refs.machineState.remove();
     tip.destroy();
     clear(bar);
     clear(strip);
@@ -1919,21 +2523,21 @@ export function initTopBar(root, opts = {}) {
   return {
     el: { topbar: bar, primary: strip },
     get snapshot() { return state.snapshot; },
-    get run() { return state.run; },
+    get runtime() { return state.runtime; },
+    get view() { return state.view; },
     get settings() { return state.settings; },
     get modules() { return moduleList(); },
-    /**
-     * Re-read settings, hardware and the run record, and re-point the status
-     * stream. Also the escape hatch for a run started OUTSIDE the app (from
-     * the machine3 CLI): dropping the `?db=` pin hands the choice back to
-     * progress_api's on-disk discovery, which finds the newest run.
-     */
+    /** Re-read settings, hardware and the runtime record, and re-pin the streams from it. */
     async refresh() {
-      connectStatus(state.run && state.run.active ? state.run.db_path : null);
       await Promise.all([loadSettings(), loadHardware()]);
-      await pollRun();
+      await pollRuntime();
       renderStatus();
     },
+    /** Pause follow-active on an explicit historical selection (the Results tab's run picker). */
+    selectRun,
+    /** The way back. */
+    followActive,
+    prepareNextRun,
     start: startRun,
     stop: stopRun,
     focusModule,

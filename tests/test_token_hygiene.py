@@ -114,3 +114,174 @@ def test_no_source_line_logs_the_token_variable_directly() -> None:
                  if re.search(r'log\.\w+\([^)]*",\s*[^)]*\btoken\b', line)
                  and "redact" not in line]
     assert not offenders, f"a log call takes the token as an argument: {offenders}"
+
+
+# --------------------------------------------------------------------------- #
+# The access log -- the one gate-13 channel no test used to watch
+# --------------------------------------------------------------------------- #
+# The token has to ride the query string for the two clients that cannot set a header (the
+# EventSource streams in api.js, and Electron's first `win.loadURL(.../?token=...)`), and uvicorn's
+# AccessFormatter rebuilds the request line from the RAW query string. Every SSE connect and every
+# window load therefore used to write the bearer token to the server's stdout -- which under
+# `lm3 serve` in an allocation IS the Slurm job output file section 2.11 names. TestClient never
+# goes through uvicorn's HTTP protocol, so nothing above observes this; these drive the real
+# formatter with the real record shape instead. No socket is opened.
+UVICORN_ACCESS_FMT = '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+
+
+def _emit_access_record(path: str) -> str:
+    """Log one uvicorn access record for ``path`` and return what the access formatter produced.
+
+    The format string and the argument tuple are copied from uvicorn's own protocol implementations
+    (``h11_impl``/``httptools_impl``): a rewrite that patched ``record.msg`` instead of
+    ``record.args`` would pass a laxer test and still leak here.
+    """
+    import io
+    import logging
+
+    from uvicorn.logging import AccessFormatter
+
+    logger = logging.getLogger("uvicorn.access")
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(AccessFormatter(UVICORN_ACCESS_FMT, use_colors=False))
+    logger.addHandler(handler)
+    previous_level = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        logger.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:52814", "GET", path, "1.1", 200)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+    return stream.getvalue()
+
+
+@pytest.fixture
+def access_logger_clean() -> Iterator[None]:
+    """Leave ``uvicorn.access`` exactly as it was found -- filters are process-global state."""
+    import logging
+
+    logger = logging.getLogger("uvicorn.access")
+    before = list(logger.filters)
+    try:
+        yield
+    finally:
+        logger.filters = before
+
+
+def test_the_access_log_never_shows_a_token_on_the_query_string(
+    sandbox: Sandbox, access_logger_clean: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from leafmachine3.server.app import JobManager, create_app
+
+    pytest.importorskip("uvicorn")
+    sentinel = "SENTINEL-bearer-value-do-not-log"
+    monkeypatch.setenv(TOKEN_ENV, sentinel)
+    create_app(JobManager(sandbox.jobs_root / "managed"))     # installs the filter
+
+    for path in (f"/v1/status/stream?token={sentinel}",       # api.js EventSource
+                 f"/?token={sentinel}",                       # app/main.js win.loadURL
+                 f"/v1/logs/stream?run_id=abc&token={sentinel}"):
+        line = _emit_access_record(path)
+        assert line.strip(), "captured nothing -- the assertion below would pass vacuously"
+        assert sentinel not in line, f"the bearer token reached uvicorn's access log: {line!r}"
+        assert "***redacted***" in line, f"nothing was redacted out of {line!r}"
+
+    # ...and the log is still useful: the route, method and status must survive.
+    line = _emit_access_record(f"/v1/status/stream?token={sentinel}")
+    assert "/v1/status/stream" in line and "GET" in line and "200" in line, line
+
+
+def test_the_access_log_redacts_a_token_the_client_url_encoded(
+    sandbox: Sandbox, access_logger_clean: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A literal string replace is not enough: a user-set token may reach the log percent-encoded."""
+    from leafmachine3.server.app import JobManager, create_app
+
+    pytest.importorskip("uvicorn")
+    monkeypatch.setenv(TOKEN_ENV, "pa ss/word+value")
+    create_app(JobManager(sandbox.jobs_root / "managed"))
+
+    line = _emit_access_record("/v1/status/stream?token=pa%20ss%2Fword%2Bvalue")
+    assert line.strip()
+    assert "ss%2Fword" not in line, f"an encoded token survived the access-log filter: {line!r}"
+    assert "***redacted***" in line
+
+
+def test_ordinary_access_records_are_left_alone(
+    sandbox: Sandbox, access_logger_clean: None
+) -> None:
+    """The filter is a scrubber, not a rewriter: a token-free request line is untouched."""
+    from leafmachine3.server.app import JobManager, create_app
+
+    pytest.importorskip("uvicorn")
+    create_app(JobManager(sandbox.jobs_root / "managed"))
+    line = _emit_access_record("/v1/runs?limit=25")
+    assert "/v1/runs?limit=25" in line
+    assert "***redacted***" not in line
+
+
+def test_the_access_log_filter_degrades_to_a_no_op_on_an_unknown_record_shape(
+    sandbox: Sandbox, access_logger_clean: None
+) -> None:
+    """A future uvicorn arg-shape change must not raise inside logging on every request."""
+    import logging
+
+    from leafmachine3.server.app import JobManager, create_app
+
+    create_app(JobManager(sandbox.jobs_root / "managed"))
+    logger = logging.getLogger("uvicorn.access")
+    shapes = ((), ("only-one",), ("a", "b", None, "1.1", 200), ["list", "style"], "a-bare-string",
+              {"mapping": "style"})
+    for args in shapes:
+        record = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1, "%s", None, None)
+        record.args = args                 # set after construction: LogRecord unwraps mappings
+        for flt in logger.filters:
+            assert flt.filter(record) is True
+        assert record.args == args, "an unrecognized arg shape must be left untouched"
+
+
+def test_installing_the_access_log_filter_twice_installs_one_filter(
+    sandbox: Sandbox, access_logger_clean: None
+) -> None:
+    import logging
+
+    from leafmachine3.server import app
+
+    logging.getLogger("uvicorn.access").filters = []
+    assert app.install_access_log_redaction() is True
+    assert app.install_access_log_redaction() is False
+    installed = [f for f in logging.getLogger("uvicorn.access").filters
+                 if isinstance(f, app._AccessLogTokenRedactor)]
+    assert len(installed) == 1
+
+
+def test_the_real_uvicorn_request_line_builder_is_what_gets_scrubbed(
+    sandbox: Sandbox, access_logger_clean: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Close the last gap to production: build the path argument with uvicorn's OWN code.
+
+    ``get_path_with_query_string()`` percent-quotes the path and then appends the query string
+    verbatim -- which is exactly why the secret reaches the record unencoded and why the filter has
+    to exist. The tests above hand-build that string, so they would keep passing if uvicorn stopped
+    doing it; this one asserts the leak is still real before asserting it is closed.
+    """
+    pytest.importorskip("uvicorn")
+    from uvicorn.protocols.utils import get_path_with_query_string
+
+    from leafmachine3.server.app import JobManager, create_app
+
+    sentinel = "SENTINEL-from-the-asgi-scope"
+    monkeypatch.setenv(TOKEN_ENV, sentinel)
+    create_app(JobManager(sandbox.jobs_root / "managed"))
+
+    # The scope an EventSource connect produces (api.js puts the token on every stream URL, and
+    # re-puts it on every automatic reconnect).
+    request_path = get_path_with_query_string(
+        {"path": "/v1/status/stream", "query_string": f"token={sentinel}&run_id=abc".encode("ascii")})
+    assert sentinel in request_path, "uvicorn no longer inlines the raw query string -- retune this"
+
+    line = _emit_access_record(request_path)
+    assert line.strip(), "captured nothing -- the assertions below would pass vacuously"
+    assert sentinel not in line, f"the bearer token reached uvicorn's access log: {line!r}"
+    assert "?token=***redacted***&run_id=abc" in line, line

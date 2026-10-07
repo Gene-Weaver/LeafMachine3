@@ -190,9 +190,8 @@ What that change does and does not alter for this document:
 - **"The real LM3 window" is still unverified.** The packaging smoke test used a stand-in server on
   purpose, so the Chromium 130 → 150 renderer jump remains untested against `leafmachine3/server/ui/`.
 
-One packaging-relevant fact about `main.js` was measured while doing this, and is recorded here
-because it is a runtime property of the shell rather than of the config: in a packaged app,
-`ROOT = path.resolve(__dirname, "..")` resolves to `<install>/resources`, so the default
-`LM3_PYTHON` (`ROOT/.venv_LM3/bin/python`) does not exist. A packaged app can **attach** to a running
-LM3 server but cannot **spawn** one without `LM3_PYTHON` being set. Details and the measurement are
-in `ELECTRON_PACKAGING.md` §2.
+One packaging-relevant fact about the shell was measured during this upgrade: in a packaged app,
+`ROOT = path.resolve(__dirname, "..")` resolves to `<install>/resources`, so the former
+`ROOT/.venv_LM3/bin/python` guess did not exist. That historical finding is now superseded by the
+bounded installed-backend resolver in `main.js`; see `ELECTRON_PACKAGING.md` §2 for the current
+resolution order and the original measurement.
