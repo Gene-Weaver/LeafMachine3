@@ -230,6 +230,7 @@ modules:
     num_dirs: 360
     bound_radius: 1
     palette: magma
+    apply_log_to_visual_for_bold_color: true    # log-scale the visuals (pictures only)
     radial_viz: true
     cartesian_viz: true
     radial_overlay_viz: true

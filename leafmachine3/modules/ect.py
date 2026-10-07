@@ -81,10 +81,10 @@ class ECT(PipelineStage):
             "cartesian_viz": bool(g("cartesian_viz", True)),
             "radial_overlay_viz": bool(g("radial_overlay_viz", True)),
             # Matplotlib colormap name, CASE-SENSITIVE ("Greens" is valid, "greens" is not).
-            "palette": str(g("palette", "Greens")),
+            "palette": str(g("palette", "magma")),
             # DISPLAY ONLY -- log-scales the matrix on the way to the renderers so the palette
             # spreads over the dense mid-range. Never reaches the .h5 or the leaf_ect row.
-            "apply_log_to_visual_for_bold_color": bool(g("apply_log_to_visual_for_bold_color", False)),
+            "apply_log_to_visual_for_bold_color": bool(g("apply_log_to_visual_for_bold_color", True)),
         }
 
     def collect_items(self, project) -> list[WorkItem]:

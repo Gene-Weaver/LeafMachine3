@@ -241,8 +241,8 @@ modules:
     include_holes: false
     num_dirs: 360                       # ECT angular directions (and threshold count)
     bound_radius: 1.0                   # shapes scaled to this unit-circle radius
-    palette: "viridis"                  # matplotlib colormap for the radial + Cartesian ECT visuals
-    apply_log_to_visual_for_bold_color: false  # log-scale before coloring (pictures only; the .h5 is unchanged)
+    palette: "magma"                    # matplotlib colormap for the radial + Cartesian ECT visuals
+    apply_log_to_visual_for_bold_color: true  # log-scale before coloring (pictures only; the .h5 is unchanged)
     radial_viz: true                    # Leaf_Data/Oriented_Leaf_Radial_ECT/*.png (polar)
     cartesian_viz: true                 # Leaf_Data/Oriented_Leaf_ECT/*.png (matrix)
     radial_overlay_viz: true            # Leaf_Data/Oriented_Leaf_Radial_ECT_Overlay/*.png (polar + outline)
