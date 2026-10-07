@@ -2,7 +2,7 @@
 schema_version: 1
 lm3_version: 3.0.0
 hub_namespace: phyloforfun
-generated_at: '2026-10-07T15:03:42+00:00'
+generated_at: '2026-10-07T15:48:01+00:00'
 default_formats:
 - onnx
 actions:
@@ -10,14 +10,14 @@ actions:
     required: true
     units:
     - repo_id: phyloforfun/lm3_archival_detector__yolo26x_det_1280
-      revision: ac1542b98612e45efc576b9d0cc31431f39350cc
+      revision: 519b73c6c5bf60ec83bcc5ac4d44ed2d478408bb
       model_key: yolo26x_det_1280
       files:
       - src: onnx/model.onnx
         dest: archival_detector/model.onnx
         format: onnx
-        sha256: 07c08f4ca3b99dc885de165d405e39e2b58710684318aad6a26259576e28e8e1
-        bytes: 223782290
+        sha256: 69bd256bf876444b57955d8b4a3ee34ce5f18a37d5282f703d1294bf39c5a631
+        bytes: 222941072
         optional: false
       - src: torchscript/model.torchscript
         dest: archival_detector/model.torchscript
@@ -41,14 +41,14 @@ actions:
     required: true
     units:
     - repo_id: phyloforfun/lm3_plant_detector__yolo26x_det_1280
-      revision: 9316d71164f951aa65cc2256587c3280d9071193
+      revision: 2f36f0e890e1eac5e57fe374acf7c9a3a8b3257d
       model_key: yolo26x_det_1280
       files:
       - src: onnx/model.onnx
         dest: plant_detector/model.onnx
         format: onnx
-        sha256: 4a6b42b82e8e68d5760a18ff3205dfa3ec14470b3c2ace4af208448529edc4d8
-        bytes: 223930905
+        sha256: 3537bbe8a30c0149fbf8aab5e83d9e52f077840c891c9878ea4a1d31adfa94a6
+        bytes: 222957239
         optional: false
       - src: torchscript/model.torchscript
         dest: plant_detector/model.torchscript
@@ -72,14 +72,14 @@ actions:
     required: true
     units:
     - repo_id: phyloforfun/lm3_landmark_detector__yolo26x_pose_640
-      revision: a04db73a696220940d49511362addfe6e7e6768b
+      revision: 11d8ef0b5d75214e3a0c6370e27f18f01116ee12
       model_key: yolo26x_pose_640
       files:
       - src: onnx/model.onnx
         dest: landmark_detector/model.onnx
         format: onnx
-        sha256: ccb1460690e2060c1db819882f74db2366ef1a49f8b325d25aee378573364104
-        bytes: 237006542
+        sha256: 1d1b81d4f2912dc58edb6c95a06555d1bc05ac63e603ec62b5c28064c60678e6
+        bytes: 236379651
         optional: false
       - src: torchscript/model.torchscript
         dest: landmark_detector/model.torchscript
@@ -103,14 +103,14 @@ actions:
     required: true
     units:
     - repo_id: phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024
-      revision: e89e1b9a56a7b2b9e98b37f50644fe936acf73ae
+      revision: 64331bb7685863c7b3e8453cd2dfcc8a98724907
       model_key: yolo26x_seg_1024
       files:
       - src: onnx/model.onnx
         dest: leaf_segmenter/model.onnx
         format: onnx
-        sha256: 4458b03096f69add0578640ba96efca8692c01507d5b8e50cd7f30781f19907e
-        bytes: 251494834
+        sha256: 6ae1521aeacd900aa84f3a1a2ec36112ac2a6675f2f1167e7cb24e370d0a26de
+        bytes: 251223453
         optional: false
       - src: torchscript/model.torchscript
         dest: leaf_segmenter/model.torchscript
@@ -240,14 +240,14 @@ actions:
         bytes: 1112
         optional: false
     - repo_id: phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp
-      revision: 2b1820cb3d26c0ffc3a96d54b89eec2503cf293d
+      revision: 32eaa978ed8dafbefc7151aa08ba4ecf7f70cf40
       model_key: dinov2_frozen_mlp
       files:
       - src: onnx/model.onnx
         dest: ruler_classifier/dinov2_frozen_mlp/exported/model.onnx
         format: onnx
-        sha256: 1b3ef0758bf42122d92d6216002731f3864376cb3e6349edbf69870cbdc08fff
-        bytes: 348237768
+        sha256: 9f95b7a1f1658764d052e513c5c72f29ac3e0dc3b53d3b03f54df595480c1ffe
+        bytes: 348207513
         optional: false
       - src: pytorch/ckpt_best.pt
         dest: ruler_classifier/dinov2_frozen_mlp/weights/ckpt_best.pt
@@ -290,14 +290,14 @@ alternates:
     yolo26x_seg_1280:
       units:
       - repo_id: phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280
-        revision: c8210020449c676b5950e74d53a3c1a8bc3db998
+        revision: a990ed8ae5d164a1665cc98e2108380879e1a9dc
         model_key: yolo26x_seg_1280
         files:
         - src: onnx/model.onnx
           dest: specimen_segmenter/yolo26x_seg_1280/model.onnx
           format: onnx
-          sha256: 7caff0d61901ba0c9b651798e55f4e671af4b9faedf89d5042c4e7279dd1623c
-          bytes: 251692347
+          sha256: d5504a5d6fcb77f7389c37b6486e0c809ced82da1bb4225c30d0538b71adbd98
+          bytes: 251238128
           optional: false
         - src: torchscript/model.torchscript
           dest: specimen_segmenter/yolo26x_seg_1280/model.torchscript
@@ -323,14 +323,14 @@ alternates:
         imgsz: 640
       units:
       - repo_id: phyloforfun/lm3_archival_detector__yolo26n_det_640
-        revision: fe267b3a0ec40d62db3e9accd5e5ce3570c3f1dd
+        revision: c2f242e27624579b97efcde438c9e44e06934413
         model_key: yolo26n_det_640
         files:
         - src: onnx/model.onnx
           dest: archival_detector/yolo26n_det_640/model.onnx
           format: onnx
-          sha256: 7cc13ae1b144b859e6e8ca1df8b9cfe68c68444643e247a1ec39294162d98861
-          bytes: 10286265
+          sha256: 385ec30ba28378e20123b3ff5428532674977248088904b129b8b67ea4ce415b
+          bytes: 9748211
           optional: false
         - src: torchscript/model.torchscript
           dest: archival_detector/yolo26n_det_640/model.torchscript
@@ -356,14 +356,14 @@ alternates:
         imgsz: 640
       units:
       - repo_id: phyloforfun/lm3_plant_detector__yolo26n_det_640
-        revision: d7e611e89242bd524e38c371be88f77d2ef8570a
+        revision: 04ea40e3b88101d33f8da4331abab85d1e7d1fb4
         model_key: yolo26n_det_640
         files:
         - src: onnx/model.onnx
           dest: plant_detector/yolo26n_det_640/model.onnx
           format: onnx
-          sha256: 021d465933663431bd28039fb3ec661d1474c4e47d468938335a3573085d3a1d
-          bytes: 10591402
+          sha256: 5302431f21319d7848610f064073362c8605f9a63907fbd77aab55c653f01dfd
+          bytes: 9778200
           optional: false
         - src: torchscript/model.torchscript
           dest: plant_detector/yolo26n_det_640/model.torchscript
