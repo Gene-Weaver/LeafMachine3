@@ -163,7 +163,7 @@ modules:
 
   leaf_segmenter:
     enabled: true
-    model: { path: "models/leaf_segmenter/model.pt", format: "pytorch" }   # exported .onnx when available
+    model: { path: "models/leaf_segmenter/model.onnx", format: "onnx" }
     include_partial: false
     imgsz: 1024
     conf: 0.30
@@ -423,3 +423,25 @@ report:
       lamina_petiole_rgb: true          # LaminaPetiole_RGB/    <stem>__RGB-laminaPetiole__x_y_x_y.jpg
       lamina_holes_rgb: true            # Lamina_Holes_RGB/     <stem>__RGB-laminaHoles__x_y_x_y.jpg  (holes=(10,10,10))
   formats: { image_ext: "jpg", jpg_quality: 100, mask_ext: "png" }
+  # ---- data export (CSV):  ---------------------
+  # The Reporter's LAST step: the project database written out as CSV into reports/<folder>/, so a
+  # run is analyzable without opening SQLite. leaf_measurements.csv is the master file (one row per
+  # leaf). Every value is a column the pipeline stored -- an empty cell means "not measured", never
+  # zero. Pixel columns are in the WORKING frame; divide by work_scale for original-frame pixels.
+  data:
+    enabled: true
+    folder: "Data"                      # subfolder of reports/
+    format: "csv"                       # csv | tsv
+    na_rep: ""                          # what a missing value is written as (default: empty cell)
+    float_precision: 6                  # decimal places, to keep float noise out of the files
+    files:                              # toggle individual files
+      leaf_measurements: true           # ONE ROW PER LEAF -- the master file
+      specimen_summary: true            # one row per input image, plus per-sheet roll-ups
+      phenology: true                   # one row per sheet in LeafMachine2's phenology.csv layout
+      detections: true                  # one row per detection box, both detectors
+      landmarks: true                   # one row per predicted keypoint (31 per leaf)
+      ruler_conversion_factor: true     # one row per sheet: the CF verdict and its audit trail
+      ruler_crops: true                 # one row per candidate ruler crop
+      run_stages: true                  # one row per pipeline stage (the run ledger)
+      stage_errors: true                # one row per per-image stage failure
+      data_dictionary: true             # every column above: file, units, meaning

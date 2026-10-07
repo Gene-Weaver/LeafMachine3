@@ -168,6 +168,7 @@ reports/
   Data/                          (the NUMBERS behind every image above -- see below)
     leaf_measurements.csv        ONE ROW PER LEAF: every measurement + its identifying metadata
     specimen_summary.csv         one row per input image, with per-sheet roll-ups
+    phenology.csv                one row per sheet, in LeafMachine2's phenology.csv layout
     detections.csv               one row per detection box, both detectors
     landmarks.csv                one row per predicted keypoint (31 per leaf)
     ruler_conversion_factor.csv  one row per sheet: the CF verdict and why
@@ -194,6 +195,17 @@ Two things to know before analyzing:
   `specimen.cf_px_per_cm`, which the lattice stage publishes for high-confidence sheets only, and
   never against the megapixel estimate. `cf_source` says which case a row is in, and an empty cell
   always means "not measured", never zero.
+
+**`phenology.csv` is LeafMachine2-compatible.** LM2 wrote `Phenology/phenology.csv` by counting
+class ids in the plant detector's YOLO label files; LM3 has no label files, so the same file is
+rebuilt from `plant_detection`. Its first 14 columns are LM2's, in LM2's order, so an existing LM2
+phenology script reads it unchanged; LM3-native columns are appended after them. Two LM2 columns
+are **always blank**: `leaflet` and `specimen`, because LM3's detector is trained on
+`LM3_Plant_Primary`, which dropped `Specimen` and merged `Leaflet` into `Leaf_WHOLE` — so LM3's
+`leaf_whole` also counts what LM2 called `leaflet`. `has_leaves` and `is_fertile` come from the
+phenology stage's thresholds rather than LM2's `accept_only_ideal_leaves` /
+`minimum_total_reproductive_counts`, and LM3 groups `Bud` with flowers where LM2's `is_fertile`
+excluded it.
 
 Toggle the bundle and its individual files under `report.data` in `LM3_settings.yaml`; set
 `report.data.format: tsv` for tab-separated output.

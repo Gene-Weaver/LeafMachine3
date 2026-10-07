@@ -5,6 +5,7 @@ them, written straight out of the per-project SQLite so a run is analyzable with
 
     reports/Data/leaf_measurements.csv        ONE ROW PER LEAF -- the master file
     reports/Data/specimen_summary.csv         one row per input image (+ per-sheet roll-ups)
+    reports/Data/phenology.csv                one row per sheet, LM2's phenology.csv layout
     reports/Data/detections.csv               one row per detection box, both detectors
     reports/Data/landmarks.csv                one row per predicted keypoint (31 per leaf)
     reports/Data/ruler_conversion_factor.csv  one row per sheet -- the CF verdict + its audit trail
@@ -259,6 +260,63 @@ _SPECIMEN_COLUMNS: tuple[Column, ...] = (
 
 
 # --------------------------------------------------------------------------- #
+# phenology.csv -- LeafMachine2's phenology.csv, rebuilt from the LM3 database
+# --------------------------------------------------------------------------- #
+# LM2 wrote reports as Phenology/phenology.csv by globbing the plant detector's YOLO label
+# .txt files and counting class ids. LM3 has no label files -- the same boxes are rows in
+# plant_detection -- so this file is that count rebuilt from the DB, keeping LM2's column
+# names and their exact order so an existing LM2 analysis script can read either one.
+#
+# TWO LM2 COLUMNS CANNOT BE FILLED. LM3's detector is trained on LM3_Plant_Primary (nc=9),
+# which deliberately DROPPED Specimen and MERGED Leaflet into Leaf_WHOLE. The columns are
+# kept so the header still matches, but they are written as BLANK, never 0: a 0 would assert
+# "looked, found none", when the truth is that this detector cannot emit the class at all.
+# Note the merge also means LM3's leaf_whole counts LM2's leaf_whole + leaflet.
+#: LM2 column -> the LM3 plant class that fills it, or None where LM3 has no such class.
+_LM2_PHENOLOGY_CLASSES: tuple[tuple[str, Optional[str]], ...] = (
+    ("leaf_whole",      "Leaf_WHOLE"),
+    ("leaf_partial",    "Leaf_PARTIAL"),
+    ("leaflet",         None),              # merged into Leaf_WHOLE when LM3_Plant_Primary was built
+    ("seed_fruit_one",  "Seed_Fruit_ONE"),
+    ("seed_fruit_many", "Seed_Fruit_MANY"),
+    ("flower_one",      "Flower_ONE"),
+    ("flower_many",     "Flower_MANY"),
+    ("bud",             "Bud"),
+    ("specimen",        None),              # dropped when LM3_Plant_Primary was built
+    ("roots",           "Roots"),
+    ("wood",            "Wood"),
+)
+
+_UNMAPPED_LM2_CLASSES = tuple(name for name, cls in _LM2_PHENOLOGY_CLASSES if cls is None)
+
+_PHENOLOGY_COLUMNS: tuple[Column, ...] = (
+    Column("file_name", "", "LM2 column. Image filename with extension. LM2 wrote the LABEL file "
+                            "name here ('<stem>.txt'); LM3 has no label files, so this is the image."),
+    *(Column(name, "count",
+             f"LM2 column. Kept {cls} boxes on this sheet."
+             if cls else
+             f"LM2 column, ALWAYS BLANK: LM3's detector has no {name!r} class "
+             f"({'merged into Leaf_WHOLE' if name == 'leaflet' else 'dropped'} in LM3_Plant_Primary).")
+      for name, cls in _LM2_PHENOLOGY_CLASSES),
+    Column("has_leaves", "0/1", "LM2 column. From LM3's phenology stage (Leaf_WHOLE + Leaf_PARTIAL "
+                                "against its min_conf/min_count), NOT LM2's accept_only_ideal_leaves rule."),
+    Column("is_fertile", "0/1", "LM2 column. derived: has_flowers OR has_fruits. LM3's flower group "
+                                "INCLUDES Bud, which LM2's is_fertile excluded."),
+    # Past here the file leaves LM2 behind: LM3-native columns appended so the file is
+    # self-joining and its two flavors of "has leaves" can be told apart.
+    Column("specimen_id", "", "LM3 column. Row id of this sheet in the project database."),
+    Column("image_stem", "", "LM3 column. Filename without extension; the stem every output is named by."),
+    Column("has_flowers", "0/1", "LM3 column. Phenology stage: flowers (incl. Bud) present."),
+    Column("has_fruits", "0/1", "LM3 column. Phenology stage: fruits present."),
+    Column("n_leaf_boxes", "count", "LM3 column. Leaf boxes the phenology stage counted -- gated by its "
+                                    "min_conf, so this can be lower than leaf_whole + leaf_partial."),
+    Column("n_flower_boxes", "count", "LM3 column. Flower boxes the phenology stage counted (incl. Bud)."),
+    Column("n_fruit_boxes", "count", "LM3 column. Fruit boxes the phenology stage counted."),
+    Column("n_plant_detections", "count", "LM3 column. derived: all kept plant boxes on this sheet."),
+)
+
+
+# --------------------------------------------------------------------------- #
 # detections.csv / landmarks.csv
 # --------------------------------------------------------------------------- #
 _DETECTION_COLUMNS: tuple[Column, ...] = (
@@ -345,6 +403,10 @@ FILES: tuple[ExportFile, ...] = (
                "One row per input image: identity, frame, conversion factor, phenology and "
                "per-sheet roll-ups of the leaf measurements.",
                columns=_SPECIMEN_COLUMNS),
+    ExportFile("phenology", "phenology", True,
+               "One row per sheet in LeafMachine2's phenology.csv layout: per-class plant-organ "
+               "counts plus has_leaves / is_fertile, so an LM2 phenology script runs unchanged.",
+               columns=_PHENOLOGY_COLUMNS),
     ExportFile("detections", "detections", True,
                "One row per detection box from both detectors, including boxes suppressed as "
                "duplicates.",
@@ -428,6 +490,7 @@ def export_data_csvs(project, cfg) -> list[Path]:
         "leaf_measurements": lambda: (_LEAF_COLUMNS, leaf_rows),
         "specimen_summary": lambda: (_SPECIMEN_COLUMNS,
                                      _specimen_rows(db, leaf_rows, detection_rows)),
+        "phenology": lambda: (_PHENOLOGY_COLUMNS, _phenology_rows(db, detection_rows)),
         "detections": lambda: (_DETECTION_COLUMNS, detection_rows),
         "landmarks": lambda: (_LANDMARK_COLUMNS, _landmark_rows(db)),
         "ruler_conversion_factor": lambda: (None, [dict(r) for r in db.export_table("ruler_CF_lattice")]),
@@ -548,6 +611,53 @@ def _specimen_rows(db, leaf_rows: list[dict], detection_rows: list[dict]) -> lis
         r["median_lamina_area_incl_holes_cm2"] = _median(
             x.get("lamina_area_incl_holes_cm2") for x in leaves)
         r["median_archetype_score"] = _median(x.get("archetype_score") for x in leaves)
+        out.append(r)
+    return out
+
+
+def _phenology_rows(db, detection_rows: list[dict]) -> list[dict]:
+    """LM2's phenology.csv rebuilt from plant_detection + the phenology stage's verdict.
+
+    Counts KEPT boxes only (a box suppressed as a same-class duplicate is not a second organ),
+    which is the same rule ``n_plant_detections`` uses, so the two agree row for row.
+
+    The counts here apply NO confidence gate, matching LM2 -- it counted every line in the label
+    file. The phenology stage's own ``n_*_boxes`` DO apply its ``min_conf``, so the two disagree
+    whenever a low-confidence box exists. Both are in the file rather than one being reconciled
+    into the other: they answer different questions, and silently picking one would hide the gate.
+    """
+    counts: dict[Any, dict[str, int]] = {}
+    for d in detection_rows:
+        if d.get("source") != "plant" or d.get("suppressed"):
+            continue
+        counts.setdefault(d.get("specimen_id"), {})
+        cls = d.get("cls_name")
+        counts[d["specimen_id"]][cls] = counts[d["specimen_id"]].get(cls, 0) + 1
+
+    out: list[dict] = []
+    for row in db.export_specimen_rows():
+        sid = row["specimen_id"]
+        per_class = counts.get(sid, {})
+        # A sheet with no plant detections still gets a row of zeros. LM2 had no row at all for
+        # such a sheet (no boxes -> no label file -> nothing to glob), so this file is a superset:
+        # "we looked and found nothing" is a result, and dropping it would bias any rate computed
+        # from the file by silently shrinking the denominator.
+        r: dict[str, Any] = {"file_name": row["image_name"]}
+        for name, cls in _LM2_PHENOLOGY_CLASSES:
+            r[name] = None if cls is None else per_class.get(cls, 0)
+        has_flowers, has_fruits = row["has_flowers"], row["has_fruits"]
+        r["has_leaves"] = row["has_leaves"]
+        # None (phenology stage never ran for this sheet) must stay absent, not become 0.
+        r["is_fertile"] = (None if has_flowers is None and has_fruits is None
+                           else int(bool(has_flowers) or bool(has_fruits)))
+        r["specimen_id"] = sid
+        r["image_stem"] = row["image_stem"]
+        r["has_flowers"] = has_flowers
+        r["has_fruits"] = has_fruits
+        r["n_leaf_boxes"] = row["n_leaf_boxes"]
+        r["n_flower_boxes"] = row["n_flower_boxes"]
+        r["n_fruit_boxes"] = row["n_fruit_boxes"]
+        r["n_plant_detections"] = sum(per_class.values())
         out.append(r)
     return out
 

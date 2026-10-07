@@ -284,11 +284,38 @@ def builtin_defaults() -> dict[str, Any]:
             "reporter": {"enabled": True},
             "ect": {"enabled": True},
         },
-        # NB: no "report" key. An empty mapping is not a no-op here -- the settings
-        # form walks the merged tree and treats a childless dict as a LEAF, so
-        # `"report": {}` rendered as a free-text row holding "{}" on a fresh
+        # NB: no EMPTY "report" mapping. An empty mapping is not a no-op here -- the
+        # settings form walks the merged tree and treats a childless dict as a LEAF,
+        # so `"report": {}` rendered as a free-text row holding "{}" on a fresh
         # install. Config.report already returns an empty Section when the key is
-        # absent, so nothing needs the placeholder.
+        # absent, so nothing needs a placeholder. Populated subtrees are fine, and
+        # report.data is here because it has to be: the settings form renders a row
+        # only for a leaf of the MERGED tree, so a knob that lives solely in Python
+        # defaults is invisible and unsettable. report.data was exactly that -- the
+        # ten CSV toggles were documented in settings_meta.json and rendered nowhere,
+        # so the export bundle could not be configured from the file or the GUI at
+        # all. Keep this in step with reporting.data_export.FILES; a test compares them.
+        "report": {
+            "data": {
+                "enabled": True,
+                "folder": "Data",
+                "format": "csv",
+                "na_rep": "",
+                "float_precision": 6,
+                "files": {
+                    "leaf_measurements": True,
+                    "specimen_summary": True,
+                    "phenology": True,
+                    "detections": True,
+                    "landmarks": True,
+                    "ruler_conversion_factor": True,
+                    "ruler_crops": True,
+                    "run_stages": True,
+                    "stage_errors": True,
+                    "data_dictionary": True,
+                },
+            },
+        },
         "timing": {"enabled": False, "sample_interval_s": 0.25},
     }
 

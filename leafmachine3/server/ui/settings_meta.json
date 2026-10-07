@@ -2930,6 +2930,13 @@
     "important": true,
     "group": "Data Export (CSV)"
   },
+  "report.data.files.phenology": {
+    "label": "Phenology (LM2 layout)",
+    "help": "phenology.csv: one row per sheet in LeafMachine2's phenology.csv layout \u2014 per-class plant-organ counts plus has_leaves and is_fertile \u2014 so an existing LM2 phenology script reads it unchanged. Its 'leaflet' and 'specimen' columns are always blank, because LM3's detector has no such classes.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
   "report.data.files.detections": {
     "label": "Detections",
     "help": "detections.csv: one row per detection box from both detectors, including the boxes that were suppressed as duplicates.",
