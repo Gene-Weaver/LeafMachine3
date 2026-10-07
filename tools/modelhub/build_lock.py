@@ -32,7 +32,16 @@ NAMESPACE = "phyloforfun"
 #: MUST match the relative ``models/...`` paths in LM3_settings.orig.yaml.
 #: ``files`` maps a repo path to (dest, format). Formats: onnx | torchscript | pytorch | meta.
 #: ``meta`` files are always installed; the others are selected with --formats (default: onnx).
-#: A ``training_metadata.json`` sidecar is marked optional: installed, but its absence is not "missing".
+#: Provenance files are marked optional: installed, but their absence is not "missing" (the stage runs
+#: without them). That is every ``training_metadata.json`` sidecar, and the conversion-factor fit data
+#: and script, which tests/test_mp_conversion_factor.py refits to prove model.json is reproducible.
+OPTIONAL_SUFFIXES = ("training_metadata.json", "fit_data.csv", "fit_mp_cf.py")
+
+
+def _is_optional(dest: str) -> bool:
+    return dest.endswith(OPTIONAL_SUFFIXES)
+
+
 DEFAULTS: dict[str, dict] = {
     "archival_detector": {"units": [{
         "repo_id": f"{NAMESPACE}/lm3_archival_detector__yolo26x_det_1280",
@@ -69,7 +78,9 @@ DEFAULTS: dict[str, dict] = {
     # whatever --formats says (the stage cannot run without it).
     "mp_conversion_factor": {"units": [{
         "repo_id": f"{NAMESPACE}/lm3_mp_conversion_factor__sqrt_fit",
-        "files": {"json/model.json": ("mp_conversion_factor/model.json", "meta")}}]},
+        "files": {"json/model.json": ("mp_conversion_factor/model.json", "meta"),
+                  "fit/fit_data.csv": ("mp_conversion_factor/fit_data.csv", "meta"),
+                  "fit/fit_mp_cf.py": ("mp_conversion_factor/fit_mp_cf.py", "meta")}}]},
     # The ensemble: each member is its own repo; the runtime (inference/ruler_ensemble.py) expects
     # <models_dir>/<member>/exported/model.onnx + <models_dir>/<member>/metadata.json and ONE shared
     # <models_dir>/label_map.json. The same label_map.json ships in every member repo (same sha), so
@@ -151,7 +162,7 @@ def _pin_units(api, hf_hub_download, spec: dict) -> list[dict]:
             if rec is None:
                 raise SystemExit(f"{u['repo_id']}: {src} is not in the repo manifest")
             files.append({"src": src, "dest": dest, "format": fmt, "sha256": rec["sha256"], "bytes": rec["bytes"],
-                          "optional": dest.endswith("training_metadata.json")})
+                          "optional": _is_optional(dest)})
         units.append({"repo_id": u["repo_id"], "revision": info.sha, "model_key": manifest["lm3"].get("model_key"), "files": files})
     return units
 
@@ -172,7 +183,7 @@ def build() -> dict:
                 if rec is None:
                     raise SystemExit(f"{u['repo_id']}: {src} is not in the repo manifest")
                 files.append({"src": src, "dest": dest, "format": fmt, "sha256": rec["sha256"], "bytes": rec["bytes"],
-                              "optional": dest.endswith("training_metadata.json")})
+                              "optional": _is_optional(dest)})
             units.append({"repo_id": u["repo_id"], "revision": info.sha,
                           "model_key": manifest["lm3"].get("model_key"), "files": files})
         actions[action] = {"required": True, "units": units}

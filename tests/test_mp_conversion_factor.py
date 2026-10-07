@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,7 +16,10 @@ from leafmachine3.core.records import SpecimenRecord
 from leafmachine3.inference.mp_conversion_factor import MpConversionFactorModel, load_model
 from leafmachine3.modules.mp_conversion_factor import MPConversionFactor
 
-_MODEL_DIR = Path(__file__).resolve().parents[1] / "models" / "mp_conversion_factor"
+#: Where `lm3 models install` put the model: $LM3_MODELS_DIR if set, else the checkout's models/ (the
+#: same rule as leafmachine3.modelhub.installer.models_root for a checkout).
+_MODEL_DIR = (Path(os.environ["LM3_MODELS_DIR"]).expanduser() if os.environ.get("LM3_MODELS_DIR")
+              else Path(__file__).resolve().parents[1] / "models") / "mp_conversion_factor"
 _FALLBACK_SLOPE = 2.6744940855608585
 _FALLBACK_INTERCEPT = 67.51862180698473
 
@@ -56,7 +60,16 @@ def test_load_model_missing_falls_back() -> None:
 
 
 def test_fit_is_reproducible() -> None:
-    """Re-fitting fit_data.csv (numpy OLS) reproduces the shipped model.json coefficients."""
+    """Re-fitting fit_data.csv (numpy OLS) reproduces the shipped model.json coefficients.
+
+    fit_data.csv is training PROVENANCE, published in the model's Hugging Face repo and installed by
+    `lm3 models install` as an optional file (the stage itself never reads it). An install made
+    before the lock listed it has model.json but not the fit data; that is a valid install, so this
+    skips with the command that fetches it rather than failing.
+    """
+    if not (_MODEL_DIR / "fit_data.csv").is_file():
+        pytest.skip(f"no {_MODEL_DIR / 'fit_data.csv'}; fetch it with: "
+                    "lm3 models install --actions mp_conversion_factor --force")
     mp, cf = [], []
     with open(_MODEL_DIR / "fit_data.csv", newline="", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
