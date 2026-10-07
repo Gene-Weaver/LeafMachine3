@@ -118,7 +118,7 @@ def test_process_mask_native_thresholds_crops_and_upsamples():
     # reference: full-res logits via the same bilinear, thresholded at 0
     import cv2
     logits = (coeffs @ proto.reshape(32, -1)).reshape(2, 64, 64)
-    ref = np.stack([cv2.resize(l, (w, h), interpolation=cv2.INTER_LINEAR) > 0 for l in logits]).astype(np.uint8)
+    ref = np.stack([cv2.resize(lg, (w, h), interpolation=cv2.INTER_LINEAR) > 0 for lg in logits]).astype(np.uint8)
     ref[0][:, 64:] = 0
     ref[1][:, :64] = 0
     assert np.array_equal(out, ref)

@@ -73,7 +73,10 @@ macos = ["onnxruntime==1.20.1; sys_platform == 'darwin'"]   # the macOS wheel ex
 # Kept as an EMPTY alias: the server packages are now base dependencies, but `.[cpu,dev,server,test]`
 # style installs written before the fold (CI, docs) must still resolve. Remove with the CI rewrite.
 server = []
-dev = ["pytest>=8.0", "ruff>=0.5"]
+# ruff is pinned EXACTLY: docs/verification/RUFF_BASELINE.txt was recorded with 0.12.1, and every
+# ruff release adds rules, so a floating ruff turns the lint ratchet red with "new" debt nobody wrote.
+# Bump it only together with a deliberately regenerated baseline.
+dev = ["pytest>=8.0", "ruff==0.12.1"]
 # Everything CI needs to RUN the suite and the gates. `dev` was not enough: fastapi's base
 # dependency does not pull httpx -- it lives in fastapi's own optional extras -- and
 # `starlette.testclient.TestClient` imports it at construction, so `.[cpu,dev,server]` still failed
@@ -82,13 +85,16 @@ dev = ["pytest>=8.0", "ruff>=0.5"]
 test = [
     "pytest>=8.0",
     "pytest-xdist>=3.5",
-    "ruff>=0.5",
+    "ruff==0.12.1",                  # see `dev`: the lint baseline is tied to this exact version
     "httpx>=0.27",
     # Starlette 1.x moved TestClient to httpx2 while retaining an httpx fallback for
     # older installations. Keep both so the unbounded supported FastAPI/Starlette
     # range is testable at either end.
     "httpx2>=2.0",
     "build>=1.2",
+    # tests/test_version_identity.py imports setuptools.find_packages to check the package finder.
+    # pip-made venvs happen to contain setuptools; uv-made ones do not, so it has to be declared.
+    "setuptools>=68",
 ]
 
 # DEVELOPMENT ONLY -- never shipped. Locked in uv.lock so it is reproducible, but no user instruction,
