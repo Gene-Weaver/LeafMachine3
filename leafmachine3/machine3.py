@@ -130,12 +130,9 @@ def _exec_with_cuda_libpath() -> None:
 
     if os.environ.get(_LIBPATH_FLAG):                # already re-exec'd (or explicitly disabled)
         return
-    try:
-        import nvidia
-        base = Path(nvidia.__file__).resolve().parent
-        libdirs = sorted(str(p) for p in base.glob("*/lib") if p.is_dir())
-    except Exception:                                # noqa: BLE001 - no wheels -> nothing to add
-        libdirs = []
+    from leafmachine3.core.cuda_libs import nvidia_lib_dirs
+
+    libdirs = nvidia_lib_dirs()                      # via nvidia.__path__: survives a deleted __init__.py
     os.environ[_LIBPATH_FLAG] = "1"
     if not libdirs:
         return

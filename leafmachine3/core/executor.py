@@ -26,7 +26,6 @@ import signal
 import sys
 import threading
 from collections import Counter, deque
-from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from leafmachine3.core.device import Device
@@ -196,15 +195,9 @@ class DeviceManager:
         at process start. Spawn children inherit this process's environment, so exporting
         it here (before any worker starts) is enough -- no re-exec required.
         """
-        try:
-            import nvidia  # type: ignore
-        except Exception:
-            return
-        try:
-            base = Path(nvidia.__file__).resolve().parent
-        except Exception:
-            return
-        libdirs = [str(p) for p in base.glob("*/lib") if p.is_dir()]
+        from leafmachine3.core.cuda_libs import nvidia_lib_dirs
+
+        libdirs = nvidia_lib_dirs()                  # via nvidia.__path__: survives a deleted __init__.py
         if not libdirs:
             return
         current = os.environ.get("LD_LIBRARY_PATH", "")
