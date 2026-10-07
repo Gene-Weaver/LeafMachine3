@@ -292,6 +292,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="override the YAML project.run_name (a NAME, not a path)")
     args = parser.parse_args(argv)
 
+    from leafmachine3.doctor import run_startup_gate  # noqa: PLC0415 - after argparse, so --help is free
+
+    refused = run_startup_gate("machine3")            # `lm3 doctor` checks 1-4: Python, variant, packages
+    if refused is not None:
+        return refused
+
     restart: RestartArg = "all" if args.restart == ["all"] else args.restart   # "all" | list | None
     try:
         # handle_sigterm: this process IS the run, so a SIGTERM (a server Stop, a shell kill)

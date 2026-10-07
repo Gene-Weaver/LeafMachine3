@@ -1488,6 +1488,18 @@ def create_app(jobs: JobManager | None = None) -> Any:
         except KeyError:
             raise HTTPException(status_code=404, detail="unknown job")
 
+    @app.get("/healthz/doctor", dependencies=[Depends(require_token)])
+    async def healthz_doctor(full: bool = False) -> dict:
+        """`lm3 doctor` for this server's environment, as JSON -- the verdict the CLI prints.
+
+        Quick (checks 1-4) by default; ``?full=1`` adds the driver and the accelerator probe, which
+        starts a GPU child process. Authenticated, unlike /healthz, for exactly that reason.
+        """
+        from leafmachine3.doctor import diagnose  # noqa: PLC0415
+
+        report = await asyncio.to_thread(diagnose, None, quick=not full)
+        return report.to_json()
+
     @app.get("/healthz")
     async def healthz() -> dict:
         # UNAUTHENTICATED by design: this is the readiness probe every client polls before it
@@ -1832,6 +1844,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     except paths.PathsError as exc:
         print(f"lm3 serve: {exc}", file=sys.stderr)
         return 2
+
+    from leafmachine3.doctor import run_startup_gate  # noqa: PLC0415
+
+    refused = run_startup_gate("lm3 serve")           # `lm3 doctor` checks 1-4, before binding a port
+    if refused is not None:
+        return refused
 
     serve(args.host, port, jobs_root=Path(args.jobs_root) if args.jobs_root else None,
           settings=args.config)

@@ -207,6 +207,10 @@ def _isolate_runtime_environment() -> tuple[Path, bool, dict[str, str | None]]:
     # It also still closes the leak this variable was added to _ISOLATED_ENV for: a developer with
     # LM3_RUNTIME_V2 exported cannot steer the suite either way.
     os.environ["LM3_RUNTIME_V2"] = "0"
+    # The startup gate (`lm3 doctor` checks 1-4 in machine3 / lm3 serve) checks the ENVIRONMENT, so
+    # pipeline tests would pass or fail depending on which venv runs them (CI's pip install is not the
+    # uv lock). Pinned off here; tests/test_startup_gate.py turns it on and tests it directly.
+    os.environ["LM3_STARTUP_GATE"] = "0"
 
     # Purely a performance carve-out, unrelated to LM3: matplotlib caches its font list under
     # XDG_CACHE_HOME, and a sandboxed cache makes every session rebuild it (~4.5 s). Point it at

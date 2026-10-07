@@ -538,6 +538,40 @@ def startup_gate(env: Optional[Env] = None) -> Report:
     return rep
 
 
+#: Exit status when the startup gate refuses this environment: sysexits.h EX_CONFIG. Distinct from 75
+#: (EXIT_CODE_BUSY: the deployment is busy, retry later) and 2 (a usage error).
+EXIT_CODE_ENVIRONMENT = 78
+#: ``LM3_STARTUP_GATE=0`` skips the gate (an escape hatch, and what the test suite pins, so pipeline
+#: tests do not depend on which environment runs them).
+GATE_ENV = "LM3_STARTUP_GATE"
+
+
+def run_startup_gate(prog: str) -> Optional[int]:
+    """Checks 1-4 before ``machine3`` / ``lm3 serve`` start. ``None`` = go on; else the exit code.
+
+    Prints the failed check and its fix to stderr. Warnings (an interpreter uv did not install, a
+    different 3.11 patch) are printed and do not stop anything. If the gate itself breaks, it says so
+    and lets the program run: a bug here must never be what keeps LM3 from starting.
+    """
+    if os.environ.get(GATE_ENV, "1").strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    try:
+        rep = startup_gate()
+    except DoctorError as exc:
+        print(f"{prog}: {exc}", file=sys.stderr)
+        print(f"{prog}: run `lm3 doctor` for the full report (or set {GATE_ENV}=0 to bypass at your own risk)",
+              file=sys.stderr)
+        return EXIT_CODE_ENVIRONMENT
+    except Exception as exc:  # noqa: BLE001 - the gate must never be the thing that breaks LM3
+        print(f"{prog}: warning: the environment check could not run ({type(exc).__name__}: {exc})",
+              file=sys.stderr)
+        return None
+    for c in rep.checks:
+        if c.status == WARN:
+            print(f"{prog}: warning: {c.name}: {c.detail}", file=sys.stderr)
+    return None
+
+
 def render(rep: Report, env: Env) -> str:
     mark = {OK: "ok  ", WARN: "warn", FAIL: "FAIL", SKIP: "skip"}
     lines = [f"LeafMachine3 {rep.lm3_version}   variant={rep.variant or '?'}   python={env.python_version}"]
