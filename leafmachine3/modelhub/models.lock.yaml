@@ -2,7 +2,7 @@
 schema_version: 1
 lm3_version: 3.0.0
 hub_namespace: phyloforfun
-generated_at: '2026-10-07T13:51:27+00:00'
+generated_at: '2026-10-07T14:30:59+00:00'
 default_formats:
 - onnx
 actions:
@@ -254,7 +254,7 @@ alternates:
     birefnet_hr_swinl_1024:
       units:
       - repo_id: phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024
-        revision: a382847a04b77604f4fe5fc81e329457853f1298
+        revision: ac015972d111e63a76f3814fa4409a318c33d512
         model_key: birefnet_hr_swinl_1024
         files:
         - src: onnx/model.onnx
@@ -278,7 +278,7 @@ alternates:
     yolo26x_seg_1280:
       units:
       - repo_id: phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280
-        revision: 6ff63ee34a4b1db1ae377e9863b70c6f0cdd8782
+        revision: c8210020449c676b5950e74d53a3c1a8bc3db998
         model_key: yolo26x_seg_1280
         files:
         - src: onnx/model.onnx
