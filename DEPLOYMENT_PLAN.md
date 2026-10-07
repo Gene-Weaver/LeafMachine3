@@ -11,6 +11,9 @@
 - **Cluster strategy:** Build OCI images with Docker/BuildKit, then run them on university clusters with Apptainer and the site's scheduler, such as Slurm.
 - **GUI strategy:** Package Electron separately as a thin desktop client. The LM3 backend is the authoritative owner of runtime state and also serves the browser GUI.
 
+Environment packaging (uv lockfile, `lm3 doctor`, container and wheelhouse builds) is specified in
+`PACKAGING_PLAN.md`, which supersedes sections 5 and 11 below.
+
 This plan complements `UNIFIED_RUNTIME_IMPLEMENTATION_PLAN.md`. Runtime unification should be completed before deployment behavior is treated as stable.
 
 ## 1. Objectives

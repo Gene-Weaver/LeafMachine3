@@ -1,0 +1,373 @@
+{
+  "examples": [
+    {
+      "file": "compare_01_test_CMN_1804514859_Sapindaceae_Acer_saccharum.jpg",
+      "stem": "048ze8d5__CMN_1804514859_Sapindaceae_Acer_saccharum",
+      "specimen": "CMN_1804514859_Sapindaceae_Acer_saccharum",
+      "project_key": "048ze8d5",
+      "dataset_split": "test",
+      "image_size": [
+        3097,
+        4500
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 40.1,
+        "BiRefNet": 40.2,
+        "YOLO26x-seg": 47.1
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_02_train_CM_2859177966_Sapindaceae_Acer_saccharum.jpg",
+      "stem": "048ze8d5__CM_2859177966_Sapindaceae_Acer_saccharum",
+      "specimen": "CM_2859177966_Sapindaceae_Acer_saccharum",
+      "project_key": "048ze8d5",
+      "dataset_split": "train",
+      "image_size": [
+        3333,
+        5000
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 28.5,
+        "BiRefNet": 28.5,
+        "YOLO26x-seg": 32.4
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_03_val_FLAS_1457816931_Fabaceae_Cassia_fistula.jpg",
+      "stem": "0b8m7oz6__FLAS_1457816931_Fabaceae_Cassia_fistula",
+      "specimen": "FLAS_1457816931_Fabaceae_Cassia_fistula",
+      "project_key": "0b8m7oz6",
+      "dataset_split": "val",
+      "image_size": [
+        4992,
+        6668
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 23.0,
+        "BiRefNet": 23.3,
+        "YOLO26x-seg": 23.8
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_04_val_NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum.jpg",
+      "stem": "0b8m7oz6__NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum",
+      "specimen": "NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum",
+      "project_key": "0b8m7oz6",
+      "dataset_split": "val",
+      "image_size": [
+        4900,
+        7250
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 22.6,
+        "BiRefNet": 22.2,
+        "YOLO26x-seg": 30.8
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_05_val_CHC21_009_9.jpg",
+      "stem": "11sj7ls7__CHC21_009_9",
+      "specimen": "CHC21_009_9",
+      "project_key": "11sj7ls7",
+      "dataset_split": "val",
+      "image_size": [
+        4032,
+        3024
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 2.6,
+        "BiRefNet": 2.6,
+        "YOLO26x-seg": 2.7
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_06_val_MNHN_730851102_Euphorbiaceae_Macaranga_saccifera.jpg",
+      "stem": "3d2xfs6m__MNHN_730851102_Euphorbiaceae_Macaranga_saccifera",
+      "specimen": "MNHN_730851102_Euphorbiaceae_Macaranga_saccifera",
+      "project_key": "3d2xfs6m",
+      "dataset_split": "val",
+      "image_size": [
+        3287,
+        5190
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 44.4,
+        "BiRefNet": 44.6,
+        "YOLO26x-seg": 49.3
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_07_train_MNHN_731821562_Euphorbiaceae_Macaranga_magnifolia.jpg",
+      "stem": "3d2xfs6m__MNHN_731821562_Euphorbiaceae_Macaranga_magnifolia",
+      "specimen": "MNHN_731821562_Euphorbiaceae_Macaranga_magnifolia",
+      "project_key": "3d2xfs6m",
+      "dataset_split": "train",
+      "image_size": [
+        3280,
+        5086
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 11.0,
+        "BiRefNet": 0.5,
+        "YOLO26x-seg": 47.6
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_08_train_UM_1807486051_Euphorbiaceae_Macaranga_gracilis.jpg",
+      "stem": "3d2xfs6m__UM_1807486051_Euphorbiaceae_Macaranga_gracilis",
+      "specimen": "UM_1807486051_Euphorbiaceae_Macaranga_gracilis",
+      "project_key": "3d2xfs6m",
+      "dataset_split": "train",
+      "image_size": [
+        4176,
+        5936
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 31.2,
+        "BiRefNet": 34.0,
+        "YOLO26x-seg": 37.8
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_09_train_K_912592861_Torricelliaceae_Torricellia_angulata.jpg",
+      "stem": "73k42yzt__K_912592861_Torricelliaceae_Torricellia_angulata",
+      "specimen": "K_912592861_Torricelliaceae_Torricellia_angulata",
+      "project_key": "73k42yzt",
+      "dataset_split": "train",
+      "image_size": [
+        1409,
+        2000
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 22.7,
+        "BiRefNet": 24.2,
+        "YOLO26x-seg": 27.5
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_10_train_CLF_1437883182_Fagaceae_Quercus_grisebachii.jpg",
+      "stem": "dnmogprz__CLF_1437883182_Fagaceae_Quercus_grisebachii",
+      "specimen": "CLF_1437883182_Fagaceae_Quercus_grisebachii",
+      "project_key": "dnmogprz",
+      "dataset_split": "train",
+      "image_size": [
+        3408,
+        4890
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 22.5,
+        "BiRefNet": 23.5,
+        "YOLO26x-seg": 23.8
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_11_train_CLF_1437893278_Fagaceae_Quercus_semilanuginosa.jpg",
+      "stem": "dnmogprz__CLF_1437893278_Fagaceae_Quercus_semilanuginosa",
+      "specimen": "CLF_1437893278_Fagaceae_Quercus_semilanuginosa",
+      "project_key": "dnmogprz",
+      "dataset_split": "train",
+      "image_size": [
+        3442,
+        4801
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 20.5,
+        "BiRefNet": 32.1,
+        "YOLO26x-seg": 29.5
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_12_train_MNHN_731018123_Fagaceae_Quercus_pinnatiloba.jpg",
+      "stem": "dnmogprz__MNHN_731018123_Fagaceae_Quercus_pinnatiloba",
+      "specimen": "MNHN_731018123_Fagaceae_Quercus_pinnatiloba",
+      "project_key": "dnmogprz",
+      "dataset_split": "train",
+      "image_size": [
+        3279,
+        5059
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 33.0,
+        "BiRefNet": 32.7,
+        "YOLO26x-seg": 33.7
+      },
+      "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+    },
+    {
+      "file": "compare_13_test_KYO_2443051967_Caprifoliaceae_Lonicera_maackii.jpg",
+      "stem": "1lts0tgt__KYO_2443051967_Caprifoliaceae_Lonicera_maackii",
+      "specimen": "KYO_2443051967_Caprifoliaceae_Lonicera_maackii",
+      "project_key": "1lts0tgt",
+      "dataset_split": "test",
+      "image_size": [
+        3000,
+        4000
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 15.1,
+        "BiRefNet": 15.5,
+        "YOLO26x-seg": 19.2
+      },
+      "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+    },
+    {
+      "file": "compare_14_test_BO1284103_4067113860_Euphorbiaceae_Macaranga_waturandangii.jpg",
+      "stem": "3d2xfs6m__BO1284103_4067113860_Euphorbiaceae_Macaranga_waturandangii",
+      "specimen": "BO1284103_4067113860_Euphorbiaceae_Macaranga_waturandangii",
+      "project_key": "3d2xfs6m",
+      "dataset_split": "test",
+      "image_size": [
+        7100,
+        10117
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 33.8,
+        "BiRefNet": 34.1,
+        "YOLO26x-seg": 35.6
+      },
+      "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+    },
+    {
+      "file": "compare_15_test_L_2517447339_Torricelliaceae_Melanophylla_alnifolia.jpg",
+      "stem": "73k42yzt__L_2517447339_Torricelliaceae_Melanophylla_alnifolia",
+      "specimen": "L_2517447339_Torricelliaceae_Melanophylla_alnifolia",
+      "project_key": "73k42yzt",
+      "dataset_split": "test",
+      "image_size": [
+        1237,
+        1920
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 22.2,
+        "BiRefNet": 21.9,
+        "YOLO26x-seg": 23.7
+      },
+      "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+    },
+    {
+      "file": "compare_16_test_ASU_2270499210_Brassicaceae_Raphanus_raphanistrum.jpg",
+      "stem": "97et0mcw__ASU_2270499210_Brassicaceae_Raphanus_raphanistrum",
+      "specimen": "ASU_2270499210_Brassicaceae_Raphanus_raphanistrum",
+      "project_key": "97et0mcw",
+      "dataset_split": "test",
+      "image_size": [
+        3456,
+        5184
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 10.0,
+        "BiRefNet": 10.2,
+        "YOLO26x-seg": 15.7
+      },
+      "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+    },
+    {
+      "file": "compare_17_test_UM_1807432107_Rubiaceae_Posoqueria_longiflora.jpg",
+      "stem": "em107v5k__UM_1807432107_Rubiaceae_Posoqueria_longiflora",
+      "specimen": "UM_1807432107_Rubiaceae_Posoqueria_longiflora",
+      "project_key": "em107v5k",
+      "dataset_split": "test",
+      "image_size": [
+        4242,
+        6086
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 29.4,
+        "BiRefNet": 29.5,
+        "YOLO26x-seg": 31.4
+      },
+      "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+    },
+    {
+      "file": "compare_18_test_1D41D09F-BC60-4E11-9283-3A0F23787BA7_1_105_c.jpg",
+      "stem": "exw33kvr__1D41D09F-BC60-4E11-9283-3A0F23787BA7_1_105_c",
+      "specimen": "1D41D09F-BC60-4E11-9283-3A0F23787BA7_1_105_c",
+      "project_key": "exw33kvr",
+      "dataset_split": "test",
+      "image_size": [
+        795,
+        995
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 24.9,
+        "BiRefNet": 24.9,
+        "YOLO26x-seg": 27.8
+      },
+      "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+    },
+    {
+      "file": "compare_19_test_MNHN_438671634_Piperaceae_Piper_salinasanum.jpg",
+      "stem": "fbuk2yx3__MNHN_438671634_Piperaceae_Piper_salinasanum",
+      "specimen": "MNHN_438671634_Piperaceae_Piper_salinasanum",
+      "project_key": "fbuk2yx3",
+      "dataset_split": "test",
+      "image_size": [
+        3346,
+        5120
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 12.1,
+        "BiRefNet": 12.0,
+        "YOLO26x-seg": 13.3
+      },
+      "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+    },
+    {
+      "file": "compare_20_test_lab_tilia_tomentosa_ny1110-08-4.jpg",
+      "stem": "g6r0hofk__lab_tilia_tomentosa_ny1110-08-4",
+      "specimen": "lab_tilia_tomentosa_ny1110-08-4",
+      "project_key": "g6r0hofk",
+      "dataset_split": "test",
+      "image_size": [
+        800,
+        752
+      ],
+      "percent_of_sheet_kept": {
+        "UNet++": 7.5,
+        "BiRefNet": 7.5,
+        "YOLO26x-seg": 7.7
+      },
+      "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+    }
+  ],
+  "what": "Background-removal comparison panels [Original | UNet++ | BiRefNet | YOLO26x-seg] on the same specimens; black = removed. Raw model masks, no paper-removal follow-up. File names carry the dataset split.",
+  "models": {
+    "UNet++": "unet/runs/unet_masksFromSam3_paperclean_control_1024/best.pt (the 8 added test sheets: the exported ONNX)",
+    "BiRefNet": "birefnet/runs/birefnet-hr-1024-paperclean/epoch_145.pth",
+    "YOLO26x-seg": "yolo26/runs/segment/LM3_Specimen_Segmentation/yolo26x-seg-1280-paperclean/weights/best.pt"
+  },
+  "note": "Will prunes by hand. The same panels go in every specimen-segmenter card.",
+  "kept": [
+    "compare_01_test_CMN_1804514859_Sapindaceae_Acer_saccharum.jpg",
+    "compare_02_train_CM_2859177966_Sapindaceae_Acer_saccharum.jpg",
+    "compare_03_val_FLAS_1457816931_Fabaceae_Cassia_fistula.jpg",
+    "compare_04_val_NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum.jpg",
+    "compare_05_val_CHC21_009_9.jpg",
+    "compare_06_val_MNHN_730851102_Euphorbiaceae_Macaranga_saccifera.jpg",
+    "compare_07_train_MNHN_731821562_Euphorbiaceae_Macaranga_magnifolia.jpg",
+    "compare_08_train_UM_1807486051_Euphorbiaceae_Macaranga_gracilis.jpg",
+    "compare_09_train_K_912592861_Torricelliaceae_Torricellia_angulata.jpg",
+    "compare_10_train_CLF_1437883182_Fagaceae_Quercus_grisebachii.jpg",
+    "compare_11_train_CLF_1437893278_Fagaceae_Quercus_semilanuginosa.jpg",
+    "compare_12_train_MNHN_731018123_Fagaceae_Quercus_pinnatiloba.jpg",
+    "compare_13_test_KYO_2443051967_Caprifoliaceae_Lonicera_maackii.jpg",
+    "compare_14_test_BO1284103_4067113860_Euphorbiaceae_Macaranga_waturandangii.jpg",
+    "compare_15_test_L_2517447339_Torricelliaceae_Melanophylla_alnifolia.jpg",
+    "compare_16_test_ASU_2270499210_Brassicaceae_Raphanus_raphanistrum.jpg",
+    "compare_17_test_UM_1807432107_Rubiaceae_Posoqueria_longiflora.jpg",
+    "compare_18_test_1D41D09F-BC60-4E11-9283-3A0F23787BA7_1_105_c.jpg",
+    "compare_19_test_MNHN_438671634_Piperaceae_Piper_salinasanum.jpg",
+    "compare_20_test_lab_tilia_tomentosa_ny1110-08-4.jpg"
+  ]
+}

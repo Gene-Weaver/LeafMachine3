@@ -1,0 +1,266 @@
+{
+  "what": "leaf_segmenter instance masks (Leaf / Petiole / Hole) drawn on the LM3 working image with the Reporter's build_summary_image (masks only; boxes/landmarks/labels/CF off). Rendered 2026-10-06 from the run DB of LM3/examples_out/collage_test_broadsampletrees (model = LM3 3.0.0 default yolo26x_seg_1024).",
+  "note": "10 candidates; Will prunes by hand. 2026-10-06: +10 lobed/toothed species (11-20), some from the _cfsum run.",
+  "examples": [
+    {
+      "file": "overlay_01_MIN_2265600423_Apocynaceae_Alstonia_spectabilis.jpg",
+      "specimen": "MIN_2265600423_Apocynaceae_Alstonia_spectabilis",
+      "instances": {
+        "Leaf": 6,
+        "Petiole": 3,
+        "Hole": 1
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_02_US_1563238921_Fabaceae_Acacia_leptocarpa.jpg",
+      "specimen": "US_1563238921_Fabaceae_Acacia_leptocarpa",
+      "instances": {
+        "Leaf": 7,
+        "Petiole": 1,
+        "Hole": 1
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_03_NY_1928464708_Malvaceae_Pachira_duckei.jpg",
+      "specimen": "NY_1928464708_Malvaceae_Pachira_duckei",
+      "instances": {
+        "Leaf": 9,
+        "Petiole": 4,
+        "Hole": 3
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_04_CHSC_2417949051_Ericaceae_Arbutus_unedo.jpg",
+      "specimen": "CHSC_2417949051_Ericaceae_Arbutus_unedo",
+      "instances": {
+        "Leaf": 18,
+        "Petiole": 12,
+        "Hole": 1
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_05_TEX_2807528308_Lauraceae_Cinnamomum_camphora.jpg",
+      "specimen": "TEX_2807528308_Lauraceae_Cinnamomum_camphora",
+      "instances": {
+        "Leaf": 10,
+        "Petiole": 9,
+        "Hole": 4
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_06_CM_2859108687_Cannabaceae_Celtis_occidentalis.jpg",
+      "specimen": "CM_2859108687_Cannabaceae_Celtis_occidentalis",
+      "instances": {
+        "Leaf": 11,
+        "Petiole": 9,
+        "Hole": 14
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_07_USCH_1849094340_Theaceae_Stewartia_ovata.jpg",
+      "specimen": "USCH_1849094340_Theaceae_Stewartia_ovata",
+      "instances": {
+        "Leaf": 10,
+        "Petiole": 7,
+        "Hole": 1
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_08_UCR_2422410684_Sapindaceae_Cupaniopsis_anacardioides.jpg",
+      "specimen": "UCR_2422410684_Sapindaceae_Cupaniopsis_anacardioides",
+      "instances": {
+        "Leaf": 21,
+        "Petiole": 12,
+        "Hole": 1
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_09_NCU_2640538502_Theaceae_Stewartia_malacodendron.jpg",
+      "specimen": "NCU_2640538502_Theaceae_Stewartia_malacodendron",
+      "instances": {
+        "Leaf": 9,
+        "Petiole": 6,
+        "Hole": 4
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_10_DAV_2421779170_Fagaceae_Chrysolepis_chrysophylla.jpg",
+      "specimen": "DAV_2421779170_Fagaceae_Chrysolepis_chrysophylla",
+      "instances": {
+        "Leaf": 26,
+        "Petiole": 16,
+        "Hole": 2
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600"
+    },
+    {
+      "file": "overlay_11_VT_2573061663_Ulmaceae_Ulmus_americana.jpg",
+      "specimen": "VT_2573061663_Ulmaceae_Ulmus_americana",
+      "shape": "toothed",
+      "instances": {
+        "Leaf": 13,
+        "Petiole": 13,
+        "Hole": 4
+      },
+      "source_run": "LM3/examples_out/_cfsum",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 258490
+    },
+    {
+      "file": "overlay_12_NY_1927952050_Fagaceae_Quercus_bicolor.jpg",
+      "specimen": "NY_1927952050_Fagaceae_Quercus_bicolor",
+      "shape": "lobed",
+      "instances": {
+        "Leaf": 5,
+        "Petiole": 5,
+        "Hole": 3
+      },
+      "source_run": "LM3/examples_out/_cfsum",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 285772
+    },
+    {
+      "file": "overlay_13_MNHN_731826796_Fagaceae_Quercus_rosacea.jpg",
+      "specimen": "MNHN_731826796_Fagaceae_Quercus_rosacea",
+      "shape": "lobed",
+      "instances": {
+        "Leaf": 11,
+        "Petiole": 2,
+        "Hole": 3
+      },
+      "source_run": "LM3/examples_out/_cfsum",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 296936
+    },
+    {
+      "file": "overlay_14_UM_1807393061_Fagaceae_Quercus_suberoides.jpg",
+      "specimen": "UM_1807393061_Fagaceae_Quercus_suberoides",
+      "shape": "lobed",
+      "instances": {
+        "Leaf": 24,
+        "Petiole": 22,
+        "Hole": 2
+      },
+      "source_run": "LM3/examples_out/_cfsum",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 330561
+    },
+    {
+      "file": "overlay_15_CM_2859104604_Fagaceae_Castanea_dentata.jpg",
+      "specimen": "CM_2859104604_Fagaceae_Castanea_dentata",
+      "shape": "toothed",
+      "instances": {
+        "Leaf": 6,
+        "Petiole": 6,
+        "Hole": 8
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 238941
+    },
+    {
+      "file": "overlay_16_CHRB_3395271190_Betulaceae_Ostrya_carpinifolia.jpg",
+      "specimen": "CHRB_3395271190_Betulaceae_Ostrya_carpinifolia",
+      "shape": "toothed",
+      "instances": {
+        "Leaf": 8,
+        "Petiole": 8,
+        "Hole": 31
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 209410
+    },
+    {
+      "file": "overlay_17_CM_2859339684_Salicaceae_Populus_grandidentata.jpg",
+      "specimen": "CM_2859339684_Salicaceae_Populus_grandidentata",
+      "shape": "toothed",
+      "instances": {
+        "Leaf": 20,
+        "Petiole": 18,
+        "Hole": 20
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 334157
+    },
+    {
+      "file": "overlay_18_NY_1928597599_Rosaceae_Crataegus_douglasii.jpg",
+      "specimen": "NY_1928597599_Rosaceae_Crataegus_douglasii",
+      "shape": "lobed, toothed",
+      "instances": {
+        "Leaf": 15,
+        "Petiole": 16,
+        "Hole": 4
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 166546
+    },
+    {
+      "file": "overlay_19_SBBG_3053392140_Anacardiaceae_Toxicodendron_diversilobum.jpg",
+      "specimen": "SBBG_3053392140_Anacardiaceae_Toxicodendron_diversilobum",
+      "shape": "lobed",
+      "instances": {
+        "Leaf": 32,
+        "Petiole": 8,
+        "Hole": 3
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 196163
+    },
+    {
+      "file": "overlay_20_NY_1931316358_Cannabaceae_Celtis_laevigata.jpg",
+      "specimen": "NY_1931316358_Cannabaceae_Celtis_laevigata",
+      "shape": "toothed",
+      "instances": {
+        "Leaf": 21,
+        "Petiole": 19,
+        "Hole": 13
+      },
+      "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+      "frame": "working (long side 3200) downscaled to 1600",
+      "bytes": 264179
+    }
+  ],
+  "kept": [
+    "overlay_01_MIN_2265600423_Apocynaceae_Alstonia_spectabilis.jpg",
+    "overlay_02_US_1563238921_Fabaceae_Acacia_leptocarpa.jpg",
+    "overlay_03_NY_1928464708_Malvaceae_Pachira_duckei.jpg",
+    "overlay_04_CHSC_2417949051_Ericaceae_Arbutus_unedo.jpg",
+    "overlay_05_TEX_2807528308_Lauraceae_Cinnamomum_camphora.jpg",
+    "overlay_06_CM_2859108687_Cannabaceae_Celtis_occidentalis.jpg",
+    "overlay_07_USCH_1849094340_Theaceae_Stewartia_ovata.jpg",
+    "overlay_08_UCR_2422410684_Sapindaceae_Cupaniopsis_anacardioides.jpg",
+    "overlay_09_NCU_2640538502_Theaceae_Stewartia_malacodendron.jpg",
+    "overlay_10_DAV_2421779170_Fagaceae_Chrysolepis_chrysophylla.jpg",
+    "overlay_11_VT_2573061663_Ulmaceae_Ulmus_americana.jpg",
+    "overlay_12_NY_1927952050_Fagaceae_Quercus_bicolor.jpg",
+    "overlay_13_MNHN_731826796_Fagaceae_Quercus_rosacea.jpg",
+    "overlay_14_UM_1807393061_Fagaceae_Quercus_suberoides.jpg",
+    "overlay_15_CM_2859104604_Fagaceae_Castanea_dentata.jpg",
+    "overlay_16_CHRB_3395271190_Betulaceae_Ostrya_carpinifolia.jpg",
+    "overlay_17_CM_2859339684_Salicaceae_Populus_grandidentata.jpg",
+    "overlay_18_NY_1928597599_Rosaceae_Crataegus_douglasii.jpg"
+  ]
+}
