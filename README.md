@@ -588,6 +588,19 @@ and the radial form with the leaf outline drawn over it, plus the raw coordinate
 No model; CPU. *Output:* `leaf_ect` table; `Leaf_Data/Oriented_Leaf_ECT/`,
 `Oriented_Leaf_Radial_ECT/`, `Oriented_Leaf_Radial_ECT_Overlay/`, `Coordinates/*.h5`.
 
+The transform is computed with the [`ect`](https://github.com/MunchLab/ect) Python package
+([documentation](https://munchlab.github.io/ect/)). If you use the ECT outputs, please cite:
+
+- Ayub, Y., McGuire-Scullen, S., Percival, S., Weaver, W. N., … Munch, E., & Chitwood, D. H.
+  (2026). The Euler Characteristic Transform enables classification of complex plant shapes and
+  prediction of leaf venation from blade geometry. *bioRxiv*.
+  <https://doi.org/10.64898/2026.04.13.718293>
+- Ayub, Y., Munch, E., McGuire Scullen, S., & Chitwood, D. H. (2026). ect: A Python package for
+  the Euler Characteristic Transform. *Journal of Open Source Software*, 11(120), 9691.
+  <https://doi.org/10.21105/joss.09691>
+- Munch, E. (2025). An invitation to the Euler Characteristic Transform. *The American
+  Mathematical Monthly*, 132(1), 15–25. <https://doi.org/10.1080/00029890.2024.2409616>
+
 ---
 
 ## Outputs
