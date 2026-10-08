@@ -82,7 +82,7 @@ modules:
   leaf_segmenter:
     enabled: true
     model: {key: yolo26x_seg_1024, path: models/leaf_segmenter/model.onnx, format: onnx}
-    include_partial: true
+    include_partial: false
     imgsz: 1024
     conf: 0.3
     iou: 0.5
