@@ -122,3 +122,6 @@ tests/test_global_greening_wrapper.py
 
 # Local desktop/CI investigation notes.
 /docs/desktop-ci-status.md
+
+# A local test image, not shipped.
+/examples/images/15_1_FPfit.JPG
