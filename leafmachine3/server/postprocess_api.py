@@ -1360,39 +1360,39 @@ def registry() -> TaskRegistry:
 _STL_INPUTS: tuple[ToolInput, ...] = (
     ToolInput(
         key="paths", label="Mask images", type="path", default=[], multi=True, required=True,
-        accepts="mask_png", must_exist=True, group="Input", important=True,
+        accepts="mask_png", must_exist=True, group="Input", important=False,
         placeholder="reports/Leaf_Original/Lamina_Mask/<specimen>__og-SEG-lamina__x_y_x_y.png",
         help="Binary-mask PNG(s) to extrude. Pick them from a finished LM3 run, or paste paths. "
              "Each mask becomes one .stl.",
     ),
     ToolInput(
         key="output_dir", label="Output folder", type="path", default=None, accepts="dir",
-        must_exist=False, group="Input", important=True,
+        must_exist=False, group="Input", important=False,
         placeholder="leave empty to write beside each mask",
         help="Where the .stl files are written. Empty writes <mask name>.stl next to its source "
              "mask. The folder is created if it does not exist.",
     ),
     ToolInput(
         key="length_mm", label="Longest dimension", type="float", default=150.0,
-        min=0.1, max=5000.0, step=1.0, group="Geometry", important=True,
+        min=0.1, max=5000.0, step=1.0, group="Geometry", important=False,
         help="The mask's LONGEST side is scaled to this many mm -- this sets the overall printed "
              "size. The other side follows the mask's aspect ratio.",
     ),
     ToolInput(
         key="thickness_mm", label="Thickness (z)", type="float", default=2.0,
-        min=0.01, max=500.0, step=0.1, group="Geometry", important=True,
+        min=0.01, max=500.0, step=0.1, group="Geometry", important=False,
         help="Extrusion height in mm. The flat 2D shape is pushed to this depth: a circle mask "
              "becomes a cylinder, a leaf mask becomes a flat leaf slab.",
     ),
     ToolInput(
         key="fill_holes", label="Fill internal holes", type="bool", default=True,
-        group="Shape cleanup", important=True,
+        group="Shape cleanup", important=False,
         help="Fill fully enclosed background holes so the printed solid has no through-gaps. Turn "
              "off to keep insect damage and other perforations open.",
     ),
     ToolInput(
         key="colors", label="Foreground color(s)", type="list", item_type="color",
-        default=["white"], group="Foreground selection", important=True,
+        default=["white"], group="Foreground selection", important=False,
         placeholder="white",
         help="Which color(s) in the PNG become the model. LM3 binary masks are white on black, so "
              "'white' is right for Binary_Masks and Lamina_Mask outputs. Accepts 'white', 'black', "
@@ -1521,14 +1521,14 @@ def _run_generate_stl(params: dict, ctx: TaskContext) -> dict:
 _COLLAGE_INPUTS: tuple[ToolInput, ...] = (
     ToolInput(
         key="run_dir", label="Run folder", type="path", default=None, accepts="dir",
-        must_exist=True, required=True, group="Input", important=True,
+        must_exist=True, required=True, group="Input", important=False,
         placeholder="examples_out/<run>  (the folder holding <run>.sqlite and reports/)",
         help="The finished LM3 run to read. Its project database supplies the archetype scores and "
              "the veto flags; its reports/ tree supplies the leaf masks.",
     ),
     ToolInput(
         key="primary_mask", label="Primary mask", type="path", default=None, accepts="mask_png",
-        must_exist=True, required=True, group="Input", important=True,
+        must_exist=True, required=True, group="Input", important=False,
         placeholder="the mask whose outline the collage fills",
         help="The mask whose white area becomes the collage's overall shape. Pick from the run's "
              "own high-scoring leaves for a leaf built out of leaves, or paste any mask PNG.",
@@ -1549,13 +1549,13 @@ _COLLAGE_INPUTS: tuple[ToolInput, ...] = (
 
     ToolInput(
         key="min_archetype_score", label="Minimum archetype score", type="float", default=0.8,
-        min=0.0, max=1.0, step=0.01, group="Which leaves", important=True,
+        min=0.0, max=1.0, step=0.01, group="Which leaves", important=False,
         help="Keep leaves scoring STRICTLY above this (0-1). Leaves that failed a structural veto "
              "are excluded no matter how they scored, so this only ever narrows a clean set.",
     ),
     ToolInput(
         key="max_leaves", label="Leaf cap", type="int", default=0,
-        min=0, max=5000, step=10, group="Which leaves", important=True,
+        min=0, max=5000, step=10, group="Which leaves", important=False,
         help="At most this many leaves, highest score first. 0 uses every leaf that passes.",
     ),
     ToolInput(
@@ -1568,7 +1568,7 @@ _COLLAGE_INPUTS: tuple[ToolInput, ...] = (
     ToolInput(
         key="mask_variant", label="Mask version", type="enum", default="lamina_mask",
         enum=("lamina_mask", "lamina_holes_mask", "lamina_petiole_mask", "lamina_petiole_holes_mask"),
-        group="Which leaves", important=True,
+        group="Which leaves", important=False,
         help="Which per-leaf product to tile. lamina_mask is the lamina with its holes CUT OUT; "
              "lamina_holes_mask is the solid silhouette with holes filled; the petiole variants "
              "keep the stalk. Only the first three have an RGB cutout sibling.",
@@ -1576,25 +1576,25 @@ _COLLAGE_INPUTS: tuple[ToolInput, ...] = (
 
     ToolInput(
         key="style", label="Leaf rendering", type="enum", default="mask",
-        enum=("mask", "rgb"), group="Appearance", important=True,
+        enum=("mask", "rgb"), group="Appearance", important=False,
         help="mask recolors each binary mask to the color below. rgb uses the matching RGB cutout, "
              "so the collage keeps every leaf's real pixels.",
     ),
     ToolInput(
         key="color", label="Leaf color", type="color", default=[255, 255, 255],
-        group="Appearance", important=True, placeholder="white, #ff0000 or 255,0,0",
+        group="Appearance", important=False, placeholder="white, #ff0000 or 255,0,0",
         help="The color solid leaves are drawn in. Used by the mask style only -- the rgb style "
              "keeps each leaf's own pixels.",
     ),
     ToolInput(
         key="background", label="Background", type="color_or_none", default="transparent",
-        group="Appearance", important=True, placeholder="transparent, black or 255,255,255",
+        group="Appearance", important=False, placeholder="transparent, black or 255,255,255",
         help="Transparent drops the collage onto any slide or poster. Pick a color instead to "
              "flatten it onto a solid sheet.",
     ),
     ToolInput(
         key="max_dim_px", label="Longest side", type="int", default=10000,
-        min=256, max=30000, step=100, group="Appearance", important=True,
+        min=256, max=30000, step=100, group="Appearance", important=False,
         help="Longest side of the output PNG in pixels; every tile is scaled to suit. A 10000 px "
              "canvas is roughly 400 MB in memory while it is being drawn.",
     ),
@@ -1607,7 +1607,7 @@ _COLLAGE_INPUTS: tuple[ToolInput, ...] = (
 
     ToolInput(
         key="layout", label="Arrangement", type="enum", default="grid",
-        enum=("grid", "mosaic", "organic", "puzzle"), group="Arrangement", important=True,
+        enum=("grid", "mosaic", "organic", "puzzle"), group="Arrangement", important=False,
         help="grid solves one square cell per leaf. mosaic is a quadtree -- big tiles inside, "
              "subdivided toward the edge for a crisp outline. organic packs each leaf into the "
              "largest remaining pocket at its own scale and rotation. "
@@ -1616,7 +1616,7 @@ _COLLAGE_INPUTS: tuple[ToolInput, ...] = (
     ),
     ToolInput(
         key="ranking", label="Score placement", type="enum", default="center",
-        enum=("center", "reading", "random"), group="Arrangement", important=True,
+        enum=("center", "reading", "random"), group="Arrangement", important=False,
         help="center puts the best leaves deepest inside the silhouette (and, in the mosaic, on "
              "the biggest tiles). reading fills left-to-right, top-to-bottom. random shuffles.",
     ),

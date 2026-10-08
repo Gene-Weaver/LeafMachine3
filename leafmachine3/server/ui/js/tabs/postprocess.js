@@ -499,7 +499,7 @@ function renderDetail() {
     el("span.spacer"),
     el("span.implegend", {
       title: "Switches and dropdowns are self-explanatory, so they are not shaded.",
-    }, el("span.impdot"), "green = you'll want to type a value here"));
+    }, el("span.impdot"), "green = settings you might want to adjust"));
 
   D.runPanel = el("div", { style: { marginTop: "14px" } });
 

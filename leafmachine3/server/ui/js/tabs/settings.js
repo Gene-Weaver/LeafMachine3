@@ -421,7 +421,7 @@ export function initSettings(root) {
   const legend = el("span.implegend", {
     title: "Switches and dropdowns are self-explanatory, so they are not shaded. "
          + "\"Important only\" still finds every important setting, shaded or not.",
-  }, el("span.impdot"), "green = you'll want to type a value here");
+  }, el("span.impdot"), "green = settings you might want to adjust");
 
   const shownCount = el("span.mono.dim", { style: { fontSize: "11.5px" } }, "");
   const fileInfo = el("span.mono.dim", { style: { fontSize: "11.5px" }, title: "" }, "");
