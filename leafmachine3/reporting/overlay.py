@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover
     cv2 = None
 
 from leafmachine3.core.imaging import decode_polygon, mask_bbox, scale_polygon
-from leafmachine3.core.records import CF_SOURCE_MP
+from leafmachine3.core.records import CF_SOURCE_MP, CF_SOURCE_RULER
 from leafmachine3.core.landmarks import KPT_GROUP, MIDVEIN_N, SKELETON
 from leafmachine3.reporting.palette import (
     LEAF_DET_CLASSES, RGB, CFScalebarStyle, GroupStyle, LandmarkStyle, OverlayStyle, PetioleStyle,
@@ -86,6 +86,7 @@ def build_summary_image(
     petiole_style: Optional[PetioleStyle] = None,
     cf_style: Optional[CFScalebarStyle] = None,
     cf_source: Optional[str] = None,
+    cf_note: Optional[str] = None,
 ) -> np.ndarray:
     """Render the Summary_Image overlay onto a copy of ``image_bgr``.
 
@@ -106,6 +107,9 @@ def build_summary_image(
             says so, the 1 cm / 1 inch raft goes in the top-left corner (under the banner)
             instead of over the detected rulers -- none of which produced this CF -- and the
             exterior checkerboard switches to its ``*_predicted`` colors (black / 50% gray).
+            A measured CF is labeled "(measured from ruler)" in the banner.
+        cf_note: Optional second banner line saying WHY a predicted CF was used -- see
+            :func:`cf_fallback_reason`. Ignored unless the CF is predicted.
 
     Returns:
         A new BGR ``np.ndarray``, the same shape as ``image_bgr`` -- EXCEPT under
@@ -128,7 +132,8 @@ def build_summary_image(
     predicted = cf_source == CF_SOURCE_MP
     banner_bottom = 0
     if style.draw_cf_banner and cf_px_per_cm:
-        banner_bottom = _draw_cf_banner(out, float(cf_px_per_cm), style, predicted=predicted)
+        banner_bottom = _draw_cf_banner(out, float(cf_px_per_cm), style, cf_source=cf_source,
+                                        note=cf_note if predicted else None)
     # Landmarks go ON TOP of masks + boxes so every leaf's keypoints stay visible.
     if style.draw_landmarks and landmarks:
         _draw_landmarks(out, landmarks, landmark_style or LandmarkStyle(), scale,
@@ -804,23 +809,54 @@ def _draw_rotated_boxes(out: np.ndarray, morphology: Sequence[Any], style: Overl
 
 
 # -- conversion-factor banner ------------------------------------------------------
+def cf_fallback_reason(lattice_image: Optional[dict]) -> Optional[str]:
+    """Why a sheet fell back to the megapixel CF, as a short banner line; None if unknown.
+
+    Read from the sheet's ``ruler_CF_lattice`` row. ``no_reading`` covers two different failures,
+    told apart by the crop counts: every ruler was a type the lattice does not handle yet
+    (``n_skipped``), or the rulers were attempted and could not be read (``n_failed``). A
+    ``withheld`` sheet shows the rejected reading (working-frame px per cm, the banner's frame).
+    """
+    img = lattice_image or {}
+    status = img.get("status")
+    if status == "no_ruler":
+        return "missing ruler"
+    if status == "withheld":
+        meas = img.get("cf_px_per_cm_measured")
+        return "ruler failed validation" + ("" if meas is None else f" ({float(meas):.2f} px)")
+    if status == "no_reading":
+        n = int(img.get("n_ruler_crops") or 0)
+        if n and int(img.get("n_skipped") or 0) == n:
+            return "unsupported ruler"
+        if n and int(img.get("n_failed") or 0) == n:
+            return "unreadable ruler"
+        return "unusable ruler"
+    return None
+
+
 def _draw_cf_banner(out: np.ndarray, cf_px_per_cm: float, style: OverlayStyle,
-                    predicted: bool = False) -> int:
+                    cf_source: Optional[str] = None, note: Optional[str] = None) -> int:
     """Print the conversion factor in a banner at the top-left of the sheet; return its bottom y.
 
-    A CF predicted from megapixels says so in the banner itself, so the number is never read as
-    a ruler measurement."""
-    text = f"CF: {cf_px_per_cm:.2f} px/cm" + (" (predicted from megapixels)" if predicted else "")
+    Line 1 names the CF's source -- "(measured from ruler)" or "(predicted from megapixels)" --
+    so the number is never read as a measurement it isn't. ``note`` (why the prediction was used)
+    becomes a second line in the same font; the banner grows to fit both."""
+    label = {CF_SOURCE_RULER: " (measured from ruler)",
+             CF_SOURCE_MP: " (predicted from megapixels)"}.get(cf_source, "")
+    lines = [f"CF: {cf_px_per_cm:.2f} px/cm{label}"] + ([note] if note else [])
     font_scale = _BASE_FONT_SCALE * 1.4 * max(0.1, style.font_scale)
     thickness = max(1, int(round(font_scale * 2)))
-    (tw, th), base = cv2.getTextSize(text, _FONT, font_scale, thickness)
+    sizes = [cv2.getTextSize(t, _FONT, font_scale, thickness) for t in lines]
     pad = int(round(6 * max(0.5, style.font_scale)))
-    bottom = th + base + 2 * pad
-    cv2.rectangle(out, (0, 0), (tw + 2 * pad, bottom), _bgr(style.cf_banner_color), -1)
-    cv2.putText(
-        out, text, (pad, th + pad), _FONT, font_scale,
-        (0, 0, 0), thickness, cv2.LINE_AA,
-    )
+    line_h = max(th + base for (_tw, th), base in sizes)
+    width = max(tw for (tw, _th), _base in sizes)
+    bottom = len(lines) * line_h + (len(lines) - 1) * pad + 2 * pad
+    cv2.rectangle(out, (0, 0), (width + 2 * pad, bottom), _bgr(style.cf_banner_color), -1)
+    for k, ((_tw, th), _base) in enumerate(sizes):
+        cv2.putText(
+            out, lines[k], (pad, pad + k * (line_h + pad) + th), _FONT, font_scale,
+            (0, 0, 0), thickness, cv2.LINE_AA,
+        )
     return bottom + 1          # cv2.rectangle is inclusive of its far corner
 
 

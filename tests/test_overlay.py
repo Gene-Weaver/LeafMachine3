@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from leafmachine3.core.imaging import encode_polygon
 from leafmachine3.reporting.overlay import _res_ratio, _scaled_lw, build_summary_image
@@ -316,15 +317,76 @@ def test_measured_cf_raft_stays_on_the_ruler() -> None:
     assert np.array_equal(out[:150, :200], img[:150, :200])
 
 
-def test_predicted_cf_banner_says_so() -> None:
-    """The banner text is longer for a predicted CF -- it carries the 'predicted' label."""
-    img = np.full((400, 1400, 3), 128, np.uint8)
+def _banner_text(monkeypatch, **kw) -> list[str]:
+    """Every string the summary overlay puts on the image (only the banner, with labels off)."""
+    from leafmachine3.reporting import overlay
+
+    seen: list[str] = []
+    real = overlay.cv2.putText
+
+    def spy(img, text, *a, **k):
+        seen.append(text)
+        return real(img, text, *a, **k)
+
+    monkeypatch.setattr(overlay.cv2, "putText", spy)
     style = OverlayStyle(draw_labels=False, draw_cf_banner=True, draw_masks=False)
+    build_summary_image(np.full((400, 1400, 3), 128, np.uint8), [], [], cf_px_per_cm=40.0,
+                        style=style, work_scale=1.0, **kw)
+    return seen
+
+
+def test_banner_names_the_cf_source(monkeypatch) -> None:
+    assert _banner_text(monkeypatch, cf_source="measured_from_ruler") == [
+        "CF: 40.00 px/cm (measured from ruler)"]
+    assert _banner_text(monkeypatch, cf_source=_PRED) == [
+        "CF: 40.00 px/cm (predicted from megapixels)"]
+    assert _banner_text(monkeypatch) == ["CF: 40.00 px/cm"]       # caller that passes no source
+
+
+def test_predicted_banner_carries_the_reason_line(monkeypatch) -> None:
+    assert _banner_text(monkeypatch, cf_source=_PRED, cf_note="missing ruler") == [
+        "CF: 40.00 px/cm (predicted from megapixels)", "missing ruler"]
+    # a note on a MEASURED sheet would be a contradiction, so it is never drawn
+    assert _banner_text(monkeypatch, cf_source="measured_from_ruler", cf_note="missing ruler") == [
+        "CF: 40.00 px/cm (measured from ruler)"]
+
+
+def test_one_line_banner_geometry_is_unchanged() -> None:
+    """The second line must not move a single-line banner by a pixel (overlays stay comparable)."""
+    from leafmachine3.reporting.overlay import _draw_cf_banner
+
+    style = OverlayStyle()
+    a = np.zeros((300, 1400, 3), np.uint8)
+    b = np.zeros((300, 1400, 3), np.uint8)
+    assert _draw_cf_banner(a, 40.0, style) == _draw_cf_banner(b, 40.0, style, note=None)
+    two = _draw_cf_banner(np.zeros((300, 1400, 3), np.uint8), 40.0, style, note="missing ruler")
+    assert two > _draw_cf_banner(np.zeros((300, 1400, 3), np.uint8), 40.0, style)
+
+
+def test_predicted_cf_raft_sits_below_a_two_line_banner() -> None:
+    img = np.full((400, 600, 3), 128, np.uint8)
+    style = OverlayStyle(draw_labels=False, draw_cf_banner=True, draw_masks=False,
+                         insert_cf_in_rulers=True, cf_banner_color=(255, 200, 0))
+    out = build_summary_image(img, [], [], cf_px_per_cm=40.0, style=style, work_scale=1.0,
+                              cf_style=_cf_style(bar_thickness=10, brim=3), cf_source=_PRED,
+                              cf_note="ruler failed validation (94.82 px)")
     banner = np.array(style.cf_banner_color[::-1], np.uint8)
+    banner_rows = np.where(np.all(out[:, 0] == banner, axis=-1))[0]
+    raft_rows = np.where(np.all(out[:, 0] == np.array(_WHITE_BGR, np.uint8), axis=-1))[0]
+    assert raft_rows.min() == banner_rows.max() + 1
 
-    def banner_width(src):
-        out = build_summary_image(img, [], [], cf_px_per_cm=40.0, style=style, work_scale=1.0,
-                                  cf_source=src)
-        return int(np.where(np.all(out[0] == banner, axis=-1))[0].max())
 
-    assert banner_width(_PRED) > banner_width("measured_from_ruler")
+@pytest.mark.parametrize("image, reason", [
+    ({"status": "no_ruler", "n_ruler_crops": 0}, "missing ruler"),
+    ({"status": "no_reading", "n_ruler_crops": 4, "n_skipped": 4, "n_failed": 0}, "unsupported ruler"),
+    ({"status": "no_reading", "n_ruler_crops": 2, "n_skipped": 0, "n_failed": 2}, "unreadable ruler"),
+    ({"status": "no_reading", "n_ruler_crops": 3, "n_skipped": 1, "n_failed": 2}, "unusable ruler"),
+    ({"status": "withheld", "cf_px_per_cm_measured": 94.8213}, "ruler failed validation (94.82 px)"),
+    ({"status": "withheld", "cf_px_per_cm_measured": None}, "ruler failed validation"),
+    ({"status": "published"}, None),
+    (None, None),
+])
+def test_cf_fallback_reason(image, reason) -> None:
+    from leafmachine3.reporting.overlay import cf_fallback_reason
+
+    assert cf_fallback_reason(image) == reason

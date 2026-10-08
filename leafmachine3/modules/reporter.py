@@ -72,6 +72,7 @@ from leafmachine3.core.imaging import (
     save_image,
 )
 from leafmachine3.core.naming import crop_label, friendly_name
+from leafmachine3.core.records import CF_SOURCE_MP
 from leafmachine3.core.stage import PipelineStage, WorkItem
 from leafmachine3.reporting.data_export import export_data_csvs
 from leafmachine3.reporting.leaf_products import (
@@ -85,6 +86,7 @@ from leafmachine3.reporting.overlay import (
     build_leaf_petiole_overlay,
     build_specimen_overlay,
     build_summary_image,
+    cf_fallback_reason,
 )
 from leafmachine3.reporting.palette import (
     CFScalebarStyle,
@@ -224,6 +226,8 @@ class Reporter(PipelineStage):
                 landmark_measurements=b.landmark_measurements,
                 petioles=b.petioles, petiole_style=pet_style,
                 cf_style=CFScalebarStyle.from_config(self.cfg), cf_source=b.cf_source,
+                cf_note=(cf_fallback_reason((b.ruler_lattice or {}).get("image"))
+                         if b.cf_source == CF_SOURCE_MP else None),
             )
             path = reports / "Overlay" / "Overlay_Summary" / f"{stem}__Overlay.{img_ext}"
             save_image(summary, path, quality=quality)

@@ -455,10 +455,12 @@ the lattice fit, and the verdict.
 With `modules.ruler_cf.use_CF_predicted_by_MP: true` (off by default), a sheet with no ruler, or
 one whose lattice did not pass, gets the stage 1 prediction instead, so it still has cm
 measurements. Every output says which kind it is: `specimen.cf_source` and the `cf_source` CSV
-column read `measured_from_ruler` or `predicted_from_megapixels`. On the summary overlay, a
-predicted factor is labeled in the CF banner, its 1 cm / 1 inch raft sits in the top-left corner
-instead of on a ruler, and the exterior 1 cm checkerboard is black and 50% gray instead of black
-and white.
+column read `measured_from_ruler` or `predicted_from_megapixels`. On the summary overlay, the CF
+banner names the source ("measured from ruler" or "predicted from megapixels"), and a predicted
+factor gets a second line saying why: `missing ruler`, `unsupported ruler`, `unreadable ruler`,
+`unusable ruler`, or `ruler failed validation (94.82 px)` with the rejected reading. Its 1 cm /
+1 inch raft sits in the top-left corner instead of on a ruler, and the exterior 1 cm checkerboard
+is black and 50% gray instead of black and white.
 
 ![Ruler lattice QC panels for the three specimens](docs/readme_github/ruler_cf_lattice.jpg)
 
