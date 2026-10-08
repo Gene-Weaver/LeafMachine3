@@ -15,7 +15,9 @@ color card is cropped for downstream work. Each run produces annotated overlays,
 
 *Three specimens as imaged (top) and the LeafMachine3 summary overlay for each (bottom): leaf
 masks, rotated bounding boxes, landmarks, petiole widths, organ and archival detections. All demo
-images in this README come from these three sheets.*
+images in this README come from these three sheets, Platanus kerrii, Catalpa erubescens and
+Catalpa purpurea, which ship in `examples/images/`, so running LM3 on the bundled examples
+reproduces every figure.*
 
 ---
 
@@ -376,7 +378,7 @@ fruits, single and grouped flowers, buds, roots, and wood. Whole-leaf boxes (`Le
 is counted by the phenology stage and cropped. As in LeafMachine2, leaflets are treated as simple
 leaves.
 
-![Plant crops: three leaves, a bud, two fruits](docs/readme_github/plant_detector_crops.jpg)
+![Plant crops: three leaves, a fruit, a fruit cluster and a flower](docs/readme_github/plant_detector_crops.jpg)
 
 | Model | [`lm3_plant_detector__yolo26x_det_1280`](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26x_det_1280) (default) · [`yolo26n_det_640`](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26n_det_640) (lightweight) |
 |---|---|
@@ -470,7 +472,7 @@ LeafMachine2, segmentation runs on one leaf crop at a time, so overlapping leave
 and cluttered backgrounds are handled per leaf and the network only ever sees the leaf it is
 asked about. Holes and petioles are attached to their owning leaf.
 
-![Leaf segmentation: detector crop, instance mask, RGB cutout, for one leaf per specimen](docs/readme_github/leaf_segmenter.jpg)
+![Leaf segmentation: detector crop, lamina + petiole mask, RGB cutout, for one leaf per specimen](docs/readme_github/leaf_segmenter.jpg)
 
 | Model | [`lm3_leaf_segmenter__yolo26x_seg_1024`](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024) |
 |---|---|

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Build the README demo composites in ``docs/readme_github/`` from a finished LM3 run.
 
-Every image in the README comes from the same three specimens so it reads as one story:
-00627429 (Betula), 00676533 (Quercus rubra), 01104858 (Prunus serotina), processed by the
-``hypergb_better_color3`` example run. The composites are committed, so this script only needs
-to run again when the Reporter's output changes or a different run should illustrate the README.
+Every image in the README comes from the same three specimens so it reads as one story. They are
+sheets that ship in ``examples/images/``, so anyone can reproduce every figure by running LM3 on the
+bundled examples. Which sheets and which leaves is the CONFIG block below -- swapping the README's
+specimens is an edit there, not here. The composites are committed, so this script only needs to
+run again when the Reporter's output changes or a different run should illustrate the README.
 
 Usage::
 
     python tools/release/build_readme_images.py \
-        --run examples_out/hypergb_better_color3 \
-        --originals /datab/HypeRGB/original_images \
+        [--run runs/for_readme] [--originals examples/images] \
         [--gui-shots <dir with gui_settings.png, gui_status_running.png, gui_console_running.png,
                       gui_results.png, gui_models.png, gui_postprocess.png>] \
         [--out docs/readme_github]
@@ -30,18 +30,50 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-SPECIMENS = ["00627429", "00676533", "01104858"]
-# (primary leaf, secondary leaf) per specimen -- chosen by eye from the landmark contact sheets
+# ---------------------------------------------------------------- CONFIG
+# The three sheets (image stems in examples/images/), in figure order.
+SPECIMENS = [
+    "A_1998857721_Platanaceae_Platanus_kerrii",
+    "PH_3865012217_Bignoniaceae_Catalpa_erubescens",
+    "YPM_1038926111_Bignoniaceae_Catalpa_purpurea",
+]
+# (primary leaf, secondary leaf) per sheet, as the x1_y1_x2_y2 token in the Reporter's file names --
+# chosen by eye from the Overlay_Landmarks contact sheets. The primary must have a petiole mask.
 LEAVES = {
-    "00627429": ["1037_3747_1536_4252", "2386_3438_3132_3999"],
-    "00676533": ["170_132_1722_2043", "2157_2855_3628_4653"],
-    "01104858": ["756_1776_1905_3104", "995_4188_1695_5535"],
+    "A_1998857721_Platanaceae_Platanus_kerrii": ["0_2_867_880", "969_1770_1564_2084"],
+    "PH_3865012217_Bignoniaceae_Catalpa_erubescens": ["630_1666_1791_2598", "788_286_2069_1971"],
+    "YPM_1038926111_Bignoniaceae_Catalpa_purpurea": ["947_53_1336_437", "774_83_971_389"],
 }
-HOLE_LEAVES = {  # leaves whose lamina has holes (leaf_morphology.n_holes > 0)
-    "00627429": "1017_2754_2007_3661",
-    "00676533": "2157_2855_3628_4653",
-    "01104858": "2860_685_3540_2059",
-}
+# Leaves whose lamina has holes (leaf_morphology.n_holes > 0); any sheet, three rows.
+HOLE_LEAVES = [
+    ("A_1998857721_Platanaceae_Platanus_kerrii", "1533_156_2151_1831"),
+    ("A_1998857721_Platanaceae_Platanus_kerrii", "850_990_1155_1840"),
+    ("PH_3865012217_Bignoniaceae_Catalpa_erubescens", "630_1666_1791_2598"),
+]
+# Non-leaf organ crops for the Plant Detector figure: (sheet, Crops/RGB__<class>, caption).
+ORGANS = [
+    ("A_1998857721_Platanaceae_Platanus_kerrii", "fruit", "fruit"),
+    ("PH_3865012217_Bignoniaceae_Catalpa_erubescens", "fruitMany", "fruit cluster"),
+    ("YPM_1038926111_Bignoniaceae_Catalpa_purpurea", "flower", "flower"),
+]
+ARCHIVAL_SHEET = "A_1998857721_Platanaceae_Platanus_kerrii"     # the archival crop strip
+REPORTER_LEAF = ("YPM_1038926111_Bignoniaceae_Catalpa_purpurea", "947_53_1336_437")
+# Bilateral-symmetry panels: one leaf per sheet. The run only draws panels for the leaves its
+# qc_images setting selects (by default the FLAGGED ones), so these are re-drawn here from the run
+# database with the stage's own renderer -- the same picture the stage would write.
+BSYM_LEAVES = [
+    ("A_1998857721_Platanaceae_Platanus_kerrii", "0_2_867_880"),
+    ("PH_3865012217_Bignoniaceae_Catalpa_erubescens", "788_286_2069_1971"),
+    ("YPM_1038926111_Bignoniaceae_Catalpa_purpurea", "947_53_1336_437"),
+]
+
+
+def label(stem: str) -> str:
+    """'PH_3865012217_Bignoniaceae_Catalpa_erubescens' -> 'Catalpa erubescens'."""
+    parts = stem.split("_")
+    return " ".join(parts[-2:]) if len(parts) >= 4 else stem
+
+
 BG = (255, 255, 255)
 GAP = 12
 QUALITY = 85
@@ -103,6 +135,12 @@ class Builder:
         self.out = out
         out.mkdir(parents=True, exist_ok=True)
 
+    def original(self, stem: str) -> Path:
+        hits = sorted(p for p in self.originals.glob(f"{stem}.*") if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".tif", ".tiff"))
+        if not hits:
+            raise FileNotFoundError(f"{stem}.* under {self.originals}")
+        return hits[0]
+
     def one(self, pattern: str) -> str:
         hits = sorted(glob.glob(str(self.reports / pattern)))
         if not hits:
@@ -124,16 +162,16 @@ class Builder:
 
     # ------------------------------------------------------------ composites
     def hero(self) -> None:
-        originals = [caption(fit(load(self.originals / f"{s}.jpg"), h=760), f"{s}  original") for s in SPECIMENS]
+        originals = [caption(fit(load(self.original(s)), h=760), f"{label(s)}  original") for s in SPECIMENS]
         overlays = [caption(fit(load(self.one(f"Overlay/Overlay_Summary/{s}__Overlay.jpg")), h=760),
-                            f"{s}  LeafMachine3 overlay") for s in SPECIMENS]
+                            f"{label(s)}  LeafMachine3 overlay") for s in SPECIMENS]
         self.save(col([row(originals), row(overlays)]), "hero_before_after.jpg", max_w=1800)
 
     def archival_detector(self) -> None:
         cells = []
         for cls in ["ruler", "barcode", "label", "colorcard", "envelope"]:
             try:
-                p = self.largest(f"Crops/RGB__{cls}/00627429__BBOX-{cls}__*.jpg")
+                p = self.largest(f"Crops/RGB__{cls}/{ARCHIVAL_SHEET}__BBOX-{cls}__*.jpg")
             except FileNotFoundError:
                 p = self.largest(f"Crops/RGB__{cls}/*.jpg")
             im = load(p)
@@ -145,21 +183,24 @@ class Builder:
         for s in SPECIMENS:
             tok = LEAVES[s][0]
             cells.append(caption(fit(load(self.one(f"Leaf_Original/Leaf_BBox/{s}__og-BBOX-leaf__{tok}.jpg")), h=260), "leaf"))
-        for s, cls in [("00627429", "bud"), ("01104858", "fruit"), ("00676533", "fruit")]:
-            cells.append(caption(fit(load(self.largest(f"Crops/RGB__{cls}/{s}__*.jpg")), h=260), cls))
+        for s, cls, name in ORGANS:
+            cells.append(caption(fit(load(self.largest(f"Crops/RGB__{cls}/{s}__*.jpg")), h=260), name))
         self.save(row(cells), "plant_detector_crops.jpg")
 
     def specimen_segmenter(self) -> None:
-        seg = [caption(fit(load(self.one(f"Overlay/Overlay_Specimen_Segmentation/{s}__SpecimenSeg.jpg")), w=1500), s)
+        seg = [caption(fit(load(self.one(f"Overlay/Overlay_Specimen_Segmentation/{s}__SpecimenSeg.jpg")), w=1500), label(s))
                for s in SPECIMENS]
         self.save(col(seg), "specimen_segmenter.jpg", max_w=1500)
 
     def ruler_classifier(self) -> None:
-        rulers = [caption(fit(load(self.one(f"Crops/RGB__ruler/{s}__BBOX-ruler__*.jpg")), w=1300), s) for s in SPECIMENS]
+        def landscape(im: Image.Image) -> Image.Image:   # a ruler laid vertically on the sheet reads sideways
+            return im.rotate(-90, expand=True) if im.height > im.width else im
+        rulers = [caption(fit(landscape(load(self.one(f"Crops/RGB__ruler/{s}__BBOX-ruler__*.jpg"))), w=1300), label(s))
+                  for s in SPECIMENS]
         self.save(col(rulers), "ruler_classifier_crops.jpg", max_w=1300)
 
     def ruler_cf(self) -> None:
-        lat = [caption(fit(load(self.one(f"Overlay/Overlay_Ruler_Lattice/{s}__RulerLattice.png")), h=900), s)
+        lat = [caption(fit(load(self.one(f"Overlay/Overlay_Ruler_Lattice/{s}__RulerLattice.png")), h=900), label(s))
                for s in SPECIMENS]
         self.save(row(lat), "ruler_cf_lattice.jpg", max_w=1800)
 
@@ -168,16 +209,15 @@ class Builder:
         for s in SPECIMENS:
             tok = LEAVES[s][0]
             ims = [load(self.one(f"Leaf_Original/Leaf_BBox/{s}__og-BBOX-leaf__{tok}.jpg")),
-                   load(self.one(f"Specimen_Masks/Binary_Masks__Leaf/{s}__SEG-leaf__{tok}.png")),
-                   load(self.one(f"Specimen_Masks/RGB_Masks__Leaf/{s}__SEGRGB-leaf__{tok}.jpg"))]
-            labels = ["Plant Detector crop", "Leaf + Petiole + Hole mask", "RGB cutout"]
+                   load(self.one(f"Leaf_Original/LaminaPetiole_Mask/{s}__og-SEG-laminaPetiole__{tok}.png")),
+                   load(self.one(f"Leaf_Original/LaminaPetiole_RGB/{s}__og-RGB-laminaPetiole__{tok}.jpg"))]
+            labels = ["Plant Detector crop", "lamina + petiole mask", "RGB cutout"]
             rows.append(row([caption(fit(i, h=360), l) for i, l in zip(ims, labels)]))
         self.save(col(rows), "leaf_segmenter.jpg")
 
     def morphology(self) -> None:
         rows = []
-        for s in SPECIMENS:
-            tok = HOLE_LEAVES[s]
+        for s, tok in HOLE_LEAVES:
             ims = [load(self.one(f"Leaf_Original/Lamina_RGB/{s}__og-RGB-lamina__{tok}.jpg")),
                    load(self.one(f"Leaf_Original/Lamina_Mask/{s}__og-SEG-lamina__{tok}.png")),
                    load(self.one(f"Leaf_Original/Lamina_Holes_Mask/{s}__og-SEG-laminaHoles__{tok}.png"))]
@@ -187,7 +227,7 @@ class Builder:
 
     def landmarks(self) -> None:
         for idx, name in [(0, "landmark_detector.jpg"), (1, "landmark_measurements.jpg")]:
-            cells = [caption(fit(load(self.one(f"Overlay/Overlay_Landmarks/{s}__LM-leaf__{LEAVES[s][idx]}.jpg")), h=560), s)
+            cells = [caption(fit(load(self.one(f"Overlay/Overlay_Landmarks/{s}__LM-leaf__{LEAVES[s][idx]}.jpg")), h=560), label(s))
                      for s in SPECIMENS]
             self.save(row(cells), name, max_w=1800)
 
@@ -206,17 +246,49 @@ class Builder:
             for tok in LEAVES[s]:  # not every leaf has a petiole mask; take the first that does
                 hits = glob.glob(str(self.reports / f"Overlay/Overlay_Petiole/{s}__PET-leaf__{tok}.jpg"))
                 if hits:
-                    cells.append(caption(fit(load(hits[0]), h=420), s))
+                    cells.append(caption(fit(load(hits[0]), h=420), label(s)))
                     break
         self.save(row(cells), "petiole_width.jpg", max_w=1800)
 
     def bilateral_symmetry(self) -> None:
-        panels = []
-        for s in SPECIMENS:
-            hits = sorted(glob.glob(str(self.reports / f"Leaf_Data/Bilateral_Symmetry/{s}__*.jpg")))
-            if hits:
-                panels.append(caption(fit(load(hits[0]), w=1400), s))
+        panels = [caption(fit(im, w=1400), label(st))
+                  for st, im, score in self._bsym_panels()]
         self.save(col(panels), "bilateral_symmetry.jpg", max_w=1400)
+
+    def _bsym_panels(self) -> list[tuple[str, Image.Image, float]]:
+        """Draw each BSYM_LEAVES panel with the stage's renderer (core/bilateral + reporting/
+        bilateral_viz), from its bilateral_symmetry row and the holes-filled silhouette the stage
+        measured -- the Reporter's Leaf_Oriented/Lamina_Holes_Mask, same frame. Read-only on the run."""
+        import sqlite3
+
+        import numpy as np
+
+        from leafmachine3.reporting.bilateral_viz import render_qc_panel
+
+        dbs = sorted(self.reports.parent.glob("*.sqlite"))
+        if not dbs:
+            raise FileNotFoundError(f"no run database beside {self.reports}")
+        db = sqlite3.connect(f"file:{dbs[0]}?mode=ro", uri=True)
+        db.row_factory = sqlite3.Row
+        out = []
+        for st, tok in BSYM_LEAVES:
+            x1, y1, x2, y2 = (int(v) for v in tok.split("_"))
+            rows = db.execute(
+                "select b.* from bilateral_symmetry b join specimen s on s.specimen_id = b.specimen_id "
+                "join plant_detection d on d.detection_id = b.detection_id where s.image_stem = ? "
+                "and cast(round(d.x1) as int) = ? and cast(round(d.y1) as int) = ? "
+                "and cast(round(d.x2) as int) = ? and cast(round(d.y2) as int) = ?", (st, x1, y1, x2, y2)).fetchall()
+            if not rows:
+                raise LookupError(f"no bilateral_symmetry row for {st} {tok}")
+            row = rows[0]
+            sil = np.asarray(load(self.one(f"Leaf_Oriented/Lamina_Holes_Mask/{st}__or-SEG-laminaHoles__{tok}.png")).convert("L")) > 127
+            if sil.shape != (row["mask_h"], row["mask_w"]):
+                raise ValueError(f"{st} {tok}: silhouette {sil.shape} is not the stored frame {(row['mask_h'], row['mask_w'])}")
+            img = render_qc_panel(sil, row)
+            if img is None:
+                raise ValueError(f"{st} {tok}: the renderer returned nothing")
+            out.append((st, Image.fromarray(img), float(row["archetype_score"])))
+        return out
 
     def ect(self) -> None:
         rows = []
@@ -231,7 +303,7 @@ class Builder:
         self.save(col(rows), "ect.jpg")
 
     def reporter(self) -> None:
-        s, tok = "00676533", LEAVES["00676533"][0]
+        s, tok = REPORTER_LEAF
         products = [("Leaf_BBox", "BBOX-leaf", "jpg", "bbox crop"),
                     ("Lamina_Mask", "SEG-lamina", "png", "lamina mask"),
                     ("LaminaPetiole_Mask", "SEG-laminaPetiole", "png", "lamina+petiole mask"),
@@ -259,10 +331,10 @@ class Builder:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--run", type=Path, default=Path("examples_out/hypergb_better_color3"),
+    ap.add_argument("--run", type=Path, default=Path("runs/for_readme"),
                     help="a finished LM3 run directory (contains reports/)")
-    ap.add_argument("--originals", type=Path, default=Path("/datab/HypeRGB/original_images"),
-                    help="folder holding the three original specimen JPEGs")
+    ap.add_argument("--originals", type=Path, default=Path("examples/images"),
+                    help="folder holding the three original specimen images")
     ap.add_argument("--out", type=Path, default=Path("docs/readme_github"))
     ap.add_argument("--gui-shots", type=Path, default=None,
                     help="folder of GUI PNG screenshots to re-encode (optional)")
