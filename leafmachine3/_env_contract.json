@@ -1,11 +1,11 @@
 {
  "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
- "lm3_version": "3.0.1002",
+ "lm3_version": "3.0.1003",
  "locks": {
   "uv_lock_sha256": "d4258d9b396224ab00ae4d9e4c2ae1e55e079b6c8e452eb19e4351638e17dd30",
-  "models_lock_sha256": "cee1c84ec296cabe4d8573eaf4d2a66fa245bce02af7c790581a1921ab15510d",
-  "models_lock_version": "3.0.0",
-  "models_lock_generated_at": "2026-10-08T14:21:10+00:00",
+  "models_lock_sha256": "227cd5d5a5b6ff6ee7f89808172a5972dd053570b0a82a58d6544d3e5d250d8c",
+  "models_lock_version": "3.0.1002",
+  "models_lock_generated_at": "2026-10-08T16:46:56+00:00",
   "hub_revisions": {
    "phyloforfun/lm3_archival_detector__yolo26n_det_640": "c2f242e27624579b97efcde438c9e44e06934413",
    "phyloforfun/lm3_archival_detector__yolo26x_det_1280": "519b73c6c5bf60ec83bcc5ac4d44ed2d478408bb",
@@ -14,9 +14,9 @@
    "phyloforfun/lm3_mp_conversion_factor__sqrt_fit": "3b03c05c6c140f724e65561d825970264c14f97d",
    "phyloforfun/lm3_plant_detector__yolo26n_det_640": "04ea40e3b88101d33f8da4331abab85d1e7d1fb4",
    "phyloforfun/lm3_plant_detector__yolo26x_det_1280": "2f36f0e890e1eac5e57fe374acf7c9a3a8b3257d",
-   "phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp": "32eaa978ed8dafbefc7151aa08ba4ecf7f70cf40",
-   "phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224": "f90297a12c786c3eaa9217da8bf6c54f46ce3150",
-   "phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224": "020720ff170951b1e14be99f23b13fee83da961b",
+   "phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp": "3609c406cba16613974689d4188415796ef126e9",
+   "phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224": "c55574ec29ee3b2ecc487947eee185f4bb283d49",
+   "phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224": "4581cc1b6dfe38bef3c22401802fb83828e7e41a",
    "phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024": "ac015972d111e63a76f3814fa4409a318c33d512",
    "phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024": "88590ba1424f561b06de74c48692262403074e41",
    "phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280": "a990ed8ae5d164a1665cc98e2108380879e1a9dc"

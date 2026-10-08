@@ -90,21 +90,25 @@ def ensemble_files(models_dir: str, members: Optional[Sequence[str]] = None) -> 
     for _key, dir_name in resolve_members(members):
         member = os.path.join(models_dir, dir_name)
         files += [os.path.join(member, "exported", "model.onnx"), os.path.join(member, "metadata.json")]
-    for candidate in (os.path.join(models_dir, "splits", "label_map.json"),
-                      os.path.join(models_dir, "label_map.json")):
+    for candidate in _label_map_candidates(models_dir):
         if os.path.isfile(candidate):
             files.append(candidate)
             break
     return files
 
 
+def _label_map_candidates(models_dir: str) -> list[str]:
+    """Where the shared class list lives, in priority order: the installed layout
+    (``label_map.json`` beside the members, written by ``lm3 models install``), then the training
+    tree's ``splits/label_map.json``. The installed copy comes from the same Hub revisions as the
+    members, so it wins when both exist."""
+    return [os.path.join(models_dir, "label_map.json"),
+            os.path.join(models_dir, "splits", "label_map.json")]
+
+
 def _load_label_map(models_dir: str) -> list[str]:
     """Load the shared ordered class list from the first label_map.json we can find."""
-    candidates = [
-        os.path.join(models_dir, "splits", "label_map.json"),
-        os.path.join(models_dir, "label_map.json"),
-    ]
-    for path in candidates:
+    for path in _label_map_candidates(models_dir):
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -173,6 +177,15 @@ class _Member:
         self.session = ort.InferenceSession(onnx_path, session_options(), providers=list(providers))
         self._input_name = self.session.get_inputs()[0].name
         self._output_name = self.session.get_outputs()[0].name
+        # The class names come from the shared label map, the scores from this model: if their
+        # lengths differ, every index past the change is silently misnamed (a 19-class model read
+        # with an 18-class map shifted 9 classes). Refuse to load instead.
+        n_out = self.session.get_outputs()[0].shape[-1]
+        if isinstance(n_out, int) and n_out != len(classes):
+            raise ValueError(
+                f"{onnx_path} outputs {n_out} classes but the label map has {len(classes)}; "
+                "install the models and label_map.json from the same lock"
+            )
         self.classes = classes
         # YOLO's Classify head softmaxes internally at export; DINOv2 emits raw logits.
         self._output_is_probs = self.family == "yolo"
