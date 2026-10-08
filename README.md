@@ -159,7 +159,7 @@ The first run on a new machine profiles the hardware before it starts, which add
 | `machine3` / `lm3 serve` exit with code **78** | the environment does not match `uv.lock` (built with pip, conda, or an old sync) | `uv sync --frozen --extra <gpu\|cpu\|macos> --reinstall` |
 | `lm3 doctor` says the **driver is too old** | NVIDIA driver below 525.60 / 528.33 | update the driver, or use `--extra cpu` |
 | GPU present but models run on the **CPU** | the CUDA provider failed to load | `uv run --frozen --no-sync lm3 doctor --models` names the missing library; reinstall with `--reinstall` |
-| `lm3 models install` asks for a **token** | model repositories are private during pre-release | `uv run --frozen --no-sync hf auth login`, then rerun the install |
+| `lm3 models install` **fails to download** | no network, or Hugging Face is rate-limiting anonymous downloads | check the connection and rerun; a free Hugging Face token (`uv run --frozen --no-sync hf auth login`) lifts the anonymous rate limit |
 | `lm3 models verify` reports a **hash mismatch** | a partial or stale download | `uv run --frozen --no-sync lm3 models install --force --yes` |
 | **Out of GPU memory** | the hardware profile is wrong for this machine | `uv run --frozen --no-sync lm3-setup --force` to re-profile, or lower workers in `hardware_settings.yaml` |
 | Only one of several GPUs should be used | | `CUDA_VISIBLE_DEVICES=0 uv run --frozen --no-sync machine3 --config LM3_settings.yaml` |
@@ -209,6 +209,21 @@ Set the **input folder**, name the **project**, press **Start LM3**. The stage b
 mirrors the seventeen modules and fills in as the run advances.
 
 ![Live Status tab during a run](docs/readme_github/gui_live_status.jpg)
+
+When the run finishes, the **Results** tab browses everything it wrote, by output folder, with
+the run's database alongside; the **Models** tab shows which model revision each module holds
+against the release lock; and **Postprocessing** holds the standalone tools.
+
+![Results tab: media browser over a finished run](docs/readme_github/gui_results.jpg)
+
+<details>
+<summary>Models and Postprocessing tabs</summary>
+
+![Models tab: every default model installed and matching the lock](docs/readme_github/gui_models.jpg)
+
+![Postprocessing tab: the STL builder and the leaf collage builder](docs/readme_github/gui_postprocess.jpg)
+
+</details>
 
 ### Electron desktop app
 
@@ -561,7 +576,6 @@ paints holes a recoverable near-black).
 
 No model. *Output:* everything under `reports/`; see [Outputs](#outputs).
 
-
 ### 17. Shape (ECT)
 
 Computes the Euler Characteristic Transform of every oriented leaf, a topological shape
@@ -573,6 +587,7 @@ and the radial form with the leaf outline drawn over it, plus the raw coordinate
 
 No model; CPU. *Output:* `leaf_ect` table; `Leaf_Data/Oriented_Leaf_ECT/`,
 `Oriented_Leaf_Radial_ECT/`, `Oriented_Leaf_Radial_ECT_Overlay/`, `Coordinates/*.h5`.
+
 ---
 
 ## Outputs
