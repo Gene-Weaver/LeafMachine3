@@ -265,7 +265,11 @@ def main(argv=None) -> int:
     out = Path(a.out)
     if a.check:
         old = yaml.safe_load(out.read_text()) if out.exists() else None
-        same = old is not None and {k: v for k, v in old.items() if k != "generated_at"} == {k: v for k, v in lock.items() if k != "generated_at"}
+        # generated_at and lm3_version are stamps, not pins: the version moves every commit
+        # (tools/release/bump_version.py) and the env contract already pins this file by sha256, so
+        # comparing them made --check report "stale" after every bump with nothing on the Hub moved.
+        stamps = ("generated_at", "lm3_version")
+        same = old is not None and {k: v for k, v in old.items() if k not in stamps} == {k: v for k, v in lock.items() if k not in stamps}
         print("lock is up to date" if same else "lock is STALE")
         return 0 if same else 1
     out.write_text(text)
