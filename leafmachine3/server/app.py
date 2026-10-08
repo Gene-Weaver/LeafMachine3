@@ -381,6 +381,7 @@ class JobManager:
                 {
                     "specimen_id": sid,
                     "cf_px_per_cm": spec["cf_px_per_cm"] if "cf_px_per_cm" in spec.keys() else None,
+                    "cf_source": spec["cf_source"] if "cf_source" in spec.keys() else None,
                     "archival": self._rows(job, "archival_detection", sid),
                     "plant": self._rows(job, "plant_detection", sid),
                     "leaves": self._rows(job, "leaf_segmentation", sid),

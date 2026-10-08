@@ -36,6 +36,7 @@ class Project:
             stem=str(_g(s, "image_stem")),
             work_scale=float(_g(s, "work_scale", 1.0) or 1.0),
             cf_px_per_cm=_g(s, "cf_px_per_cm", None),
+            cf_source=_g(s, "cf_source", None),
             detections=self.db.overlay_detections(specimen_id),
             leaves=self.db.leaf_instances(specimen_id),
             reports_dir=str(self.dirs.reports),

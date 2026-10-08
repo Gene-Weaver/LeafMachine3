@@ -640,6 +640,7 @@
       "specimen_00": {
         "cf_px_per_cm": null,
         "cf_px_per_cm_predicted_by_mp": 69.2,
+        "cf_source": null,
         "downsampled": 0,
         "has_flowers": 0,
         "has_fruits": 1,
@@ -660,6 +661,7 @@
       "specimen_01": {
         "cf_px_per_cm": null,
         "cf_px_per_cm_predicted_by_mp": 69.2,
+        "cf_source": null,
         "downsampled": 0,
         "has_flowers": 0,
         "has_fruits": 1,

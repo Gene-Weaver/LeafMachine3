@@ -456,7 +456,7 @@ def build_panel(row, s_anch, s_plain, res, groups, pxcm, ov_mask, ov_comb, ov_ba
     return im, flipped
 
 
-def build_cf_summary_section(measured_cf, anchor_cf, formula_symbolic=None):
+def build_cf_summary_section(measured_cf, anchor_cf, formula_symbolic=None, fallback_applied=False):
     """The last block on every panel: the two numbers a reader came for, stated plainly.
 
     Everything above this is the audit trail -- which unit was named, which crop won, why a reading
@@ -464,16 +464,29 @@ def build_cf_summary_section(measured_cf, anchor_cf, formula_symbolic=None):
     that they produced nothing), and the megapixel regression's prediction alongside the equation
     that generated it. It is rendered for EVERY sheet, published or not, so the answer is always in
     the same place at the same end of the image.
+
+    The last line says which of the two the sheet is actually measured with. ``fallback_applied``
+    is True when the ruler_cf stage substituted the prediction (``use_CF_predicted_by_MP``).
     """
     W = W_OUT
     meas = "none" if measured_cf is None else f"{float(measured_cf):.2f} px/cm"
     eq = formula_symbolic or "megapixel regression"
     pred = "none" if anchor_cf is None else f"{float(anchor_cf):.2f} px/cm"
+    if measured_cf is not None:
+        used = (f"CF used for this sheet: {float(measured_cf):.2f} px/cm -- measured from the ruler",
+                (21, 128, 61))
+    elif fallback_applied and anchor_cf is not None:
+        used = (f"CF used for this sheet: {float(anchor_cf):.2f} px/cm -- PREDICTED from megapixels "
+                f"(use_CF_predicted_by_MP is on)", (150, 100, 30))
+    else:
+        used = ("CF used for this sheet: none -- cm measurements left empty "
+                "(use_CF_predicted_by_MP is off)", (194, 65, 12))
     lines = [
         ("Pixel to Metric Conversion Factor", F_T, (15, 15, 20)),
         (f"Measured CF: {meas}", F_B,
          (194, 65, 12) if measured_cf is None else (21, 128, 61)),
         (f"Predicted CF ({eq}): {pred}", F_B, (90, 95, 105)),
+        (used[0], F_B, used[1]),
     ]
     LH = {id(F_T): 34, id(F_B): 26}
     H = 12 + sum(LH[id(f)] for _, f, _ in lines) + 12
@@ -518,7 +531,7 @@ def stack_parent(panels, recon_img, out_path=None, cf_summary=None):
     return im
 
 
-def build_recon_section(image_name, entries, pr, anchor, anchor_formula=None):
+def build_recon_section(image_name, entries, pr, anchor, anchor_formula=None, fallback_applied=False):
     """The 'Multiple Ruler Reconciliation' block: every ruler's own CF, its
     predicted 1 cm / 1 inch bars stacked for direct visual comparison, and an
     explicit account of how the single parent CF was arrived at."""
@@ -548,8 +561,12 @@ def build_recon_section(image_name, entries, pr, anchor, anchor_formula=None):
             f"conversion factor is published for this sheet.", F_B, (194, 65, 12)))
         if anchor is not None:
             head_lines.append((
-                f"FALLBACK -- every downstream measurement on this sheet uses the MP-PREDICTED "
-                f"anchor instead of a ruler reading:", F_S, (194, 65, 12)))
+                f"FALLBACK APPLIED (use_CF_predicted_by_MP is on) -- every downstream measurement "
+                f"on this sheet uses the MP-PREDICTED anchor instead of a ruler reading:"
+                if fallback_applied else
+                f"FALLBACK NOT APPLIED (use_CF_predicted_by_MP is off) -- this sheet's cm "
+                f"measurements stay empty. With it on, the sheet would use the MP-PREDICTED anchor:",
+                F_S, (194, 65, 12)))
             head_lines.append((
                 f"    {anchor_formula or ('cf = %.2f px/cm (megapixel regression)' % anchor)}"
                 f"        [predicted from the image's megapixels, NOT measured from this ruler]",
@@ -586,7 +603,7 @@ def build_recon_section(image_name, entries, pr, anchor, anchor_formula=None):
                             W_OUT - 2 * PAD, max_h=240))
         labels.append(f"{e['key']}  {e.get('ruler_class') or ''}  "
                       f"CF {e['pxcm']:.2f} px/cm  ->  {(e.get('verdict') or '?').upper()}")
-    # the fallback the sheet will actually be measured with, laid against a real ruler
+    # the MP fallback (applied or not -- the header says which), laid against a real ruler
     if cf is None and anchor is not None and entries:
         e0 = entries[0]
         strips.append(fit_w(mp_fallback_strip(e0["rot"], e0["x0"], float(anchor), e0["band"]),

@@ -20,11 +20,13 @@ stages actually analyzed, not the original. Columns are suffixed accordingly (``
 DB calls them. ``work_scale`` is on every row, so original-frame pixels are ``value_px /
 work_scale``. Nothing here is rescaled on the way out.
 
-WHAT ``_cm`` MEANS. MetricGrounding divides by ``specimen.cf_px_per_cm``, the ruler CF, which the
-lattice stage publishes ONLY for high-confidence sheets. So every ``_cm`` column is NULL on a sheet
-whose CF was withheld -- that is a visible absence, not a gap to fill. ``cf_source`` says which case
-a row is in. ``cf_px_per_cm_predicted_by_mp`` is carried alongside as the documented fallback, but
-LM3 never grounds against it, so a consumer that wants it must apply it deliberately.
+WHAT ``_cm`` MEANS. MetricGrounding divides by ``specimen.cf_px_per_cm`` (exported as
+``cf_px_per_cm``), and ``cf_source`` -- stored on the specimen, not derived here -- says which CF
+that is: ``measured_from_ruler`` (the lattice stage published it at high confidence) or
+``predicted_from_megapixels`` (no ruler, or the lattice did not pass, and
+``modules.ruler_cf.use_CF_predicted_by_MP`` was on). ``none`` means the sheet has no CF and every
+``_cm`` column is empty -- the default for those sheets, a visible absence rather than a gap
+silently filled. ``cf_px_per_cm_predicted_by_mp`` is always carried alongside for comparison.
 
 THIS IS A PROJECTION, NOT A CALCULATION. Apart from a handful of derived identity/geometry columns
 (marked "derived" in the data dictionary), every value is a column the pipeline stored. The exporter
@@ -93,15 +95,18 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
                                   "original-frame pixels. 1.0 when nothing was resized."),
     Column("downsampled", "0/1", "1 iff pixels were discarded capping the long side at ingest.max_working_dim."),
     Column("original_mp", "megapixels", "Original width*height/1e6; the input to the MP->CF regression."),
-    Column("cf_source", "", "derived: which CF produced this row's _cm columns. 'ruler_lattice' = the "
-                            "published ruler CF; 'none' = no CF cleared the confidence gate, so every "
-                            "_cm column on this row is empty."),
-    Column("cf_px_per_cm_ruler", "px/cm", "The PUBLISHED ruler CF (working frame). Empty unless the "
-                                          "lattice stage rated the sheet high-confidence. This is the "
-                                          "only CF LM3 grounds against."),
+    Column("cf_source", "", "Which CF produced this row's _cm columns. 'measured_from_ruler' = the "
+                            "published ruler CF; 'predicted_from_megapixels' = the megapixel "
+                            "prediction, used because the sheet had no ruler or the lattice did not "
+                            "pass (use_CF_predicted_by_MP on); 'none' = no CF, so every _cm column "
+                            "on this row is empty."),
+    Column("cf_px_per_cm", "px/cm", "The CF this row's _cm columns were grounded with (working "
+                                    "frame). Measured or predicted: see cf_source. Empty when "
+                                    "cf_source is 'none'."),
     Column("cf_px_per_cm_predicted_by_mp", "px/cm", "Resolution-based CF estimate from the megapixel "
-                                                    "regression (~4.4 px/cm rmse). A documented "
-                                                    "fallback; LM3 never grounds with it."),
+                                                    "regression (~4.5 px/cm rmse), carried on every "
+                                                    "row. It IS the CF in use only where cf_source is "
+                                                    "'predicted_from_megapixels'."),
     Column("ruler_unit_type", "", "Unit type of the rulers that produced the published CF."),
     Column("ruler_class_type", "", "Per-sheet consensus ruler unit type from the classifier ensemble."),
     Column("has_leaves", "0/1", "Sheet-level phenology: leaves present."),
@@ -112,12 +117,12 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
     Column("lamina_area_incl_holes_px", "px^2", "Area inside the leaf's outer boundary -- the full "
                                                 "silhouette, holes INCLUDED."),
     Column("lamina_area_excl_holes_px", "px^2", "Leaf tissue only: the silhouette with its holes "
-                                                "subtracted. Divide by cf_px_per_cm_ruler^2 for cm^2."),
+                                                "subtracted. Divide by cf_px_per_cm^2 for cm^2."),
     Column("lamina_hole_area_px", "px^2", "Total area of the leaf's Hole instances."),
     Column("n_holes", "count", "Number of Hole instances inside this leaf."),
     Column("lamina_perimeter_px", "px", "Perimeter of the leaf's outer boundary."),
-    Column("lamina_area_incl_holes_cm2", "cm^2", "lamina_area_incl_holes_px grounded by the ruler CF."),
-    Column("lamina_perimeter_cm", "cm", "lamina_perimeter_px grounded by the ruler CF."),
+    Column("lamina_area_incl_holes_cm2", "cm^2", "lamina_area_incl_holes_px grounded by the sheet CF (see cf_source)."),
+    Column("lamina_perimeter_cm", "cm", "lamina_perimeter_px grounded by the sheet CF (see cf_source)."),
     Column("convex_hull_area_px", "px^2", "Area of the leaf outline's convex hull."),
     Column("convexity", "ratio", "How close the outline is to its own convex hull; 1 = convex."),
     Column("concavity", "ratio", "Complement of convexity."),
@@ -134,8 +139,8 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
     Column("bbox_y2", "px", "Axis-aligned mask bbox, bottom edge (working frame)."),
     Column("bbox_w_px", "px", "derived: bbox_x2 - bbox_x1."),
     Column("bbox_h_px", "px", "derived: bbox_y2 - bbox_y1."),
-    Column("bbox_w_cm", "cm", "Axis-aligned bbox width grounded by the ruler CF."),
-    Column("bbox_h_cm", "cm", "Axis-aligned bbox height grounded by the ruler CF."),
+    Column("bbox_w_cm", "cm", "Axis-aligned bbox width grounded by the sheet CF (see cf_source)."),
+    Column("bbox_h_cm", "cm", "Axis-aligned bbox height grounded by the sheet CF (see cf_source)."),
     Column("rotate_angle", "degrees", "Rotation of the minimum-area bounding box."),
     Column("rotated_bbox_dim_max_px", "px", "Rotated bbox LONG side. Geometric, not biological: a "
                                             "leaf wider than it is long puts its width here."),
@@ -158,11 +163,11 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
     Column("lamina_tip_base_length_px", "px", "Straight distance, lamina tip to lamina base."),
     Column("leaf_width_px", "px", "Distance between the left and right width landmarks."),
     Column("petiole_trace_length_px", "px", "Summed distance along the 5 petiole trace points."),
-    Column("lamina_trace_length_cm", "cm", "lamina_trace_length_px grounded by the ruler CF."),
-    Column("lamina_extent_cm", "cm", "lamina_extent_px grounded by the ruler CF."),
-    Column("lamina_tip_base_length_cm", "cm", "lamina_tip_base_length_px grounded by the ruler CF."),
-    Column("landmark_leaf_width_cm", "cm", "leaf_width_px grounded by the ruler CF."),
-    Column("petiole_trace_length_cm", "cm", "petiole_trace_length_px grounded by the ruler CF."),
+    Column("lamina_trace_length_cm", "cm", "lamina_trace_length_px grounded by the sheet CF (see cf_source)."),
+    Column("lamina_extent_cm", "cm", "lamina_extent_px grounded by the sheet CF (see cf_source)."),
+    Column("lamina_tip_base_length_cm", "cm", "lamina_tip_base_length_px grounded by the sheet CF (see cf_source)."),
+    Column("landmark_leaf_width_cm", "cm", "leaf_width_px grounded by the sheet CF (see cf_source)."),
+    Column("petiole_trace_length_cm", "cm", "petiole_trace_length_px grounded by the sheet CF (see cf_source)."),
     Column("apex_angle", "degrees", "Angle at the apex centre landmark."),
     Column("apex_angle_type", "", "acute (<90), obtuse (>=90), or reflex."),
     Column("base_angle", "degrees", "Angle at the base centre landmark."),
@@ -173,8 +178,8 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
     # -- petiole -------------------------------------------------------------- #
     Column("petiole_width_px", "px", "Median perpendicular petiole width near the blade junction."),
     Column("petiole_length_px", "px", "Petiole centerline length, lamina base to petiole tip."),
-    Column("petiole_width_cm", "cm", "petiole_width_px grounded by the ruler CF."),
-    Column("petiole_length_cm", "cm", "petiole_length_px grounded by the ruler CF."),
+    Column("petiole_width_cm", "cm", "petiole_width_px grounded by the sheet CF (see cf_source)."),
+    Column("petiole_length_cm", "cm", "petiole_length_px grounded by the sheet CF (see cf_source)."),
     Column("petiole_n_samples", "count", "Perpendicular samples the median width was taken over."),
     Column("petiole_touches_leaf", "0/1", "1 if the petiole mask actually meets the lamina."),
     Column("petiole_measure_location", "", "Where the width was taken: near_base, or none."),
@@ -222,9 +227,11 @@ _SPECIMEN_COLUMNS: tuple[Column, ...] = (
     Column("normalized", "0/1", "1 if ingest wrote a converted copy (RGB convert and/or downscale)."),
     Column("downsampled", "0/1", "1 iff pixels were actually discarded. Narrower than normalized."),
     Column("original_mp", "megapixels", "Original width*height/1e6."),
-    Column("cf_source", "", "derived: 'ruler_lattice' if a CF was published for this sheet, else 'none'."),
-    Column("cf_px_per_cm_ruler", "px/cm", "Published ruler CF (working frame); empty if withheld."),
-    Column("cf_px_per_cm_predicted_by_mp", "px/cm", "Megapixel-regression CF estimate (fallback only)."),
+    Column("cf_source", "", "measured_from_ruler | predicted_from_megapixels (no ruler or the lattice "
+                            "did not pass, and use_CF_predicted_by_MP was on) | none (no CF)."),
+    Column("cf_px_per_cm", "px/cm", "The CF this sheet's _cm values use (working frame); see cf_source."),
+    Column("cf_px_per_cm_predicted_by_mp", "px/cm", "Megapixel-regression CF estimate (in use only "
+                                                    "where cf_source is predicted_from_megapixels)."),
     Column("cf_px_per_cm_measured", "px/cm", "What the lattice actually read, INCLUDING when the "
                                              "reading was withheld. For audit only -- never consume "
                                              "this as the sheet's CF."),
@@ -559,12 +566,17 @@ def _derive_leaf(r: dict) -> None:
     inst = r.get("instance_index")
     r["crop_file_token"] = token
     r["leaf_uid"] = f"{token}__i{int(inst)}" if token and inst is not None else ""
-    # cf_source describes THIS ROW's _cm columns, so it keys off the published ruler CF alone --
-    # MetricGrounding never falls back to the MP prediction, and saying otherwise here would
-    # mislabel every grounded value on a withheld sheet.
-    r["cf_source"] = "ruler_lattice" if r.get("cf_px_per_cm_ruler") is not None else "none"
+    r["cf_source"] = _cf_source(r)
     r["bbox_w_px"] = _span(r.get("bbox_x1"), r.get("bbox_x2"))
     r["bbox_h_px"] = _span(r.get("bbox_y1"), r.get("bbox_y2"))
+
+
+def _cf_source(r: dict) -> str:
+    """The stored ``specimen.cf_source``, with NULL spelled out as 'none' for the CSV reader.
+
+    Read from the DB, never inferred from which CF columns are filled: the ruler_cf stage is the
+    only place that knows whether the value in ``cf_px_per_cm`` was measured or predicted."""
+    return r.get("cf_source") or "none"
 
 
 def _derive_detection(r: dict) -> None:
@@ -593,7 +605,7 @@ def _specimen_rows(db, leaf_rows: list[dict], detection_rows: list[dict]) -> lis
         sid = r.get("specimen_id")
         leaves = by_spec.get(sid, [])
         dets = det_by_spec.get(sid, [])
-        r["cf_source"] = "ruler_lattice" if r.get("cf_px_per_cm_ruler") is not None else "none"
+        r["cf_source"] = _cf_source(r)
         r["n_archival_detections"] = sum(1 for d in dets if d.get("source") == "archival"
                                          and not d.get("suppressed"))
         r["n_plant_detections"] = sum(1 for d in dets if d.get("source") == "plant"

@@ -42,8 +42,8 @@ def project(tmp_path):
         ))
     conn = db.conn
     # sheetA gets a published CF; sheetB deliberately does not.
-    conn.execute("UPDATE specimen SET cf_px_per_cm = 10.0, cf_px_per_cm_predicted_by_mp = 9.0 "
-                 "WHERE image_stem = 'sheetA'")
+    conn.execute("UPDATE specimen SET cf_px_per_cm = 10.0, cf_source = 'measured_from_ruler', "
+                 "cf_px_per_cm_predicted_by_mp = 9.0 WHERE image_stem = 'sheetA'")
     conn.execute("UPDATE specimen SET cf_px_per_cm_predicted_by_mp = 9.5 WHERE image_stem = 'sheetB'")
 
     for sid, (x1, y1, x2, y2) in ((1, (10, 20, 110, 220)), (2, (30, 40, 130, 240))):
@@ -171,7 +171,7 @@ def test_missing_measurements_are_empty_never_zero(project):
     export_data_csvs(project, _cfg())
     b = next(r for r in _read(_data_dir(project) / "leaf_measurements.csv")
              if r["image_stem"] == "sheetB")
-    for col in ("lamina_area_incl_holes_cm2", "lamina_perimeter_cm", "cf_px_per_cm_ruler",
+    for col in ("lamina_area_incl_holes_cm2", "lamina_perimeter_cm", "cf_px_per_cm",
                 "lamina_trace_length_px", "lamina_trace_length_cm", "petiole_width_px",
                 "petiole_width_cm"):
         assert b[col] == "", f"{col} should be empty, got {b[col]!r}"
@@ -189,15 +189,39 @@ def test_a_present_metric_with_one_missing_component_stays_partial(project):
 
 
 def test_cf_source_names_what_produced_the_cm_columns(project):
-    """cf_source must track the RULER CF alone: MetricGrounding never falls back to the MP
-    prediction, so claiming otherwise would mislabel every grounded value on a withheld sheet."""
+    """cf_source is the STORED specimen.cf_source: a measured sheet says so, and a sheet with no CF
+    says 'none' -- its MP prediction is carried alongside but is not its grounding CF."""
     export_data_csvs(project, _cfg())
     rows = {r["image_stem"]: r for r in _read(_data_dir(project) / "leaf_measurements.csv")}
-    assert rows["sheetA"]["cf_source"] == "ruler_lattice"
+    assert rows["sheetA"]["cf_source"] == "measured_from_ruler"
+    assert rows["sheetA"]["cf_px_per_cm"] == "10"
     assert rows["sheetB"]["cf_source"] == "none"
     # sheetB HAS an MP prediction, and it must not be mistaken for a grounding CF
     assert rows["sheetB"]["cf_px_per_cm_predicted_by_mp"] == "9.5"
+    assert rows["sheetB"]["cf_px_per_cm"] == ""
     assert rows["sheetB"]["lamina_area_incl_holes_cm2"] == ""
+    spec = {r["image_stem"]: r for r in _read(_data_dir(project) / "specimen_summary.csv")}
+    assert spec["sheetA"]["cf_source"] == "measured_from_ruler"
+    assert spec["sheetB"]["cf_source"] == "none"
+
+
+def test_cf_source_marks_a_megapixel_prediction(project):
+    """With use_CF_predicted_by_MP the stage writes the MP value INTO cf_px_per_cm. The export must
+    say it was predicted, not measured -- from the stored column, since the value alone can't tell."""
+    project.db.set_specimen_cf(2, 9.5, source="predicted_from_megapixels")
+    export_data_csvs(project, _cfg())
+    for name in ("leaf_measurements.csv", "specimen_summary.csv"):
+        b = next(r for r in _read(_data_dir(project) / name) if r["image_stem"] == "sheetB")
+        assert b["cf_source"] == "predicted_from_megapixels"
+        assert b["cf_px_per_cm"] == "9.5"
+        assert b["ruler_unit_type"] == ""
+
+
+def test_no_export_column_still_claims_to_be_the_ruler_cf():
+    """cf_px_per_cm can hold a PREDICTED value now, so the old cf_px_per_cm_ruler name would lie."""
+    names = {c.name for f in FILES for c in (f.columns or ())}
+    assert "cf_px_per_cm_ruler" not in names
+    assert {"cf_px_per_cm", "cf_source"} <= names
 
 
 def test_no_dead_cm_columns_from_leaf_morphology(project):

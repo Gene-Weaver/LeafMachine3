@@ -12,9 +12,12 @@ Apply each specimen's conversion factor (px per cm) to the stored pixel measurem
 Both the CF and the pixel measurements live in the working frame, so ``area_px / cf^2`` is
 frame-consistent with no rescaling.
 
-The CF comes from ``specimen.cf_px_per_cm``, which the lattice ruler-CF stage publishes ONLY for
-high-confidence sheets -- so a specimen with a withheld CF is simply skipped (its ``*_cm`` columns
-stay NULL) rather than grounded against a guess.
+The CF comes from ``specimen.cf_px_per_cm``, written by the ruler-CF stage: the lattice CF for a
+high-confidence sheet (``cf_source = 'measured_from_ruler'``), or -- only when
+``modules.ruler_cf.use_CF_predicted_by_MP`` is on -- the megapixel prediction for a sheet with no
+ruler or a lattice that did not pass (``cf_source = 'predicted_from_megapixels'``). This stage
+grounds against whichever is there; a specimen with no CF is simply skipped (its ``*_cm`` columns
+stay NULL). ``specimen.cf_source`` is what tells a consumer which kind of cm value it holds.
 """
 from __future__ import annotations
 
@@ -48,8 +51,8 @@ class MetricGrounding(PipelineStage):
     def infer(self, item: WorkItem, model) -> tuple[list[Grounded], list[tuple], list[tuple]]:
         """Ground each leaf's, petiole's and landmark row's pixel metrics to cm.
 
-        Returns three empty lists when the sheet has no CF -- a withheld CF leaves every ``*_cm``
-        column NULL rather than grounding the sheet against a guess (see the module docstring).
+        Returns three empty lists when the sheet has no CF -- every ``*_cm`` column stays NULL
+        (see the module docstring for when the MP prediction is used instead).
         """
         cf, leaves, petioles, landmarks = item.payload
         if cf is None:

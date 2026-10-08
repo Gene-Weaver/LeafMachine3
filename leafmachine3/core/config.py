@@ -267,7 +267,9 @@ def builtin_defaults() -> dict[str, Any]:
                                    "yolo": {"conf": 0.25, "iou": 0.5, "max_det": 300}},
             "phenology_detector": {"enabled": True},
             "ruler_classifier": {"enabled": True},
-            "ruler_cf": {"enabled": True},   # lattice conversion-factor method
+            # lattice conversion-factor method. use_CF_predicted_by_MP is here (not only in the
+            # YAML) so the settings form, which renders leaves of the MERGED tree, always shows it.
+            "ruler_cf": {"enabled": True, "use_CF_predicted_by_MP": False},
             "leaf_segmenter": {"enabled": True},
             "morphology": {"enabled": True},
             "landmark_detector": {"enabled": True},

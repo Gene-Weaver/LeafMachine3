@@ -241,3 +241,90 @@ def test_exterior_ring_clips_a_dark_cell_and_never_a_light_one() -> None:
     dark_col, light_col = (0, 1) if (last_i % 2) else (1, 0)
     assert out[new_h - 1, int(round(dark_col * cf)) + 1].tolist() == list(_BLACK_BGR)
     assert out[new_h - 1, int(round(light_col * cf)) + 1].tolist() == list(_WHITE_BGR)
+
+
+# -- a CF PREDICTED from megapixels (cf_source = predicted_from_megapixels) --------
+_GRAY_BGR = (128, 128, 128)
+_PRED = "predicted_from_megapixels"
+
+
+def test_predicted_cf_ring_is_black_and_gray_not_black_and_white() -> None:
+    """Same checkerboard geometry, but light cells are 50% gray so it can't pass for a measured scale."""
+    cf = 37.0
+    img = np.full((300, 500, 3), 60, np.uint8)
+    out = build_summary_image(img, [], [], cf_px_per_cm=cf, style=_plain(insert_cf_exterior=True),
+                              work_scale=1.0, cf_style=_cf_style(exterior_cells=2), cf_source=_PRED)
+    margin = round(2 * cf)
+    assert out.shape == (300 + margin, 500 + margin, 3)
+    assert np.array_equal(out[margin:, margin:], img)
+
+    def px(i: int, j: int) -> list:
+        return out[int(round(i * cf)) + 1, int(round(j * cf)) + 1].tolist()
+
+    assert [px(0, j) for j in range(4)] == [list(_GRAY_BGR), list(_BLACK_BGR)] * 2
+    assert not np.any(np.all(out[:margin] == np.array(_WHITE_BGR, np.uint8), axis=-1))
+
+
+def test_measured_cf_ring_keeps_black_and_white() -> None:
+    cf = 37.0
+    img = np.full((300, 500, 3), 60, np.uint8)
+    out = build_summary_image(img, [], [], cf_px_per_cm=cf, style=_plain(insert_cf_exterior=True),
+                              work_scale=1.0, cf_style=_cf_style(exterior_cells=2),
+                              cf_source="measured_from_ruler")
+    assert out[1, 1].tolist() == list(_WHITE_BGR)
+
+
+def test_predicted_cf_raft_goes_top_left_and_never_on_a_ruler() -> None:
+    """The prediction came from no ruler, so a raft on a detected ruler would claim a measurement."""
+    img = np.full((400, 600, 3), 128, np.uint8)
+    det = [{"cls_name": "Ruler", "conf": 0.9, "xyxy": (250, 200, 550, 240), "source": "archival"}]
+    out = build_summary_image(img, det, [], cf_px_per_cm=40.0, style=_plain(insert_cf_in_rulers=True),
+                              work_scale=1.0, cf_style=_cf_style(bar_thickness=10, brim=3),
+                              cf_source=_PRED)
+    ys, xs = np.where(np.all(out == np.array(_CYAN_BGR, np.uint8), axis=-1))
+    assert ys.min() == 3 and xs.min() == 3                    # corner raft: origin (0, 0) + brim
+    assert _run(_CYAN_BGR, out[ys.min()])[1] == 40            # still exactly 1 cm
+    gy = np.where(np.all(out == np.array(_GREEN_BGR, np.uint8), axis=-1))[0]
+    assert _run(_GREEN_BGR, out[gy.min()])[1] == round(40 * 2.54)
+    on_ruler = np.all(out[200:240, 250:550] == np.array(_CYAN_BGR, np.uint8), axis=-1)
+    assert not on_ruler.any()                                 # no bar on the ruler
+
+
+def test_predicted_cf_raft_sits_below_the_banner() -> None:
+    """The banner owns (0, 0) too; the raft must start under it, not be painted over by it."""
+    img = np.full((400, 600, 3), 128, np.uint8)
+    style = OverlayStyle(draw_labels=False, draw_cf_banner=True, draw_masks=False,
+                         insert_cf_in_rulers=True, cf_banner_color=(255, 200, 0))   # not raft-white
+    out = build_summary_image(img, [], [], cf_px_per_cm=40.0, style=style, work_scale=1.0,
+                              cf_style=_cf_style(bar_thickness=10, brim=3), cf_source=_PRED)
+    banner = np.array(style.cf_banner_color[::-1], np.uint8)        # RGB config -> BGR
+    banner_rows = np.where(np.all(out[:, 0] == banner, axis=-1))[0]
+    raft_rows = np.where(np.all(out[:, 0] == np.array(_WHITE_BGR, np.uint8), axis=-1))[0]
+    assert len(banner_rows) and len(raft_rows)
+    assert raft_rows.min() == banner_rows.max() + 1
+
+
+def test_measured_cf_raft_stays_on_the_ruler() -> None:
+    """Unchanged behavior for a measured CF: over the ruler, nothing in the corner."""
+    img = np.full((400, 600, 3), 128, np.uint8)
+    det = [{"cls_name": "Ruler", "conf": 0.9, "xyxy": (250, 200, 550, 240), "source": "archival"}]
+    out = build_summary_image(img, det, [], cf_px_per_cm=40.0, style=_plain(insert_cf_in_rulers=True),
+                              work_scale=1.0, cf_style=_cf_style(bar_thickness=10, brim=3),
+                              cf_source="measured_from_ruler")
+    xs = np.where(np.all(out == np.array(_CYAN_BGR, np.uint8), axis=-1))[1]
+    assert xs.min() == 250 + 3
+    assert np.array_equal(out[:150, :200], img[:150, :200])
+
+
+def test_predicted_cf_banner_says_so() -> None:
+    """The banner text is longer for a predicted CF -- it carries the 'predicted' label."""
+    img = np.full((400, 1400, 3), 128, np.uint8)
+    style = OverlayStyle(draw_labels=False, draw_cf_banner=True, draw_masks=False)
+    banner = np.array(style.cf_banner_color[::-1], np.uint8)
+
+    def banner_width(src):
+        out = build_summary_image(img, [], [], cf_px_per_cm=40.0, style=style, work_scale=1.0,
+                                  cf_source=src)
+        return int(np.where(np.all(out[0] == banner, axis=-1))[0].max())
+
+    assert banner_width(_PRED) > banner_width("measured_from_ruler")

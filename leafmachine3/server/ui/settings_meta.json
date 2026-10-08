@@ -1336,6 +1336,13 @@
     "important": false,
     "group": "Ruler CF"
   },
+  "modules.ruler_cf.use_CF_predicted_by_MP": {
+    "label": "Use MP-predicted CF as fallback",
+    "help": "When a sheet has no ruler, or the lattice method does not pass, use the conversion factor predicted from the image's megapixels so the sheet still gets cm measurements. Off by default: those sheets keep empty cm columns. Every output records the source in cf_source (measured_from_ruler or predicted_from_megapixels).",
+    "type": "bool",
+    "important": true,
+    "group": "Ruler CF"
+  },
   "modules.leaf_segmenter.enabled": {
     "label": "Enabled",
     "help": "Trace the lamina, petiole, and holes inside every leaf crop.",
@@ -1948,6 +1955,20 @@
   "report.overlay.cf_scalebar.exterior_dark": {
     "label": "Exterior dark square",
     "help": "Color of the dark squares in the exterior checkerboard.",
+    "type": "color",
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.exterior_light_predicted": {
+    "label": "Exterior light square (MP-predicted CF)",
+    "help": "Light-square and margin color used instead when the sheet's CF was predicted from megapixels rather than measured from a ruler, so the two cases cannot be confused.",
+    "type": "color",
+    "important": false,
+    "group": "Scale Bars"
+  },
+  "report.overlay.cf_scalebar.exterior_dark_predicted": {
+    "label": "Exterior dark square (MP-predicted CF)",
+    "help": "Dark-square color used instead when the sheet's CF was predicted from megapixels rather than measured from a ruler.",
     "type": "color",
     "important": false,
     "group": "Scale Bars"

@@ -223,7 +223,7 @@ class Reporter(PipelineStage):
                 morphology=b.morphology, landmarks=b.landmarks, landmark_style=lm_style,
                 landmark_measurements=b.landmark_measurements,
                 petioles=b.petioles, petiole_style=pet_style,
-                cf_style=CFScalebarStyle.from_config(self.cfg),
+                cf_style=CFScalebarStyle.from_config(self.cfg), cf_source=b.cf_source,
             )
             path = reports / "Overlay" / "Overlay_Summary" / f"{stem}__Overlay.{img_ext}"
             save_image(summary, path, quality=quality)

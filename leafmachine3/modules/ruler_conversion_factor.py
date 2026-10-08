@@ -10,12 +10,18 @@ The engine holds CONFIGURATION ONLY (no per-image state), so the single instance
 ``collect_items`` is shared across the CPU worker threads safely -- every per-sheet value is a
 local inside ``process_specimen``.
 
-CF PUBLISHING IS GATED. A sheet's CF is written to ``specimen.cf_px_per_cm`` (working frame)
-only when the engine certifies it 'high' confidence ('published'). A withheld / no-reading /
-no-ruler sheet leaves ``cf_px_per_cm`` NULL -- a visible absence that falls back to
-``cf_px_per_cm_predicted_by_mp`` rather than an unknown unit-misnaming error. The full audit
-trail (including the withheld reading) always lands in ``ruler_CF_lattice`` + its per-crop
-table. The QC panel is NOT drawn here; it is deferred to the Reporter, which rebuilds it from
+CF PUBLISHING IS GATED. A sheet's CF is written to ``specimen.cf_px_per_cm`` (working frame,
+``cf_source = 'measured_from_ruler'``) only when the engine certifies it 'high' confidence
+('published'). By default a withheld / no-reading / no-ruler sheet leaves ``cf_px_per_cm`` NULL --
+a visible absence rather than an unknown unit-misnaming error.
+
+``modules.ruler_cf.use_CF_predicted_by_MP`` (off by default) changes only those sheets: they get
+the megapixel prediction instead, in the WORKING frame (the engine's ``mp_anchor_working``, so a
+linear original-frame model is rescaled exactly as the lattice anchor is), with ``cf_source =
+'predicted_from_megapixels'`` and no ``ruler_unit_type``. With the option on, sheets that have NO
+Ruler crop are also run through the engine (it records them as ``no_ruler``), so they get both
+the fallback CF and an audit row. The full audit trail (including the withheld reading) always
+lands in ``ruler_CF_lattice`` + its per-crop table. The QC panel is NOT drawn here; it is deferred to the Reporter, which rebuilds it from
 the stored record alone (``Overlay/Overlay_Ruler_Lattice``).
 """
 from __future__ import annotations
@@ -24,6 +30,7 @@ import logging
 from collections import Counter
 from typing import Optional
 
+from leafmachine3.core.records import CF_SOURCE_MP, CF_SOURCE_RULER
 from leafmachine3.core.stage import PipelineStage, WorkItem
 
 log = logging.getLogger("leafmachine3.ruler_cf")
@@ -54,6 +61,7 @@ class RulerConversionFactor(PipelineStage):
             "min_frame_cm": (None if g("min_frame_cm", None) is None else float(g("min_frame_cm", None))),
             "squarify_sz": int((squarify.get("sz") if hasattr(squarify, "get") else None) or 720),
             "squarify_method": str((squarify.get("method") if hasattr(squarify, "get") else None) or "tile_four"),
+            "use_mp_fallback": bool(g("use_CF_predicted_by_MP", False)),
         }
 
     def build_model(self, device):
@@ -82,13 +90,24 @@ class RulerConversionFactor(PipelineStage):
     # ---- pipeline hooks ----------------------------------------------------
     def collect_items(self, project) -> list[WorkItem]:
         """One item per specimen owning Ruler crops; payload = (specimen dict, crops). The engine
-        is built per worker in build_model, so nothing heavy is pickled into the process pool."""
+        is built per worker in build_model, so nothing heavy is pickled into the process pool.
+
+        With ``use_CF_predicted_by_MP`` on, every eligible specimen WITHOUT a Ruler crop gets an
+        item too (empty crop list -> the engine records 'no_ruler' and its working-frame MP anchor,
+        which becomes the fallback CF). With it off those specimens get no item, as before, and the
+        executor marks them done(no_work)."""
         from leafmachine3.inference import load_mp_conversion_factor
         mp_model = load_mp_conversion_factor(self.cfg, None)
         anchor_frame = mp_model.frame
 
+        sids = list(project.db.specimens_with_crops("archival_detection", cls_name="Ruler"))
+        if self._settings()["use_mp_fallback"]:
+            with_rulers = set(sids)
+            sids += [sid for sid in project.db.eligible_specimens(self.key, self.depends_on)
+                     if sid not in with_rulers]
+
         items: list[WorkItem] = []
-        for sid in project.db.specimens_with_crops("archival_detection", cls_name="Ruler"):
+        for sid in sids:
             s = project.db.get_specimen(sid)
             specimen = {
                 "specimen_id": sid,
@@ -116,29 +135,45 @@ class RulerConversionFactor(PipelineStage):
     def infer(self, item: WorkItem, model) -> tuple:
         """Measure + fuse this sheet's rulers (no DB, no QC). -> (record, write-back or None).
 
-        ``model`` is the per-worker RulerCFLattice engine from build_model."""
+        ``model`` is the per-worker RulerCFLattice engine from build_model. The settings are read
+        here (not baked into the engine) because the fallback is a publishing policy, not a
+        measurement parameter -- the engine's record is identical with the option on or off."""
         specimen, crops = item.payload
         record = model.process_specimen(specimen, crops)
-        return record, _writeback(record)
+        return record, _writeback(record, use_mp_fallback=self._settings()["use_mp_fallback"])
 
     def persist(self, project, item: WorkItem, payload: tuple) -> None:
-        """Store the full lattice trail; publish the gated CF onto the specimen when certified."""
+        """Store the full lattice trail; write the sheet CF + its source when there is one."""
         record, writeback = payload
+        if writeback is not None and writeback["source"] == CF_SOURCE_MP:
+            # Stamp the audit row too, so the QC panel and ruler_conversion_factor.csv say the
+            # fallback was APPLIED rather than merely available.
+            record = {**record, "image": {**record["image"], "cf_source": CF_SOURCE_MP}}
         project.db.record_ruler_cf_lattice(record)
         if writeback is not None:
             project.db.set_specimen_cf(item.specimen_id, writeback["cf_px_per_cm"],
-                                       unit_type=writeback["unit_type"])
+                                       unit_type=writeback["unit_type"],
+                                       source=writeback["source"])
 
 
-def _writeback(record: dict) -> Optional[dict]:
-    """The specimen CF write-back for a PUBLISHED (high-confidence) sheet, else None.
+def _writeback(record: dict, *, use_mp_fallback: bool = False) -> Optional[dict]:
+    """The specimen CF write-back for this sheet, or None to leave ``cf_px_per_cm`` NULL.
 
+    A PUBLISHED (high-confidence) sheet writes the lattice CF, source 'measured_from_ruler'.
     unit_type is the dominant classifier ruler_class among the crops that were actually USED to
-    produce the CF (the reconciliation verdict), so the stored unit-type matches the reading."""
+    produce the CF (the reconciliation verdict), so the stored unit-type matches the reading.
+
+    Any other sheet (withheld / no_reading / no_ruler) writes the WORKING-frame MP anchor, source
+    'predicted_from_megapixels', only when ``use_mp_fallback`` is on and an anchor exists. It
+    carries no unit_type: no ruler stands behind it."""
     img = record.get("image") or {}
-    if img.get("status") != "published" or img.get("cf_px_per_cm") is None:
-        return None
-    used = [c.get("ruler_class") for c in record.get("crops", [])
-            if c.get("verdict") == "used" and c.get("ruler_class")]
-    unit = Counter(used).most_common(1)[0][0] if used else None
-    return {"cf_px_per_cm": float(img["cf_px_per_cm"]), "unit_type": unit}
+    if img.get("status") == "published" and img.get("cf_px_per_cm") is not None:
+        used = [c.get("ruler_class") for c in record.get("crops", [])
+                if c.get("verdict") == "used" and c.get("ruler_class")]
+        unit = Counter(used).most_common(1)[0][0] if used else None
+        return {"cf_px_per_cm": float(img["cf_px_per_cm"]), "unit_type": unit,
+                "source": CF_SOURCE_RULER}
+    anchor = img.get("mp_anchor_working")
+    if use_mp_fallback and anchor:
+        return {"cf_px_per_cm": float(anchor), "unit_type": None, "source": CF_SOURCE_MP}
+    return None

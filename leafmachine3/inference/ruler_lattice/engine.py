@@ -55,6 +55,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from leafmachine3.core.records import CF_SOURCE_MP, CF_SOURCE_RULER
+
 from .analysis import analyse, build_masks, summarise
 from .sheet_cf import reconcile_parent
 from .units import is_skipped, spec_of, system_of
@@ -104,7 +106,9 @@ CREATE TABLE IF NOT EXISTS ruler_CF_lattice (
     cf_px_per_inch        REAL,
     cf_px_per_cm_original REAL,               -- same CF expressed in the ORIGINAL frame
     cf_px_per_cm_measured REAL,               -- what the lattice read, even when withheld
-    cf_source             TEXT,               -- 'lattice' when published, else NULL
+    cf_source             TEXT,               -- 'measured_from_ruler' when published; 'predicted_from_megapixels'
+                                              -- when the ruler_cf stage APPLIED the MP fallback
+                                              -- (modules.ruler_cf.use_CF_predicted_by_MP); else NULL
     fallback              TEXT,               -- what a consumer should use instead: 'mp_anchor' | 'none'
 
     -- confidence gate
@@ -522,7 +526,7 @@ class RulerCFLattice:
             cf_px_per_inch=_num(None if cf is None else cf * CM_PER_INCH),
             cf_px_per_cm_original=_num(None if cf is None else cf / (work_scale or 1.0)),
             cf_px_per_cm_measured=_num(meas),
-            cf_source=("lattice" if cf is not None else None),
+            cf_source=(CF_SOURCE_RULER if cf is not None else None),   # the stage stamps CF_SOURCE_MP
             fallback=("" if cf is not None else
                       ("mp_anchor" if anchor_work else "none")),
             confidence=pr.get("confidence") or "low",
@@ -823,15 +827,19 @@ class RulerCFLattice:
         recon = None
         drawable = [e for e in entries if e.get("rot") is not None]
         withheld = pr.get("cf_px_per_cm") is None and img.get("mp_anchor_working")
+        # Whether the stage actually SUBSTITUTED the MP anchor (use_CF_predicted_by_MP on) or left
+        # the sheet without a CF. Read from the record, so a panel rebuilt later says the same.
+        applied = img.get("cf_source") == CF_SOURCE_MP
         if drawable and (len(panels) > 1 or withheld):
             recon = QC.build_recon_section(img.get("image_name"), drawable, pr,
                                            img.get("mp_anchor_working"),
-                                           anchor_formula=img.get("anchor_formula"))
+                                           anchor_formula=img.get("anchor_formula"),
+                                           fallback_applied=applied)
         # The CF summary is unconditional: every panel ends with the two numbers, whether the
         # sheet published a measured CF or fell back to the prediction.
         cf_summary = QC.build_cf_summary_section(
             pr.get("cf_px_per_cm"), img.get("mp_anchor_working"),
-            img.get("anchor_formula_symbolic"))
+            img.get("anchor_formula_symbolic"), fallback_applied=applied)
         return QC.stack_parent(panels, recon, cf_summary=cf_summary)
 
     def _reconcile_from_record(self, record):

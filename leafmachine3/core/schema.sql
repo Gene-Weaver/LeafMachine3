@@ -31,8 +31,12 @@ CREATE TABLE IF NOT EXISTS specimen (
     -- duplicated key outputs (authoritative copies live in the method tables):
     original_mp        REAL,                   -- original_width*original_height/1e6 (megapixels, 4dp); from mp_conversion_factor
     cf_px_per_cm_predicted_by_mp REAL,         -- from mp_conversion_factor (resolution->CF linear predictor; runs first)
-    cf_px_per_cm       REAL,                   -- PUBLISHED ruler CF (WORKING frame -- the only frame LM3
-                                               -- measures in) from ruler_cf (lattice); NULL unless high-confidence
+    cf_px_per_cm       REAL,                   -- the sheet's CF (WORKING frame -- the only frame LM3 measures
+                                               -- in), written by ruler_cf. Which CF it is: see cf_source.
+    cf_source          TEXT,                   -- from ruler_cf: 'measured_from_ruler' (lattice published it,
+                                               -- high confidence) | 'predicted_from_megapixels' (no ruler or the
+                                               -- lattice did not pass, and modules.ruler_cf.use_CF_predicted_by_MP
+                                               -- is on) | NULL (no CF; every *_cm column stays NULL)
     ruler_unit_type    TEXT,                   -- from ruler_cf (lattice): dominant unit-type of the crops that produced the CF
     ruler_class_type   TEXT,                   -- from ruler_classifier (ensemble unit-type; per-specimen consensus across rulers)
     has_leaves         INTEGER, has_flowers INTEGER, has_fruits INTEGER,

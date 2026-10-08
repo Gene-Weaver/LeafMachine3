@@ -78,7 +78,7 @@ modules:
     ensemble_members: [yolo26x_cls_224, yolo26n_cls_224, dinov2_frozen_mlp]
     min_conf: 0.35
     squarify: {sz: 720, method: tile_four}
-  ruler_cf: {enabled: true, anchor_tol: 0.25, min_frame_cm: null}
+  ruler_cf: {enabled: true, anchor_tol: 0.25, min_frame_cm: null, use_CF_predicted_by_MP: false}
   leaf_segmenter:
     enabled: true
     model: {key: yolo26x_seg_1024, path: models/leaf_segmenter/model.onnx, format: onnx}
@@ -133,6 +133,8 @@ report:
       exterior_cells: 2
       exterior_light: [255, 255, 255]
       exterior_dark: [0, 0, 0]
+      exterior_light_predicted: [128, 128, 128]
+      exterior_dark_predicted: [0, 0, 0]
     groups:
       leaf: {border: true, fill: false, fill_alpha: 0.3, line_width: 3}
       plant: {border: true, fill: false, fill_alpha: 0.3, line_width: 3}

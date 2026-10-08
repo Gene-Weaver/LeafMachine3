@@ -257,6 +257,10 @@ class CFScalebarStyle:
     ``insert_cf_exterior`` appends a checkerboard of 1 cm cells to the top and left of the sheet
     (``exterior_cells`` cells thick), OUTSIDE the image so it obscures nothing.
 
+    When the CF was PREDICTED from megapixels (``specimen.cf_source``), the raft is drawn once in
+    the top-left corner instead of over the rulers, and the checkerboard uses the ``*_predicted``
+    colors.
+
     ``bar_thickness`` is in pixels at the reference resolution (2592 px long side) and scales with
     the image, like the box ``line_width`` values; ``brim`` is a literal pixel count, since it is a
     hairline gutter rather than a drawn feature.
@@ -269,6 +273,10 @@ class CFScalebarStyle:
     exterior_cells: int = 2                   # checkerboard band thickness, in 1 cm cells
     exterior_light: RGB = (255, 255, 255)     # the "O" cells
     exterior_dark: RGB = (0, 0, 0)            # the "X" cells
+    # The same two, used instead when the CF was PREDICTED from megapixels (not measured from a
+    # ruler) -- black / 50% gray, so a predicted scale never passes for a measured one.
+    exterior_light_predicted: RGB = (128, 128, 128)
+    exterior_dark_predicted: RGB = (0, 0, 0)
 
     @classmethod
     def from_config(cls, cfg) -> "CFScalebarStyle":
@@ -282,6 +290,8 @@ class CFScalebarStyle:
             exterior_cells=int(_getk(s, "exterior_cells", 2)),
             exterior_light=tuple(_getk(s, "exterior_light", (255, 255, 255))),
             exterior_dark=tuple(_getk(s, "exterior_dark", (0, 0, 0))),
+            exterior_light_predicted=tuple(_getk(s, "exterior_light_predicted", (128, 128, 128))),
+            exterior_dark_predicted=tuple(_getk(s, "exterior_dark_predicted", (0, 0, 0))),
         )
 
 

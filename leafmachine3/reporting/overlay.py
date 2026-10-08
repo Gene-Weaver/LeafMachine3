@@ -26,6 +26,7 @@ except Exception:  # pragma: no cover
     cv2 = None
 
 from leafmachine3.core.imaging import decode_polygon, mask_bbox, scale_polygon
+from leafmachine3.core.records import CF_SOURCE_MP
 from leafmachine3.core.landmarks import KPT_GROUP, MIDVEIN_N, SKELETON
 from leafmachine3.reporting.palette import (
     LEAF_DET_CLASSES, RGB, CFScalebarStyle, GroupStyle, LandmarkStyle, OverlayStyle, PetioleStyle,
@@ -84,6 +85,7 @@ def build_summary_image(
     petioles: Sequence[Any] = (),
     petiole_style: Optional[PetioleStyle] = None,
     cf_style: Optional[CFScalebarStyle] = None,
+    cf_source: Optional[str] = None,
 ) -> np.ndarray:
     """Render the Summary_Image overlay onto a copy of ``image_bgr``.
 
@@ -99,6 +101,11 @@ def build_summary_image(
         work_scale: Working-to-original scale of the stored geometry. Coordinates are
             multiplied by ``1/work_scale`` to map onto the original pixels.
         cf_style: Resolved :class:`CFScalebarStyle` for the two optional CF scale overlays.
+        cf_source: ``specimen.cf_source``. When the CF was PREDICTED from megapixels rather than
+            measured from a ruler, the scale overlays must not pass for a measurement: the banner
+            says so, the 1 cm / 1 inch raft goes in the top-left corner (under the banner)
+            instead of over the detected rulers -- none of which produced this CF -- and the
+            exterior checkerboard switches to its ``*_predicted`` colors (black / 50% gray).
 
     Returns:
         A new BGR ``np.ndarray``, the same shape as ``image_bgr`` -- EXCEPT under
@@ -118,8 +125,10 @@ def build_summary_image(
     _draw_boxes(out, detections, style, scale, skip_plant_leaf=rotated_mode)
     if rotated_mode and style.group("leaf").visible:
         _draw_rotated_boxes(out, morphology, style, scale)
+    predicted = cf_source == CF_SOURCE_MP
+    banner_bottom = 0
     if style.draw_cf_banner and cf_px_per_cm:
-        _draw_cf_banner(out, float(cf_px_per_cm), style)
+        banner_bottom = _draw_cf_banner(out, float(cf_px_per_cm), style, predicted=predicted)
     # Landmarks go ON TOP of masks + boxes so every leaf's keypoints stay visible.
     if style.draw_landmarks and landmarks:
         _draw_landmarks(out, landmarks, landmark_style or LandmarkStyle(), scale,
@@ -135,9 +144,12 @@ def build_summary_image(
     if cf_orig and cf_orig > 0:
         cfs = cf_style or CFScalebarStyle()
         if style.insert_cf_in_rulers:
-            _draw_ruler_cf_bars(out, detections, cf_orig, cfs, scale)
+            if predicted:
+                _draw_corner_cf_raft(out, cf_orig, cfs, top=banner_bottom)
+            else:
+                _draw_ruler_cf_bars(out, detections, cf_orig, cfs, scale)
         if style.insert_cf_exterior:
-            out = _append_cf_exterior(out, cf_orig, cfs)
+            out = _append_cf_exterior(out, cf_orig, cfs, predicted=predicted)
     return out
 
 
@@ -192,26 +204,55 @@ def _draw_ruler_cf_bars(
         if 2 * thick + 3 * brim > short_len:
             thick = max(1, int((short_len - 3 * brim) // 2))
         raft_short = 2 * thick + 3 * brim
-        raft_long = max(cm_px, inch_px) + 2 * brim
 
         # raft origin: flush with the near edge along the long axis, centered on the short axis
         if horizontal:
             rx, ry = int(round(x1)), int(round((y1 + y2) / 2.0 - raft_short / 2.0))
-            _fill_solid(out, rx, ry, rx + raft_long, ry + raft_short, _bgr(cfs.raft_color))
-            for offset, length, color in ((0, cm_px, cfs.cm_color),
-                                          (thick + brim, inch_px, cfs.inch_color)):
-                by = ry + brim + offset
-                _fill_solid(out, rx + brim, by, rx + brim + length, by + thick, _bgr(color))
         else:
             rx, ry = int(round((x1 + x2) / 2.0 - raft_short / 2.0)), int(round(y1))
-            _fill_solid(out, rx, ry, rx + raft_short, ry + raft_long, _bgr(cfs.raft_color))
-            for offset, length, color in ((0, cm_px, cfs.cm_color),
-                                          (thick + brim, inch_px, cfs.inch_color)):
-                bx = rx + brim + offset
-                _fill_solid(out, bx, ry + brim, bx + thick, ry + brim + length, _bgr(color))
+        _draw_raft(out, rx, ry, horizontal, thick, brim, cm_px, inch_px, cfs)
 
 
-def _append_cf_exterior(out: np.ndarray, cf_px_per_cm: float, cfs: CFScalebarStyle) -> np.ndarray:
+def _draw_corner_cf_raft(out: np.ndarray, cf_px_per_cm: float, cfs: CFScalebarStyle, top: int = 0) -> None:
+    """Lay ONE 1 cm + 1 inch raft in the top-left corner, for a CF predicted from megapixels.
+
+    The predicted CF came from no ruler on the sheet, so it must not be drawn over one -- a raft
+    sitting on a detected ruler reads as "this ruler was measured". It goes flush left at ``top``
+    (the bottom of the CF banner, which also lives in the corner; 0 when there is no banner),
+    horizontal, with the same bars, colors and reference-scaled thickness as the ruler rafts.
+    ``cf_px_per_cm`` is in the ORIGINAL frame.
+    """
+    cm_px = max(1, int(round(cf_px_per_cm)))
+    inch_px = max(1, int(round(cf_px_per_cm * _CM_PER_INCH)))
+    brim = max(0, int(cfs.brim))
+    thick = max(1, _scaled_lw(cfs.bar_thickness, _res_ratio(out)))
+    _draw_raft(out, 0, max(0, int(top)), True, thick, brim, cm_px, inch_px, cfs)
+
+
+def _draw_raft(
+    out: np.ndarray, rx: int, ry: int, horizontal: bool, thick: int, brim: int,
+    cm_px: int, inch_px: int, cfs: CFScalebarStyle,
+) -> None:
+    """Paint one raft with its top-left corner at ``(rx, ry)``: a solid ``raft_color`` backing,
+    then the 1 cm and 1 inch bars along its long axis, ``brim`` px apart and from the edges."""
+    raft_short = 2 * thick + 3 * brim
+    raft_long = max(cm_px, inch_px) + 2 * brim
+    bars = ((0, cm_px, cfs.cm_color), (thick + brim, inch_px, cfs.inch_color))
+    if horizontal:
+        _fill_solid(out, rx, ry, rx + raft_long, ry + raft_short, _bgr(cfs.raft_color))
+        for offset, length, color in bars:
+            by = ry + brim + offset
+            _fill_solid(out, rx + brim, by, rx + brim + length, by + thick, _bgr(color))
+    else:
+        _fill_solid(out, rx, ry, rx + raft_short, ry + raft_long, _bgr(cfs.raft_color))
+        for offset, length, color in bars:
+            bx = rx + brim + offset
+            _fill_solid(out, bx, ry + brim, bx + thick, ry + brim + length, _bgr(color))
+
+
+def _append_cf_exterior(
+    out: np.ndarray, cf_px_per_cm: float, cfs: CFScalebarStyle, predicted: bool = False,
+) -> np.ndarray:
     """Append a 1 cm checkerboard band to the top and left of the sheet (``insert_cf_exterior``).
 
     The band is ``exterior_cells`` cells thick and lives entirely OUTSIDE the original pixels -- the
@@ -228,7 +269,11 @@ def _append_cf_exterior(out: np.ndarray, cf_px_per_cm: float, cfs: CFScalebarSty
 
     Cell edges are ``round(k * cf)``, NOT ``k * round(cf)``: every boundary lands on a whole pixel
     (each cell is drawn exactly), while no rounding error accumulates along the band, so the 30th
-    cell still starts at the true 30 cm mark. Only the DARK cells are painted -- the canvas is
+    cell still starts at the true 30 cm mark.
+
+    ``predicted`` (a CF predicted from megapixels, not measured from a ruler) swaps in
+    ``exterior_light_predicted`` / ``exterior_dark_predicted`` -- black and 50% gray by default -- so
+    a predicted scale is never mistaken for a measured one at a glance. Only the DARK cells are painted -- the canvas is
     pre-filled ``exterior_light`` -- which is also what makes the far edge behave as asked: a dark
     cell clipped by the image boundary is drawn cut short, and where the parity instead puts a light
     cell against the boundary nothing is drawn there at all, so no light cell ever renders truncated.
@@ -245,10 +290,11 @@ def _append_cf_exterior(out: np.ndarray, cf_px_per_cm: float, cfs: CFScalebarSty
     h, w = out.shape[:2]
     new_h, new_w = h + margin, w + margin
     canvas = np.empty((new_h, new_w, 3), dtype=out.dtype)
-    canvas[:] = _bgr(cfs.exterior_light)
+    light = cfs.exterior_light_predicted if predicted else cfs.exterior_light
+    canvas[:] = _bgr(light)
     canvas[margin:, margin:] = out
 
-    dark = _bgr(cfs.exterior_dark)
+    dark = _bgr(cfs.exterior_dark_predicted if predicted else cfs.exterior_dark)
     for i in range(cells):                          # top band: `cells` rows across the full width
         ya, yb = edge(i), min(edge(i + 1), margin)
         j = 0
@@ -758,18 +804,24 @@ def _draw_rotated_boxes(out: np.ndarray, morphology: Sequence[Any], style: Overl
 
 
 # -- conversion-factor banner ------------------------------------------------------
-def _draw_cf_banner(out: np.ndarray, cf_px_per_cm: float, style: OverlayStyle) -> None:
-    """Print the derived conversion factor in a banner at the top-left of the sheet."""
-    text = f"CF: {cf_px_per_cm:.2f} px/cm"
+def _draw_cf_banner(out: np.ndarray, cf_px_per_cm: float, style: OverlayStyle,
+                    predicted: bool = False) -> int:
+    """Print the conversion factor in a banner at the top-left of the sheet; return its bottom y.
+
+    A CF predicted from megapixels says so in the banner itself, so the number is never read as
+    a ruler measurement."""
+    text = f"CF: {cf_px_per_cm:.2f} px/cm" + (" (predicted from megapixels)" if predicted else "")
     font_scale = _BASE_FONT_SCALE * 1.4 * max(0.1, style.font_scale)
     thickness = max(1, int(round(font_scale * 2)))
     (tw, th), base = cv2.getTextSize(text, _FONT, font_scale, thickness)
     pad = int(round(6 * max(0.5, style.font_scale)))
-    cv2.rectangle(out, (0, 0), (tw + 2 * pad, th + base + 2 * pad), _bgr(style.cf_banner_color), -1)
+    bottom = th + base + 2 * pad
+    cv2.rectangle(out, (0, 0), (tw + 2 * pad, bottom), _bgr(style.cf_banner_color), -1)
     cv2.putText(
         out, text, (pad, th + pad), _FONT, font_scale,
         (0, 0, 0), thickness, cv2.LINE_AA,
     )
+    return bottom + 1          # cv2.rectangle is inclusive of its far corner
 
 
 # -- specimen segmentation overlay -------------------------------------------------

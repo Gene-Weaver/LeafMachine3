@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional, Sequence
 
 from leafmachine3.core.records import (
+    CF_SOURCE_RULER,
     CropRef,
     DetRow,
     Grounded,
@@ -73,7 +74,7 @@ _OWNED_SPECIMEN_COLS: dict[str, tuple[str, ...]] = {
     "mp_conversion_factor": ("cf_px_per_cm_predicted_by_mp", "original_mp"),
     "ruler_classifier": ("ruler_class_type",),
     "phenology_detector": ("has_leaves", "has_flowers", "has_fruits"),
-    "ruler_cf": ("cf_px_per_cm", "ruler_unit_type"),   # lattice write-back; nulled on ruler_cf reset
+    "ruler_cf": ("cf_px_per_cm", "cf_source", "ruler_unit_type"),   # CF write-back; nulled on ruler_cf reset
 }
 _OWNED_LEAF_COLS: dict[str, tuple[str, ...]] = {
     "metric_grounding": ("area_cm2", "perimeter_cm", "bbox_w_cm", "bbox_h_cm"),
@@ -157,6 +158,9 @@ class ProjectDB:
         # Explicit "pixels were discarded" flag. `normalized` cannot answer this: it is also 1 for a
         # small non-JPEG that was only format-converted. Backfilled from the dims, which are exact.
         ("downsampled", "INTEGER NOT NULL DEFAULT 0"),
+        # Which CF specimen.cf_px_per_cm holds (CF_SOURCE_* below). Backfilled from the CF itself:
+        # before this column existed only a published ruler CF was ever written there.
+        ("cf_source", "TEXT"),
     )
     # Columns added to BOTH detection tables after the initial schema (same ALTER-backfill reason).
     _DETECTION_MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -207,6 +211,9 @@ class ProjectDB:
                     self._exec("UPDATE specimen SET downsampled = "
                                "(original_width IS NOT NULL AND width IS NOT NULL "
                                " AND width <> original_width)")
+                elif col == "cf_source":
+                    self._exec("UPDATE specimen SET cf_source = ? WHERE cf_px_per_cm IS NOT NULL",
+                               (CF_SOURCE_RULER,))
         for table in _DETECTION_TABLES:
             cols = self._table_columns(table)
             for col, decl in self._DETECTION_MIGRATIONS:
@@ -357,16 +364,21 @@ class ProjectDB:
         cf_px_per_cm: Optional[float],
         *,
         unit_type: Optional[str] = None,
+        source: Optional[str] = CF_SOURCE_RULER,
     ) -> None:
-        """Publish the lattice ruler CF (WORKING frame) + its dominant unit-type onto the specimen.
+        """Write the sheet's CF (WORKING frame), where it came from, and the rulers' unit-type.
 
-        Called ONLY for a high-confidence 'published' sheet. A withheld/no-reading/no-ruler sheet
-        leaves ``cf_px_per_cm`` NULL (a visible absence that falls back to
-        ``cf_px_per_cm_predicted_by_mp``) rather than an unknown unit-misnaming error.
+        ``source`` is ``CF_SOURCE_RULER`` for a high-confidence 'published' lattice CF, or
+        ``CF_SOURCE_MP`` when ``modules.ruler_cf.use_CF_predicted_by_MP`` substituted the
+        megapixel prediction for a sheet with no ruler or a lattice that did not pass. With the
+        option off such a sheet is never written, so ``cf_px_per_cm`` stays NULL (a visible
+        absence) rather than carrying an unknown unit-misnaming error.
         """
+        cf = None if cf_px_per_cm is None else float(cf_px_per_cm)
         self._exec(
-            "UPDATE specimen SET cf_px_per_cm = ?, ruler_unit_type = ? WHERE specimen_id = ?",
-            (None if cf_px_per_cm is None else float(cf_px_per_cm),
+            "UPDATE specimen SET cf_px_per_cm = ?, cf_source = ?, ruler_unit_type = ? "
+            "WHERE specimen_id = ?",
+            (cf, None if cf is None or not source else str(source),
              None if not unit_type else str(unit_type), specimen_id),
         )
 
@@ -1091,7 +1103,8 @@ class ProjectDB:
                    s.width  AS working_width,  s.height AS working_height,
                    s.original_width, s.original_height, s.work_scale,
                    s.normalized, s.downsampled, s.original_mp,
-                   s.cf_px_per_cm            AS cf_px_per_cm_ruler,
+                   s.cf_px_per_cm            AS cf_px_per_cm,
+                   s.cf_source               AS cf_source,
                    s.cf_px_per_cm_predicted_by_mp,
                    s.ruler_unit_type, s.ruler_class_type,
                    s.ingested_at,
@@ -1133,7 +1146,8 @@ class ProjectDB:
                    s.original_path, s.working_path,
                    s.width  AS working_width, s.height AS working_height,
                    s.original_width, s.original_height, s.work_scale, s.downsampled, s.original_mp,
-                   s.cf_px_per_cm AS cf_px_per_cm_ruler,
+                   s.cf_px_per_cm AS cf_px_per_cm,
+                   s.cf_source    AS cf_source,
                    s.cf_px_per_cm_predicted_by_mp,
                    s.ruler_unit_type, s.ruler_class_type,
                    s.has_leaves, s.has_flowers, s.has_fruits,

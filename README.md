@@ -339,8 +339,8 @@ cards, which hold the full training details.
 Predicts a pixels-per-centimeter conversion factor from the image's resolution alone. Herbarium
 sheets are a standard size, so megapixels alone carry most of the scale information. The value
 is a **prior**: the ruler stages publish a measured factor only when it agrees with this estimate
-or rests on enough ruler length to outvote it, and the value itself is never used to convert
-measurements.
+or rests on enough ruler length to outvote it. By default the value itself is never used to
+convert measurements; the `use_CF_predicted_by_MP` option of stage 7 makes it the fallback.
 
 | Model | [`lm3_mp_conversion_factor__sqrt_fit`](https://huggingface.co/phyloforfun/lm3_mp_conversion_factor__sqrt_fit) |
 |---|---|
@@ -450,9 +450,17 @@ unit type the classifier assigned, so hundreds of tick spacings vote on one fact
 otherwise the sheet is left unconverted rather than mis-converted. The QC panel shows the crop,
 the lattice fit, and the verdict.
 
+With `modules.ruler_cf.use_CF_predicted_by_MP: true` (off by default), a sheet with no ruler, or
+one whose lattice did not pass, gets the stage 1 prediction instead, so it still has cm
+measurements. Every output says which kind it is: `specimen.cf_source` and the `cf_source` CSV
+column read `measured_from_ruler` or `predicted_from_megapixels`. On the summary overlay, a
+predicted factor is labeled in the CF banner, its 1 cm / 1 inch raft sits in the top-left corner
+instead of on a ruler, and the exterior 1 cm checkerboard is black and 50% gray instead of black
+and white.
+
 ![Ruler lattice QC panels for the three specimens](docs/readme_github/ruler_cf_lattice.jpg)
 
-No model; CPU. *Output:* `ruler_CF_lattice` tables; `specimen.cf_px_per_cm`;
+No model; CPU. *Output:* `ruler_CF_lattice` tables; `specimen.cf_px_per_cm` + `cf_source`;
 `Overlay/Overlay_Ruler_Lattice/` and `Data/ruler_conversion_factor.csv` (the verdict and why).
 
 ### 8. Leaf Segmenter
@@ -553,10 +561,11 @@ No model; CPU. *Output:* `bilateral_symmetry` table; `Leaf_Data/Bilateral_Symmet
 
 ### 15. Metric Grounding
 
-Converts every pixel measurement to real units using the published conversion factor: areas to
-cm², lengths to cm. It grounds only against a ruler factor the lattice stage published with high
-confidence, never against the resolution estimate. Sheets without a published factor keep their
-pixel values, and their `_cm` columns are empty rather than wrong.
+Converts every pixel measurement to real units using the sheet's conversion factor: areas to
+cm², lengths to cm. By default that is only a ruler factor the lattice stage published with high
+confidence; sheets without one keep their pixel values, and their `_cm` columns are empty rather
+than wrong. With `use_CF_predicted_by_MP` on (stage 7), those sheets are grounded with the
+resolution estimate instead.
 
 No model; CPU. *Output:* the `_cm` and `_cm2` columns in `Data/leaf_measurements.csv`, with
 `cf_source` on each row saying where the factor came from.

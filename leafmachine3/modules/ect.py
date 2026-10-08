@@ -257,6 +257,8 @@ def _write_ect_h5(path: Path, r: dict, s: dict) -> None:
         o.attrs["orientation_angle_degreesCW"] = _h5v(lf["angle_cw"])
         o.attrs["cf_px_per_cm"] = _h5v(r["specimen"].get("cf_px_per_cm"))
         o.attrs["cf_px_per_cm_predicted_by_mp"] = _h5v(r["specimen"].get("cf_px_per_cm_predicted_by_mp"))
+        # which CF cf_px_per_cm is: measured_from_ruler | predicted_from_megapixels | none
+        o.attrs["cf_source"] = r["specimen"].get("cf_source") or "none"
         # WORKING dims, to match every other px value in this group. These used to be the ORIGINAL
         # dims sitting beside working-frame max_extent_px / x_min_px / cf_px_per_cm, so anyone
         # normalizing an outline by image_width was off by exactly 1/work_scale on a resized sheet.
