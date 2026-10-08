@@ -26,18 +26,22 @@ import json
 import logging
 import os
 import shutil
+import tempfile
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from leafmachine3.modelhub.registry import Action, Lock, LockFile, Unit, load_lock
+from leafmachine3.modelhub.registry import META_FORMAT, Action, Lock, LockFile, Unit, load_lock
 
 log = logging.getLogger("leafmachine3.modelhub")
 
 BACKUP_SUFFIX = ".backup"
 RECORD_NAME = "installed.json"
 DOWNLOADS_DIR = ".downloads"
+SCRATCH_STALE_S = 3600          # a .downloads dir untouched this long belongs to a dead install
+_INSTALLING = threading.Event()  # set while install() runs in this process: repair() leaves scratch alone
 ENV_ROOT = "LM3_MODELS_DIR"
 
 Progress = Callable[[dict[str, Any]], None]
@@ -87,12 +91,30 @@ def read_record(root: Path) -> dict[str, Any]:
         return {"schema_version": 1, "actions": {}}
 
 
+_RECORD_LOCK = threading.Lock()
+
+
 def write_record(root: Path, data: dict[str, Any]) -> None:
+    """Atomic replace through a temp file that is unique per call.
+
+    status()/catalog() may adopt files and write the record from several server threads at once
+    (every open GUI polls). A fixed ``installed.json.tmp`` let one call's os.replace consume the
+    temp file the other had just written, and the second replace died with ENOENT -- which the GUI
+    showed as "could not read model status". The lock serializes writers in this process; the
+    unique name keeps a second process (the CLI) from tripping over them.
+    """
     root.mkdir(parents=True, exist_ok=True)
-    tmp = _record_path(root).with_suffix(".json.tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2, sort_keys=True)
-    os.replace(tmp, _record_path(root))
+    with _RECORD_LOCK:
+        fd, tmp = tempfile.mkstemp(dir=str(root), prefix=".installed.", suffix=".json.tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2, sort_keys=True)
+            os.replace(tmp, _record_path(root))
+        finally:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
 
 
 def sha256_of(path: Path) -> str:
@@ -130,10 +152,18 @@ def repair(root: Path, lock: Lock | None = None) -> list[dict[str, str]]:
             os.replace(backup, dest)
             done.append({"file": rel, "action": "restored_backup"})
             log.warning("models: restored %s from its backup (an update did not finish)", rel)
-    # scratch left by a dead process
+    # scratch left by a dead process. NOT the scratch of an install in flight: status()/catalog()
+    # are polled by every open GUI while a download runs, and sweeping here used to delete the
+    # half-written file from under hf_hub_download. In-process installs are flagged; another
+    # process's scratch is only swept once it has gone quiet for SCRATCH_STALE_S.
     scratch = root / DOWNLOADS_DIR
-    if scratch.is_dir():
-        shutil.rmtree(scratch, ignore_errors=True)
+    if scratch.is_dir() and not _INSTALLING.is_set():
+        try:
+            newest = max((p.stat().st_mtime for p in scratch.rglob("*") if p.is_file()), default=scratch.stat().st_mtime)
+        except OSError:
+            newest = 0.0
+        if time.time() - newest > SCRATCH_STALE_S:
+            shutil.rmtree(scratch, ignore_errors=True)
     return done
 
 
@@ -220,9 +250,12 @@ def _action_status(root: Path, action: Action, rec: dict[str, Any] | None, forma
             ok = sha256_of(p) == f.sha256
             fs.sha_ok = ok
             if ok and not _record_matches(rec, unit, f, p):
-                # adopt a hand-placed (or re-stat'd) file that is byte-identical to the pinned one
+                # adopt a hand-placed (or re-stat'd) file that is byte-identical to the pinned one.
+                # The unit's recorded REVISION is left alone when one exists: the record keeps one
+                # revision per repo, and a matching sidecar must not relabel an older model file as
+                # the pinned revision (that is what the update dialog shows as "installed").
                 rec = rec or {"revisions": {}, "files": {}}
-                rec.setdefault("revisions", {})[unit.repo_id] = unit.revision
+                rec.setdefault("revisions", {}).setdefault(unit.repo_id, unit.revision)
                 rec.setdefault("files", {})[f.dest] = {"sha256": f.sha256, "bytes": f.bytes, "src": f.src,
                                                        "repo_id": unit.repo_id, "stat": _stat_sig(p)}
                 rec["installed_at"] = rec.get("installed_at") or time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -387,10 +420,12 @@ def install(root: Path | None = None, *, lock: Lock | None = None, actions: Iter
     _emit(progress, type="start", root=str(root), actions=[a.key for a in todo], total_bytes=total_bytes)
     record = read_record(root)
 
+    _INSTALLING.set()
     try:
         for action in todo:
             _install_action(root, action, formats, fetch, progress, record)
     finally:
+        _INSTALLING.clear()
         shutil.rmtree(root / DOWNLOADS_DIR, ignore_errors=True)     # scratch never outlives an install
 
     after = status(root, lock=lock, formats=formats)
@@ -478,3 +513,215 @@ def _move(src: Path, dest: Path) -> None:
         shutil.copyfile(src, tmp)
         os.replace(tmp, dest)
         src.unlink(missing_ok=True)
+
+
+# --------------------------------------------------------------------------- #
+# catalog: every stage, every variant, every format -- what the Models tab renders
+# --------------------------------------------------------------------------- #
+#: Formats the LM3 runtime can execute. The lock may pin more (CoreML, OpenVINO, TorchScript,
+#: PyTorch) for users who run the models elsewhere; only these can be made the ACTIVE model.
+RUNNABLE_FORMATS: tuple[str, ...] = ("onnx", "json")
+
+FMT_MISSING = "missing"      # none of the format's files is on disk
+FMT_PARTIAL = "partial"      # some are (a multi-file format half-installed, or a crash mid-swap)
+FMT_OUTDATED = "outdated"    # on disk, but not the pinned revision/sha
+FMT_CURRENT = "current"      # on disk and matches the lock
+
+
+def _stage_order() -> list[str]:
+    """Pipeline order for the catalog; the lock's own order is the fallback."""
+    try:
+        from leafmachine3.core.config import CANONICAL_STAGE_KEYS  # noqa: PLC0415
+
+        return list(CANONICAL_STAGE_KEYS)
+    except Exception:  # noqa: BLE001 - the catalog must not depend on the pipeline importing
+        return []
+
+
+def _settings_model(stage: str, settings_values: Mapping[str, Any] | None) -> dict[str, Any]:
+    """``modules.<stage>.model`` (plus ``models_dir`` for the ensemble) as the settings tree has it."""
+    try:
+        block = ((settings_values or {}).get("modules") or {}).get(stage) or {}
+        model = block.get("model") if isinstance(block, Mapping) else None
+        out = dict(model) if isinstance(model, Mapping) else {}
+        if isinstance(block, Mapping) and block.get("models_dir"):
+            out.setdefault("models_dir", block["models_dir"])
+        return out
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _norm_model_path(root: Path, p: str | None) -> str | None:
+    """A settings model path as a dest relative to the models root, or None if it points elsewhere."""
+    if not p:
+        return None
+    path = Path(str(p)).expanduser()
+    if path.is_absolute():
+        try:
+            return path.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            return None
+    parts = path.parts
+    if parts and parts[0] == "models":
+        return Path(*parts[1:]).as_posix()
+    return path.as_posix()
+
+
+def _variant_entry(root: Path, action: Action, rec: dict[str, Any] | None, *, default: bool,
+                   active_dest: str | None) -> tuple[dict[str, Any], dict[str, Any] | None, bool]:
+    """One variant (a default action or an alternate): per-unit, per-format install state."""
+    units: list[dict[str, Any]] = []
+    dirty = False
+    by_dest = {f.dest: u for u in action.units for f in u.files}
+    # runnable formats first (onnx is what LM3 runs), the rest alphabetically
+    formats = sorted({f.format for u in action.units for f in u.files if f.format != META_FORMAT},
+                     key=lambda f: (f not in RUNNABLE_FORMATS, f))
+    # one _action_status per format reuses the record/adoption logic, so a hand-placed file that
+    # matches the lock is recorded here exactly as status() would record it
+    per_format: dict[str, list[FileStatus]] = {}
+    for fmt in formats:
+        st, rec, d = _action_status(root, action, rec, (fmt,), False)
+        dirty = dirty or d
+        per_format[fmt] = [fs for fs in st.files if fs.format == fmt]
+    rec_revs = ((rec or {}).get("revisions") or {})
+    for u in action.units:
+        fmts: dict[str, Any] = {}
+        for fmt in formats:
+            mine = [fs for fs in per_format[fmt] if by_dest.get(fs.dest) is u]
+            if not mine:
+                continue
+            required = [fs for fs in mine if not fs.optional]
+            present = [fs for fs in required if fs.present]
+            if not present:
+                state = FMT_MISSING
+            elif len(present) < len(required):
+                state = FMT_PARTIAL
+            elif any(fs.sha_ok is False for fs in present):
+                state = FMT_OUTDATED
+            else:
+                state = FMT_CURRENT
+            # the file the settings point at when this (unit, format) is active: the single
+            # non-optional file of a runnable format
+            runtime_file = required[0].dest if (fmt in RUNNABLE_FORMATS and len(required) == 1) else None
+            fmts[fmt] = {
+                "state": state,
+                "bytes": sum((fs.expected_bytes or 0) for fs in required),
+                "present_bytes": sum((fs.bytes or 0) for fs in present),
+                "files": len(required),
+                "runtime_file": runtime_file,
+                "runnable": fmt in RUNNABLE_FORMATS,
+                "active": bool(runtime_file and active_dest and runtime_file == active_dest),
+            }
+        # an "installed" revision equal to the pinned one while a format is outdated is a stale
+        # record (an older install adopted by sha, or hand-placed files): report it as unknown
+        installed = rec_revs.get(u.repo_id)
+        if installed == u.revision and any(f["state"] == FMT_OUTDATED for f in fmts.values()):
+            installed = None
+        units.append({"repo_id": u.repo_id, "revision": u.revision, "model_key": u.model_key,
+                      "installed_revision": installed, "formats": fmts})
+    entry = {"model_key": action.model_key or (action.units[0].model_key if action.units else ""),
+             "default": default, "action": action.key, "settings": dict(action.settings), "units": units}
+    return entry, rec, dirty
+
+
+def catalog(root: Path | None = None, *, lock: Lock | None = None,
+            settings_values: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Everything the Models tab shows: per stage, every variant the lock knows, every format of
+    every unit with its install state, which (variant, format) the settings make active, and
+    whether the stage's model may be swapped at all.
+
+    Nothing here is stage-specific: a new stage, variant or format appears by regenerating the
+    lock. ``settings_values`` is the raw settings tree (``modules.<stage>.model`` is the truth about
+    what is active); without it the active column is empty.
+    """
+    lock = lock or load_lock()
+    root = Path(root) if root is not None else models_root()
+    repair(root, lock)
+    record = read_record(root)
+    rec_actions: dict[str, Any] = record.get("actions") or {}
+    dirty = False
+    # the roll-up state of the required default, as status() reports it (same vocabulary as the banner)
+    summary = status(root, lock=lock)
+    order = _stage_order()
+    stages_in_lock = list(lock.actions)
+    ordered = [k for k in order if k in lock.actions] + [k for k in stages_in_lock if k not in order]
+    stages: list[dict[str, Any]] = []
+    for stage in ordered:
+        action = lock.action(stage)
+        model = _settings_model(stage, settings_values)
+        active_dest = _norm_model_path(root, model.get("path"))
+        variants: list[dict[str, Any]] = []
+        for default, a in [(True, action)] + [(False, alt) for alt in (lock.alternates.get(stage) or {}).values()]:
+            entry, rec, d = _variant_entry(root, a, rec_actions.get(a.key), default=default, active_dest=active_dest)
+            if d:
+                rec_actions[a.key] = rec
+                dirty = True
+            variants.append(entry)
+        matched = next(((v["model_key"], u["repo_id"], fmt, f["state"]) for v in variants for u in v["units"]
+                        for fmt, f in u["formats"].items() if f["active"]), None)
+        st = summary["actions"].get(stage) or {}
+        # The module's own state follows the model it RUNS: an up-to-date alternate makes the module
+        # green even while its default has an update waiting (the header line still says so).
+        # A settings path the lock does not know, or a locked stage, falls back to the default's state.
+        active_state = matched[3] if (matched and action.activatable) else st.get("state")
+        stages.append({
+            "stage": stage,
+            "activatable": bool(action.activatable),
+            "state": st.get("state"),
+            "active_state": active_state,
+            "detail": st.get("detail", ""),
+            "active": {"key": model.get("key"), "path": model.get("path"), "format": model.get("format"),
+                       "model_key": matched[0] if matched else None, "repo_id": matched[1] if matched else None,
+                       "matched_format": matched[2] if matched else None,
+                       # the ensemble has no single path: its folder is the thing
+                       "models_dir": model.get("models_dir"),
+                       "matched": bool(matched) or (not action.activatable and not model.get("path"))},
+            "variants": variants,
+        })
+    if dirty:
+        record["actions"] = rec_actions
+        write_record(root, record)
+    return {"root": str(root), "lock_path": lock.path, "lm3_version": lock.lm3_version,
+            "default_formats": list(lock.default_formats), "runnable_formats": list(RUNNABLE_FORMATS),
+            "summary": summary["summary"], "stages": stages}
+
+
+def activation_plan(lock: Lock, stage: str, model_key: str, fmt: str, root: Path,
+                    defaults: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """What activating ``(stage, model_key, fmt)`` writes into ``modules.<stage>``.
+
+    Returns ``{"model": {key, path, format}, "set": {...}, "restore": {...}, "unset": [...]}``:
+    ``set`` are the chosen variant's stage settings (an input size, say); ``restore`` the default
+    variant's values for keys some other variant sets but this one does not; ``unset`` the keys
+    nobody has a value for, which the caller returns to the built-in default or removes.
+    Raises ``InstallError`` when the stage is locked, the variant/format is unknown, the format is
+    not runnable, or the file is not installed -- the settings file is never pointed at a file that
+    is not there.
+    """
+    action = lock.action(stage)
+    if not action.activatable:
+        raise InstallError(f"{stage} always runs its default model; it cannot be switched")
+    chosen: Action | None = None
+    if action.model_key == model_key or (action.units and action.units[0].model_key == model_key):
+        chosen = action
+    else:
+        try:
+            chosen = lock.alternate(stage, model_key)
+        except KeyError as exc:
+            raise InstallError(str(exc)) from None
+    if fmt not in RUNNABLE_FORMATS:
+        raise InstallError(f"{fmt} is not a format LM3 can run (runnable: {', '.join(RUNNABLE_FORMATS)})")
+    files = [f for _u, f in chosen.files((fmt,)) if f.format == fmt and not f.optional]
+    if len(files) != 1:
+        raise InstallError(f"{stage}={model_key} has no single {fmt} runtime file in the lock")
+    dest = files[0].dest
+    if not (root / dest).is_file():
+        raise InstallError(f"{stage}={model_key} ({fmt}) is not installed; install it first")
+    # keys any alternate of this stage may set; the chosen variant sets its own, the rest go back
+    # to the built-in default so switching back to the default model really is the default
+    all_keys = {k for alt in (lock.alternates.get(stage) or {}).values() for k in alt.settings} | set(action.settings)
+    set_: dict[str, Any] = dict(chosen.settings)
+    restore = {k: v for k, v in action.settings.items() if k not in set_}
+    unset = sorted(k for k in all_keys if k not in set_ and k not in restore)
+    return {"model": {"key": model_key, "path": f"models/{dest}", "format": fmt}, "set": set_, "restore": restore,
+            "unset": unset}

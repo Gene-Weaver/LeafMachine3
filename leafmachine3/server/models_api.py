@@ -1,7 +1,10 @@
 """``/v1/models``: the model installer behind the GUI's "Install Models from Hugging Face" button.
 
     GET  /v1/models/status                 -> installer.status() + the resolved models folder
+    GET  /v1/models/catalog                -> installer.catalog(): every stage / variant / format + the active one
+    POST /v1/models/activate               -> {stage, model_key, format}: point modules.<stage>.model at an installed file
     POST /v1/models/install                -> start an install in a worker thread; {task_id}
+                                              body: {actions?, models? [[stage, key], ...], formats?, force?}
     GET  /v1/models/install/{task_id}      -> snapshot {state, events[], error}
     GET  /v1/models/install/{task_id}/events  (SSE) -> the same events as they happen, then "done"
 
@@ -19,6 +22,8 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+
+from leafmachine3 import __version__
 from typing import Any, Iterator, Optional
 
 log = logging.getLogger("leafmachine3.server.models")
@@ -67,8 +72,9 @@ def _run(task: _Task) -> None:
     body = task.body
     try:
         root = body.get("dest") or None
+        models = [tuple(m) for m in (body.get("models") or [])] or None
         result = installer.install(root, actions=body.get("actions") or None, formats=body.get("formats") or None,
-                                   force=bool(body.get("force")), progress=task.push)
+                                   force=bool(body.get("force")), progress=task.push, models=models)
         task.result = result
         task.state = "done"
     except installer.InstallError as exc:
@@ -160,6 +166,81 @@ def router(dependencies: Optional[list[Any]] = None):
             return installer.status(verify_hashes=verify)
         except Exception as exc:  # noqa: BLE001 - a broken lock/folder must surface as JSON, not a 500 page
             raise HTTPException(status_code=500, detail=f"models status failed: {exc}") from exc
+
+    @api.get("/catalog", dependencies=deps)
+    def get_catalog() -> dict[str, Any]:
+        from leafmachine3.modelhub import installer  # noqa: PLC0415
+        from leafmachine3.server import settings_api  # noqa: PLC0415
+
+        try:
+            settings = settings_api.read_settings(with_text=False)
+            out = installer.catalog(settings_values=settings.get("values") or {})
+            out["settings"] = {"yaml_path": settings.get("yaml_path"), "mtime": settings.get("mtime")}
+            out["app_version"] = __version__            # the running LM3, for the update dialogs
+            return out
+        except Exception as exc:  # noqa: BLE001 - a broken lock/folder/settings must surface as JSON
+            raise HTTPException(status_code=500, detail=f"models catalog failed: {exc}") from exc
+
+    @api.post("/activate", dependencies=deps)
+    def post_activate(body: dict[str, Any]) -> dict[str, Any]:
+        """Make ``(stage, model_key, format)`` the active model by writing the settings file.
+
+        The YAML stays the truth: this writes ``modules.<stage>.model`` (and the alternate's extra
+        keys, restoring the built-in default for keys the chosen variant does not set) through the
+        same validated, backed-up write the Settings tab uses, then returns the fresh catalog.
+        """
+        from leafmachine3.modelhub import installer, registry  # noqa: PLC0415
+        from leafmachine3.server import settings_api  # noqa: PLC0415
+
+        stage, model_key, fmt = (str(body.get(k) or "") for k in ("stage", "model_key", "format"))
+        if not (stage and model_key and fmt):
+            raise HTTPException(status_code=400, detail="activate needs stage, model_key and format")
+        lock = registry.load_lock()
+        root = installer.models_root()
+        try:
+            plan = installer.activation_plan(lock, stage, model_key, fmt, root)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except installer.InstallError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        current = settings_api.read_settings(with_text=False)
+        if current.get("readonly"):
+            raise HTTPException(status_code=409, detail="the settings file is read-only")
+        values = current.get("values") or {}
+        block = values.setdefault("modules", {}).setdefault(stage, {})
+        if not isinstance(block, dict):
+            raise HTTPException(status_code=500, detail=f"modules.{stage} is not a mapping in the settings file")
+        block["model"] = dict(plan["model"])
+        # Only knobs the stage actually has: a key the yaml already carries, or one the settings
+        # schema (settings_meta.json) lists for this stage. The lock knows an input size for every
+        # model, but a stage that ignores it (the specimen segmenter runs each model at its own
+        # size) must not have one written into its block.
+        meta = settings_api.read_meta()
+        def live(k: str) -> bool:          # listed for this stage and not retired
+            entry = meta.get(f"modules.{stage}.{k}")
+            return isinstance(entry, dict) and not entry.get("retired")
+        known = {k for k in block if live(k) or f"modules.{stage}.{k}" not in meta} \
+            | {k for k in {**plan["restore"], **plan["set"]} if live(k)}
+        for k, v in {**plan["restore"], **plan["set"]}.items():
+            if k in known:
+                block[k] = v
+        defaults = (settings_api._defaults().get("modules") or {}).get(stage) or {}
+        for k in plan["unset"]:
+            if k in defaults:
+                block[k] = defaults[k]
+            else:
+                block.pop(k, None)
+        try:
+            written = settings_api.write_settings(values, if_mtime=current.get("mtime"), backup=True)
+        except settings_api.SettingsError as exc:
+            status = 409 if exc.detail.get("conflict") else 400
+            raise HTTPException(status_code=status, detail={"message": str(exc), "errors": exc.errors}) from exc
+        out = installer.catalog(settings_values=written.get("values") or values)
+        out["settings"] = {"yaml_path": written.get("yaml_path"), "mtime": written.get("mtime"),
+                           "warnings": written.get("warnings") or []}
+        out["app_version"] = __version__
+        out["activated"] = plan["model"]
+        return out
 
     @api.post("/install", dependencies=deps)
     def post_install(body: Optional[dict[str, Any]] = None) -> dict[str, Any]:

@@ -292,6 +292,10 @@ export const api = {
   getModelsStatus: (verify = false) => get("/v1/models/status", { params: verify ? { verify: 1 } : undefined, timeout: 60000 }),
   /** Start an install; {task_id}. Body: {actions?, formats?, force?}. */
   installModels: (body = {}) => post("/v1/models/install", body),
+  /** every stage / variant / format with its install state and the settings-selected active one */
+  getModelsCatalog: () => get("/v1/models/catalog", { timeout: 60000 }),
+  /** write modules.<stage>.model = the installed (model_key, format); the yaml stays the truth */
+  activateModel: (stage, modelKey, format) => post("/v1/models/activate", { stage, model_key: modelKey, format }, { timeout: 20000 }),
   /** Snapshot of an install task (state, events since `since`). */
   getModelsInstall: (taskId, since = 0) => get(`/v1/models/install/${encodeURIComponent(taskId)}`, { params: { since } }),
   /** Live progress events for an install task; ends with a "done" event. */

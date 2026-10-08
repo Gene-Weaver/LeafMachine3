@@ -1345,34 +1345,11 @@ export function initTopBar(root, opts = {}) {
     refs.stopBtn.addEventListener("click", stopRun);
     // The run controls do NOT live in this strip: they are docked into the tab bar (see
     // mountRunControls) so they stay reachable when the strip is collapsed during a run.
-    /* Invariant 8, said out loud and permanently: these fields are the NEXT run's settings.
-       Nothing here describes the run in progress -- a running job is pinned to the launch manifest
-       written at its start (section 3.4), so editing this file cannot reach it, and the GUI used to
-       leave that to be inferred. The line sharpens while a run holds the deployment. */
-    refs.nextLabel = el("div.nextrun", {
-      style: {
-        // `.primary` is a 3-column GRID (app.css) and `.pfields` is `display:contents`, so the six
-        // fields are grid items in their own right. Spanning every column puts this on a row of
-        // its own AFTER the device selector -- the last field -- however the grid reflows, rather
-        // than leaving it to occupy one third of a row and wrap inside it.
-        gridColumn: "1 / -1",
-        // One line, always. The label reads as a sentence ("Next run — edits apply to the next run
-        // you start — → <path>"), and a sentence broken across lines mid-clause reads as three
-        // unrelated fragments. It has the full width to work with now, and the two text spans
-        // ellipsize rather than wrap if it ever runs out.
-        display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap",
-        minWidth: "0", overflow: "hidden",
-        padding: "6px 0 0", fontSize: "12.2px", color: "var(--mute)",
-      },
-    });
     refs.warnRow = el("div.card.warn", { hidden: true, style: { margin: "0 0 8px" } });
     refs.fieldsWrap = el("div.pfields",
       refs.fields.input.node, refs.fields.runName.node, refs.fields.output.node, refs.fields.tmp.node,
       cfgField, devField);
-    // The next-run label comes AFTER the fields, so it trails the device selector rather than
-    // heading the strip.
-    append(strip, [refs.warnRow, refs.fieldsWrap, refs.nextLabel]);
-    renderNextRunLabel();
+    append(strip, [refs.warnRow, refs.fieldsWrap]);
     mountRunControls();
     applyCollapsed(loadCollapsed());
   }
@@ -1936,42 +1913,7 @@ export function initTopBar(root, opts = {}) {
        those are two different things the moment anybody edits the settings file, and showing the
        yaml there is what let a mid-run rename look as though the running job had been renamed. */
     renderRunChip();
-    renderNextRunLabel();
     renderDeviceOptions();
-  }
-
-  /**
-   * The "these are the NEXT run's settings" label (invariant 8, section 2.6).
-   *
-   * It is a LABEL, not plumbing: section 3.4 already guarantees a running job cannot be affected
-   * by an edit here, because it was pinned to its launch manifest when it started. What was
-   * missing was any way for the user to know that -- the strip presented itself as the state of
-   * the world, and the Settings tab (3,000 lines) contains no notion of a run being in progress
-   * at all.
-   */
-  function renderNextRunLabel() {
-    if (!refs.nextLabel) return;
-    const next = state.runtime.nextRun;
-    const occupied = state.view.occupied;
-    clear(refs.nextLabel);
-    // `flex:0 0 auto` on the badges and `min-width:0` + ellipsis on the two text spans: with
-    // `flex-wrap:nowrap` above, something has to give when the window is narrow, and truncating
-    // the prose is better than truncating the badge that says what this row IS. The full path
-    // stays available in the tooltip either way.
-    const ellipsize = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: "0" };
-    append(refs.nextLabel, [
-      el("span.badge.info", { style: { flex: "0 0 auto" } }, "Next run"),
-      el("span", { style: { ...ellipsize, flex: "0 1 auto" } }, occupied
-        ? "Edits here apply to the NEXT run you start — the run in progress is unaffected."
-        : "Edits here apply to the next run you start."),
-      next && next.run_dir
-        ? el("span.mono.dim", { title: next.run_dir, style: { ...ellipsize, flex: "0 1 auto" } },
-             `→ ${fmtPath(next.run_dir, 3)}`)
-        : null,
-      next && next.error
-        ? el("span.badge.warn", { title: next.error, style: { flex: "0 0 auto" } }, "unresolved")
-        : null,
-    ]);
   }
 
   function setFieldValue(f, value) {
@@ -2277,12 +2219,6 @@ export function initTopBar(root, opts = {}) {
     if (moved) {
       dispatch("lm3:runtime", { runtime: state.runtime, view: state.view });
       announceCompletion(before, state.view);
-      /* Invariant 8's label is rendered from the settings load AND from here, because whether a
-         run is in progress is a runtime fact, not a settings one: without this the strip keeps
-         saying "edits apply to the next run you start" in the neutral wording while a CLI run it
-         cannot affect is under way. `occupied` is in `moved` above for the same reason -- a
-         `hardware_setup` root takes the deployment without moving `runRef` at all. */
-      renderNextRunLabel();
     }
     renderStatus();
   }

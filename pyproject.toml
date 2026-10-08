@@ -11,7 +11,7 @@ name = "leafmachine3"
 #   - app/package.json is checked against it by tests/test_version_identity.py
 # It was 0.1.0 here while the server, Electron and the hardware profile all said 3.0.0, so a launch
 # manifest recorded 0.1.0 for a run whose /healthz advertised 3.0.0.
-version = "3.0.0"
+dynamic = ["version"]   # the one LM3 version: the VERSION file beside uv.lock (see tools/release/bump_version.py)
 description = "LeafMachine3 — herbarium specimen image analysis pipeline (runtime)"
 readme = "README.md"
 # Exactly one interpreter line, uv-managed (see .python-version and tools/release/versions.env).
@@ -168,6 +168,12 @@ lm3-desktop = "leafmachine3.desktop:main"
 
 [project.urls]
 Homepage = "https://github.com/Gene-Weaver/LeafMachine3"
+
+[tool.setuptools.dynamic]
+# VERSION is the single LM3 version. Everything else derives from it: leafmachine3.__version__,
+# the env/desktop contracts, app/package.json (synced by tools/release/bump_version.py) and the
+# models lock stamp. Bump it with the script, never by hand in several places.
+version = {file = "VERSION"}
 
 [tool.setuptools.packages.find]
 # `leafmachine3*` also globs `leafmachine3_backup*` -- 13 packages and 13 MB of superseded code that

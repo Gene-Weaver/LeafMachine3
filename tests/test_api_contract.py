@@ -188,7 +188,7 @@ class TestPreservedContract:
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "ok"
-        assert body["version"] == "3.0.0"
+        assert body["version"] == (Path(__file__).resolve().parents[1] / "VERSION").read_text().strip()
 
     def test_healthz_carries_the_step_1_resolved_path_diagnostics(
         self, client: TestClient, sandbox: Sandbox

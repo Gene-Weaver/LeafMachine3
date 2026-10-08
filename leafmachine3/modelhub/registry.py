@@ -40,6 +40,7 @@ class Action:
     stage: str = ""           # the LM3 module this model serves (== key for defaults)
     model_key: str = ""       # the model's name (Hub repo suffix); set for alternates
     settings: Mapping = field(default_factory=dict)   # alternates: settings lines to point the stage at it
+    activatable: bool = True  # False: the stage always runs its default; the GUI shows a locked selector
 
     def files(self, formats: Iterable[str] | None = None) -> Iterator[tuple[Unit, LockFile]]:
         """The (unit, file) pairs to install for ``formats`` (meta files always included)."""
@@ -102,13 +103,16 @@ def parse_lock(data: Mapping, path: str | None = None) -> Lock:
     for key, spec in (data.get("actions") or {}).items():
         actions[key] = Action(key=key, required=bool(spec.get("required", True)),
                               placeholder=bool(spec.get("placeholder", False)), units=_units(spec), stage=key,
-                              model_key=str(((spec.get("units") or [{}])[0] or {}).get("model_key") or ""))
+                              model_key=str(((spec.get("units") or [{}])[0] or {}).get("model_key") or ""),
+                              settings=dict(spec.get("settings") or {}),
+                              activatable=bool(spec.get("activatable", True)))
     alternates: dict[str, dict[str, Action]] = {}
     for stage, models in (data.get("alternates") or {}).items():
         for model_key, spec in (models or {}).items():
             alternates.setdefault(stage, {})[model_key] = Action(
                 key=alternate_record_key(stage, model_key), required=False, placeholder=False, units=_units(spec),
-                stage=stage, model_key=model_key, settings=dict(spec.get("settings") or {}))
+                stage=stage, model_key=model_key, settings=dict(spec.get("settings") or {}),
+                activatable=bool((data.get("actions") or {}).get(stage, {}).get("activatable", True)))
     return Lock(schema_version=int(data.get("schema_version", 1)), lm3_version=str(data.get("lm3_version", "")),
                 default_formats=tuple(data.get("default_formats") or ("onnx",)), actions=actions, path=path,
                 alternates=alternates)

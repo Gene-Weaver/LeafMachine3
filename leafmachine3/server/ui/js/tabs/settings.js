@@ -443,76 +443,27 @@ export function initSettings(root) {
 
   const subtabs = el("div.subtabs");
 
-  /* Invariant 8, on the tab where every module knob lives.
-     This file had no notion of a run being in progress at all -- no occurrence of "running",
-     "active run" or "next run" in 3,000 lines -- so it presented the settings tree as the state
-     of the world. It is the state of the NEXT run: section 3.4 pins a running job to the launch
-     manifest written when it started, so nothing saved here can reach it, and nothing saved here
-     changes which run the GUI is displaying. */
-  const nextRunNote = el("div.card.info", {
-    style: { margin: "0 0 8px" },
-  }, el("p", el("strong", "Next run. "),
-    "Saving here changes what the NEXT run will do. A run already in progress keeps the settings "
-    + "it started with, and saving never changes which run the app is showing."));
-
+  // The toolbar is a fixed band ABOVE the two columns, not a sticky overlay they scroll behind:
+  // the pane is a fill tab (app.js), so the shell owns the height and only the rail and the
+  // content column scroll, each on its own.
   const header = el("div", {
-    style: {
-      position: "sticky", top: "0", zIndex: "6",
-      background: "var(--bg)", paddingBottom: "2px", flex: "0 0 auto",
-    },
-  }, nextRunNote, toolbar);
-
-  /* Sharpen the label while something holds the deployment (section 2.6).
-
-     `occupied` and `live` are DIFFERENT facts and deriveView() separates them on purpose, so this
-     card must too. `runRef` is whichever run the project views are pointed at; it is only the
-     deployment's occupant when `live` is true. Two states make them disagree, and naming runRef in
-     either one states something false about a run that is not running:
-       - a `hardware_setup` root (section 2.6 row 2): the record carries no project (invariant 6),
-         so runRef falls through to the LAST FINISHED run while the lease is held;
-       - an explicit history selection (invariant 7): runRef is the run the user picked out of
-         history, while the live one keeps the lease.
-     Identity therefore comes from the active record by way of `machine.tuning` / `live`, never
-     from a recency guess (invariant 5). */
-  function applyRuntimeView(ev) {
-    const view = (ev && ev.detail && ev.detail.view) || null;
-    const ref = view && view.runRef;
-    const tuning = !!(view && view.machine && view.machine.tuning);
-    const live = !!(view && view.live);
-    const occupied = !!(view && view.occupied);
-    // Occupancy stays visible in all three held states -- what changes is WHO is named.
-    nextRunNote.className = (tuning || live || occupied) ? "card warn" : "card info";
-    clear(nextRunNote);
-
-    let body;
-    if (tuning) {
-      // Names no project, because there is no project to name.
-      body = "This machine is being profiled — LM3 Setup holds this deployment. Saving here "
-           + "changes what the NEXT run will do; it does not affect the tuning in progress and "
-           + "does not change which run the app is showing.";
-    } else if (live) {
-      // Only here is runRef guaranteed to BE the run holding the deployment.
-      body = `“${ref ? ref.run_name : "A run"}” is running now with the settings it started `
-           + "with. Saving here changes what the NEXT run will do; it does not touch the run in "
-           + "progress and does not change which run the app is showing.";
-    } else if (occupied) {
-      // Held, but the run being displayed is not the holder -- so say the true thing without
-      // borrowing the displayed run's name for it.
-      body = "A run started elsewhere holds this deployment; the run shown here is not it. Saving "
-           + "changes what the NEXT run will do, and never changes which run the app is showing.";
-    } else {
-      body = "Saving here changes what the NEXT run will do. It never changes which run the app "
-           + "is showing.";
-    }
-    nextRunNote.appendChild(el("p", el("strong", "Next run. "), body));
-  }
-  document.addEventListener("lm3:runtime", applyRuntimeView);
+    style: { flex: "0 0 auto", paddingBottom: "2px" },
+  }, toolbar);
 
   // The rail carries the navigation the accordion used to: sections, and the
   // groups inside the open one. Scrolling is for reading a group, not for
   // getting to it.
   const railFoot = el("div.rail-ft");
   const rail = el("div.rail", subtabs, railFoot);
+  /* The rail keeps its scroll position. renderRail() empties and refills it, which collapses it
+     to zero height and would snap it back to the top on every filter keystroke or save; and a
+     hidden tab (display:none) forgets its scrollTop entirely. So the position is tracked here and
+     restored after each rebuild and whenever the tab comes back into view. */
+  let railScroll = 0;
+  rail.addEventListener("scroll", () => { railScroll = rail.scrollTop; }, { passive: true });
+  function restoreRailScroll() {
+    if (railScroll && rail.scrollTop !== railScroll) rail.scrollTop = railScroll;
+  }
 
   const alerts = el("div");
   const diffBox = el("div");
@@ -528,11 +479,21 @@ export function initSettings(root) {
 
   const railwrap = el("div.railwrap", rail, body);
 
+  // A fill tab: the shell is the pane's full height (the gutter the shell used to inherit from
+  // .tabbody is applied here instead), the header takes what it needs, and .railwrap gets the
+  // rest, so the rail and the content column scroll independently under a fixed toolbar.
   const shell = el("div", {
-    style: { display: "flex", flexDirection: "column", height: "100%", minHeight: "0" },
+    style: {
+      display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: "0", minWidth: "0",
+      padding: "var(--gutter)",
+    },
   }, header, railwrap);
 
+  root.classList.add("fill");
   root.appendChild(shell);
+  // Bring the rail back to where it was when the tab is shown again (class toggled by app.js).
+  new MutationObserver(() => { if (root.classList.contains("active")) restoreRailScroll(); })
+    .observe(root, { attributes: true, attributeFilter: ["class"] });
 
   /* --------------------------------------------------------- interactions */
   search.addEventListener("input", debounce(() => {
@@ -2067,6 +2028,7 @@ export function initSettings(root) {
 
     applyGroupVisibility();
     renderRail(filtering ? perSection : null);
+    restoreRailScroll();
 
     const total = S.leaves.length;
     const nImp = S.leaves.filter((l) => l.important).length;
@@ -2562,8 +2524,12 @@ export function initSettings(root) {
      ======================================================================= */
   /** The rail navigates the FORM; in YAML view there is nothing for it to point at. */
   function syncRailVisibility() {
-    rail.hidden = S.view === "yaml";
-    paneWrap.hidden = S.view === "yaml";
+    const yaml = S.view === "yaml";
+    rail.hidden = yaml;
+    paneWrap.hidden = yaml;
+    // .railwrap is a two-column grid; with the rail display:none the body became its FIRST grid
+    // item and sat in the 240px rail column. The class collapses the grid to one full-width column.
+    railwrap.classList.toggle("yaml", yaml);
   }
 
   function setView(v) {
@@ -3056,7 +3022,6 @@ export function initSettings(root) {
     destroy() {
       S.destroyed = true;
       document.removeEventListener("keydown", onKey);
-      document.removeEventListener("lm3:runtime", applyRuntimeView);
       window.removeEventListener("beforeunload", onBeforeUnload);
       S.listeners.clear();
       clear(root);

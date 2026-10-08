@@ -43,16 +43,22 @@ def pyproject() -> dict:
 
 # --- one version -------------------------------------------------------------------------------- #
 
+def declared_version() -> str:
+    """The one LM3 version: the VERSION file beside uv.lock (pyproject.toml reads it at build time)."""
+    return (REPO / "VERSION").read_text(encoding="utf-8").strip()
+
+
 def test_every_version_source_agrees() -> None:
     import leafmachine3
     from leafmachine3.core.runtime.config_io import lm3_version
     from leafmachine3.setup.hardware_setup import LM3_VERSION
 
-    declared = pyproject()["project"]["version"]
+    declared = declared_version()
+    assert pyproject()["project"].get("dynamic") == ["version"], "pyproject.toml must read VERSION, not restate it"
     electron = json.loads((REPO / "app" / "package.json").read_text(encoding="utf-8"))["version"]
 
     sources = {
-        "pyproject.toml": declared,
+        "VERSION": declared,
         "leafmachine3.__version__": leafmachine3.__version__,
         "hardware_setup.LM3_VERSION": LM3_VERSION,
         "config_io.lm3_version()": lm3_version(),
@@ -62,15 +68,15 @@ def test_every_version_source_agrees() -> None:
 
 
 def test_the_checkout_fallback_matches_the_declared_version() -> None:
-    """A bare checkout has no distribution metadata; its fallback must not drift from pyproject."""
+    """A bare checkout has no distribution metadata; its fallback is the VERSION file itself."""
     import leafmachine3
 
-    assert leafmachine3._FALLBACK_VERSION == pyproject()["project"]["version"]
+    assert leafmachine3._FALLBACK_VERSION == declared_version()
 
 
 def test_no_module_hardcodes_a_version_string_any_more() -> None:
     """The server and the hardware profile must DERIVE the version, not restate it."""
-    declared = pyproject()["project"]["version"]
+    declared = declared_version()
     pattern = re.compile(r'["\']' + re.escape(declared) + r'["\']')
     for rel in ("leafmachine3/server/app.py", "leafmachine3/setup/hardware_setup.py"):
         source = (REPO / rel).read_text(encoding="utf-8")
@@ -196,7 +202,7 @@ print(json.dumps(out))
     assert run.returncode == 0, f"installed package probe failed:\n{run.stdout}\n{run.stderr}"
     got = json.loads(run.stdout.strip().splitlines()[-1])
 
-    declared = pyproject()["project"]["version"]
+    declared = declared_version()
     assert got["version"] == declared, f"installed version {got['version']} != {declared}"
     assert got["inside_site_packages"], "the probe imported the checkout, not the installed wheel"
     assert got["ui_index"] and got["ui_meta"] and got["ui_js"], f"UI missing from the install: {got}"

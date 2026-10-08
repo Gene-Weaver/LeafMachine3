@@ -4,7 +4,7 @@ Every compatibility surface LM3 still serves, the release that removes it, and w
 all. A deprecation with no named owner never happens, so nothing may be marked deprecated here
 without a removal release beside it.
 
-**Current release:** `3.0.0` (`pyproject.toml`, read back as `leafmachine3.__version__`). This is
+**Current release:** the `VERSION` file at the repo root (read by `pyproject.toml` at build time and back as `leafmachine3.__version__`; bumped every commit by `tools/release/bump_version.py`). This is
 the release that introduces `GET /v1/runtime`, the runtime registry and the launch handshake, so it
 is the first release in which a client can migrate off the projections below.
 

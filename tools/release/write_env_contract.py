@@ -8,7 +8,9 @@ hand-edited, from three sources that are themselves the release's single sources
 * ``uv.lock`` -- through ``uv export`` once per hardware extra, so the contract inherits uv's own
   resolution and marker evaluation instead of re-deriving the dependency graph here;
 * ``tools/release/versions.env`` -- the Python patch, the uv version, the driver minimums;
-* ``pyproject.toml`` -- the LM3 version.
+* ``VERSION`` -- the LM3 version (pyproject.toml reads the same file at build time);
+* ``uv.lock`` and ``leafmachine3/modelhub/models.lock.yaml`` -- hashed, so a given LM3 version pins
+  exactly one dependency lock and one set of Hub model revisions (listed in the contract too).
 
 The development group (``full``: torch, ultralytics, ...) is excluded on purpose. The contract
 describes what ships; the doctor separately reports a development environment when it sees those.
@@ -28,6 +30,9 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from leafmachine3.desktop import dependency_digest  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "leafmachine3" / "_env_contract.json"
@@ -70,21 +75,59 @@ def export_extra(extra: str) -> list[dict[str, str]]:
     return sorted(out, key=lambda r: r["name"])
 
 
+MODELS_LOCK = ROOT / "leafmachine3" / "modelhub" / "models.lock.yaml"
+UV_LOCK = ROOT / "uv.lock"
+VERSION_FILE = ROOT / "VERSION"
+
+
+def read_version(path: Path = VERSION_FILE) -> str:
+    """The LM3 version: the one line in VERSION."""
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def lock_pins() -> dict:
+    """What this LM3 version pins: the dependency lock and the model lock, by content hash, plus
+    the Hub revision of every model unit so the contract reads as a release manifest."""
+    import yaml  # noqa: PLC0415 - tooling only
+
+    models = yaml.safe_load(MODELS_LOCK.read_text(encoding="utf-8")) or {}
+    revisions = {}
+    for key, action in (models.get("actions") or {}).items():
+        for u in action.get("units") or []:
+            revisions[u["repo_id"]] = u.get("revision")
+    for stage, alts in (models.get("alternates") or {}).items():
+        for key, action in (alts or {}).items():
+            for u in action.get("units") or []:
+                revisions[u["repo_id"]] = u.get("revision")
+    return {
+        "uv_lock_sha256": _sha256(UV_LOCK),
+        "models_lock_sha256": _sha256(MODELS_LOCK),
+        "models_lock_version": str(models.get("lm3_version", "")),
+        "models_lock_generated_at": str(models.get("generated_at", "")),
+        "hub_revisions": dict(sorted(revisions.items())),
+    }
+
+
 def build() -> dict:
     env = read_versions_env()
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     package = json.loads((ROOT / "app" / "package.json").read_text())
     return {
         "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
-        "lm3_version": pyproject["project"]["version"],
+        "lm3_version": read_version(),
+        "locks": lock_pins(),
         "python": env["PYTHON_VERSION"],
         "uv": env["UV_VERSION"],
         "desktop": {
             "node": env["NODE_VERSION"],
             "electron": package["devDependencies"]["electron"],
             "electron_builder": package["devDependencies"]["electron-builder"],
-            "package_lock_sha256": hashlib.sha256((ROOT / "app" / "package-lock.json").read_bytes()).hexdigest(),
-            "package_json_sha256": hashlib.sha256((ROOT / "app" / "package.json").read_bytes()).hexdigest(),
+            # dependency content only: the version stamped into both files changes every commit
+            "package_lock_sha256": dependency_digest(ROOT / "app" / "package-lock.json"),
+            "package_json_sha256": dependency_digest(ROOT / "app" / "package.json"),
         },
         "cuda_min_driver": {"linux": env["CUDA_MIN_DRIVER_LINUX"], "win32": env["CUDA_MIN_DRIVER_WINDOWS"]},
         "dev_only": list(DEV_ONLY),

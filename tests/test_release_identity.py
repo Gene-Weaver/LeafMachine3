@@ -53,10 +53,11 @@ def test_desktop_pins_and_locks_agree():
     assert lock["packages"][""]["devDependencies"] == package["devDependencies"]
     for key, name in (("electron", "electron"), ("electron_builder", "electron-builder")):
         assert desktop[key] == package["devDependencies"][name] == lock["packages"][f"node_modules/{name}"]["version"]
-    for key, path in (("backend_contract_sha256", "leafmachine3/_env_contract.json"),
-                      ("package_lock_sha256", "app/package-lock.json"),
-                      ("package_json_sha256", "app/package.json")):
-        assert desktop[key] == hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+    from leafmachine3.desktop import dependency_digest
+    assert desktop["backend_contract_sha256"] == hashlib.sha256((ROOT / "leafmachine3" / "_env_contract.json").read_bytes()).hexdigest()
+    # dependency content only: the version stamped into both files changes every commit
+    for key, path in (("package_lock_sha256", "app/package-lock.json"), ("package_json_sha256", "app/package.json")):
+        assert desktop[key] == dependency_digest(ROOT / path)
     # Every registry package (including optional native builder helpers) needs an integrity pin.
     for name, row in lock["packages"].items():
         if name:
@@ -68,8 +69,33 @@ def test_driver_minimums_agree():
                                            "win32": ENV["CUDA_MIN_DRIVER_WINDOWS"]}
 
 
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+
+
 def test_lm3_version_agrees():
-    assert CONTRACT["lm3_version"] == PYPROJECT["project"]["version"]
+    assert CONTRACT["lm3_version"] == VERSION
+    assert json.loads((ROOT / "app" / "package.json").read_text(encoding="utf-8"))["version"] == VERSION
+    assert json.loads((ROOT / "app" / "desktop-contract.json").read_text(encoding="utf-8"))["lm3_version"] == VERSION
+
+
+def test_the_version_pins_both_locks():
+    """One LM3 version = one uv.lock + one models lock (and so one set of Hub model revisions).
+    Re-locking either without bumping the version fails here; tools/release/bump_version.py re-stamps."""
+    import hashlib
+
+    import yaml
+    locks = CONTRACT["locks"]
+    assert locks["uv_lock_sha256"] == hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest()
+    lock_path = ROOT / "leafmachine3" / "modelhub" / "models.lock.yaml"
+    assert locks["models_lock_sha256"] == hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    lock = yaml.safe_load(lock_path.read_text())
+    pinned = {u["repo_id"]: u["revision"] for a in lock["actions"].values() for u in a["units"]}
+    for alts in (lock.get("alternates") or {}).values():
+        for a in alts.values():
+            pinned.update({u["repo_id"]: u["revision"] for u in a["units"]})
+    assert locks["hub_revisions"] == pinned
+    import bump_version
+    assert bump_version.check() == []
 
 
 def test_the_production_lock_holds_no_development_packages():

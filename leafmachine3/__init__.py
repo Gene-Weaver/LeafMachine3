@@ -11,12 +11,32 @@ compares exactly these values across a process boundary. One source, resolved on
 """
 from __future__ import annotations
 
-#: Fallback used only when running from a checkout with no installed distribution metadata. Keep it
-#: equal to ``pyproject.toml``'s ``version``; ``tests/test_version_identity.py`` enforces that.
-_FALLBACK_VERSION = "3.0.0"
+from pathlib import Path
+
+#: The VERSION file at the checkout root (beside uv.lock) is the one place the LM3 version is
+#: written. ``pyproject.toml`` reads it at build time (``[tool.setuptools.dynamic]``), so installed
+#: metadata and this fallback are the same number; the fallback only matters for a bare checkout.
+_VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
+
+
+def _read_version_file() -> str | None:
+    try:
+        text = _VERSION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return text or None
+
+
+_FALLBACK_VERSION = _read_version_file() or "0.0.0+unknown"
 
 
 def _resolve_version() -> str:
+    # In a checkout the VERSION file wins: an editable install freezes its metadata at `uv sync`
+    # time, so after a bump the metadata lags the file until the next sync. An installed wheel has
+    # no VERSION file beside the package and reads its own metadata, which was built FROM the file.
+    from_file = _read_version_file()
+    if from_file:
+        return from_file
     try:
         from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
     except ImportError:                                   # pragma: no cover - Python < 3.8 only

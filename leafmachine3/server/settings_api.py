@@ -676,9 +676,20 @@ def validate_values(
         except SettingsError as exc:
             log.debug("warning path anchor unavailable: %s", exc)
 
+    # The temp copy goes BESIDE the real settings file, not in /tmp: Config.load resolves relative
+    # paths (``models/...``) against the file it loaded, so a copy in /tmp reported every model as
+    # "not found at /tmp/models/..." on each save. Falls back to the system temp dir when the
+    # settings folder cannot take a file (read-only install).
     tmp_path: Optional[str] = None
+    tmp_dir: Optional[str] = None
     try:
-        fd, tmp_path = tempfile.mkstemp(prefix="lm3_settings_", suffix=".yaml")
+        tmp_dir = str(settings_path(settings_file).parent)
+        if not os.access(tmp_dir, os.W_OK):
+            tmp_dir = None
+    except SettingsError:
+        tmp_dir = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(prefix=".lm3_validate_", suffix=".yaml", dir=tmp_dir)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
 

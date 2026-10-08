@@ -1,6 +1,6 @@
 version: 3
 project:
-  run_name: for_readme3
+  run_name: my_first_project
   input:
     dirs: [examples/images]
     recursive: true
@@ -54,7 +54,7 @@ modules:
     conf: 0.3
     iou: 0.55
     max_det: 1000
-    min_box_area: 16
+    min_box_area: 40
     classes: [Leaf_WHOLE, Leaf_PARTIAL, Seed_Fruit_ONE, Seed_Fruit_MANY, Flower_ONE, Flower_MANY, Bud,
       Roots, Wood]
     dedup: {enabled: true, overlap: 0.95, metric: min}
@@ -82,7 +82,7 @@ modules:
   leaf_segmenter:
     enabled: true
     model: {key: yolo26x_seg_1024, path: models/leaf_segmenter/model.onnx, format: onnx}
-    include_partial: true
+    include_partial: false
     imgsz: 1024
     conf: 0.3
     iou: 0.5
@@ -283,3 +283,5 @@ report:
     float_precision: 6
     files: {leaf_measurements: true, specimen_summary: true, phenology: true, detections: true, landmarks: true,
       ruler_conversion_factor: true, ruler_crops: true, run_stages: true, stage_errors: true, data_dictionary: true}
+_preset: {name: default, saved_at: '2026-10-08 10:38:04', note: 'The shipped LeafMachine3 settings: every
+    module on, the default models, run name my_first_project.', source: /datac/Labelbox_Dump/LM3/LM3_settings.yaml}

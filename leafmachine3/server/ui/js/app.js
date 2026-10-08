@@ -25,7 +25,8 @@ const TABS = {
 };
 // Tabs that manage their own full-height layout: the shell must not add page padding or scrolling
 // around them, or their content stops short of the performance panel instead of meeting it.
-const FILL_TABS = new Set(["status", "console"]);
+// Settings is one so its toolbar stays put while the rail and the form scroll independently.
+const FILL_TABS = new Set(["status", "console", "settings"]);
 const started = new Set();
 /* Whatever each tab's init() returned. The settings controller is the one that
    matters: it exposes focusPath/showSection, which is how a click on the stage

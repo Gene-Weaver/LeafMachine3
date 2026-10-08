@@ -242,7 +242,7 @@ function build(root) {
     el("div.kicker", "Postprocessing"),
     el("p.hint", { style: { margin: "4px 0 0" } },
       "Standalone tools that run on the output of a finished LM3 run. Each one reads its defaults "
-      + "from postprocessing_settings.yaml, so the form always shows what the tool would actually do."));
+      + "from postprocessing_settings.yaml."));
 
   D.cards = el("div.toolgrid");
   D.detail = el("div", { style: { marginTop: "16px" } });
@@ -354,8 +354,6 @@ function renderDetail() {
   clear(D.detail);
   const t = tool(S.toolId);
   if (!t) {
-    D.detail.appendChild(el("div.card.info",
-      el("p", "Pick a tool above to configure and run it.")));
     // clear(D.detail) just detached the previous run panel. A task the SSE
     // stream is still feeding would keep rendering progress, output links and
     // its completion into that orphan -- invisible, and never reattached. So
@@ -507,6 +505,14 @@ function renderDetail() {
 
   D.detail.appendChild(el("div.panel",
     el("div.panel-hd",
+      // The way back, where the eye lands first. The rail's "All tools" row does the same thing
+      // but sits below the fold of the form and reads as a filter, so on its own the detail view
+      // felt one-way.
+      el("button.btn.sm.ghost", {
+        type: "button", title: "Back to the tool list",
+        style: { marginRight: "10px", flex: "0 0 auto" },
+        onclick: () => { S.toolId = null; renderCards(); renderDetail(); },
+      }, "← All tools"),
       el("span.ic", { style: { color: "var(--acc)" } }, ICONS[t.icon] || ICONS.file),
       el("span.t", t.name),
       el("span.tools",

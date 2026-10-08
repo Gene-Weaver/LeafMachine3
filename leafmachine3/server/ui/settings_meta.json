@@ -867,6 +867,13 @@
     "important": true,
     "group": "Archival Detector"
   },
+  "modules.archival_detector.model.key": {
+    "label": "Model",
+    "help": "Which Archival Detector model the file below is (its Hub model key, e.g. yolo26x_det_1280). The Models tab sets this when you activate a model; the stage loads the file, so the key is a label for people and for the Models tab.",
+    "type": "string",
+    "important": false,
+    "group": "Archival Detector"
+  },
   "modules.archival_detector.model.path": {
     "label": "Model file",
     "help": "Path to the exported Archival Detector weights, relative to the LM3 install or absolute.",
@@ -975,6 +982,13 @@
     "help": "Detect the plant organs on the sheet: leaves, flowers, fruits, buds, roots, and wood.",
     "type": "bool",
     "important": true,
+    "group": "Plant Detector"
+  },
+  "modules.plant_detector.model.key": {
+    "label": "Model",
+    "help": "Which Plant Detector model the file below is (its Hub model key, e.g. yolo26x_det_1280). The Models tab sets this when you activate a model; the stage loads the file, so the key is a label for people and for the Models tab.",
+    "type": "string",
+    "important": false,
     "group": "Plant Detector"
   },
   "modules.plant_detector.model.path": {
@@ -1327,6 +1341,13 @@
     "help": "Trace the lamina, petiole, and holes inside every leaf crop.",
     "type": "bool",
     "important": true,
+    "group": "Leaf Segmenter"
+  },
+  "modules.leaf_segmenter.model.key": {
+    "label": "Model",
+    "help": "Which Leaf Segmenter model the file below is (its Hub model key, e.g. yolo26x_seg_1024). The Models tab sets this when you activate a model; the stage loads the file, so the key is a label for people and for the Models tab.",
+    "type": "string",
+    "important": false,
     "group": "Leaf Segmenter"
   },
   "modules.leaf_segmenter.model.path": {

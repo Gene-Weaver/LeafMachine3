@@ -2,12 +2,16 @@
 schema_version: 1
 lm3_version: 3.0.0
 hub_namespace: phyloforfun
-generated_at: '2026-10-07T15:48:01+00:00'
+generated_at: '2026-10-08T14:21:10+00:00'
 default_formats:
 - onnx
+- json
 actions:
   archival_detector:
     required: true
+    activatable: true
+    settings:
+      imgsz: 1280
     units:
     - repo_id: phyloforfun/lm3_archival_detector__yolo26x_det_1280
       revision: 519b73c6c5bf60ec83bcc5ac4d44ed2d478408bb
@@ -37,8 +41,47 @@ actions:
         sha256: 09324b10a0c9b515a14b4e2a291cea18af3cff513b94264431ec502e6143aa88
         bytes: 1738
         optional: true
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        dest: archival_detector/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        format: coreml
+        sha256: f8e84acc57bacb21662e61799afebeaad65f4093d06a655758978da421ccce4f
+        bytes: 298491
+        optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        dest: archival_detector/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        format: coreml
+        sha256: 45b74e22b3fe290c140fd1247111986f6937e2fbfb705de8a2187426328711d2
+        bytes: 111510848
+        optional: false
+      - src: coreml/model.mlpackage/Manifest.json
+        dest: archival_detector/coreml/model.mlpackage/Manifest.json
+        format: coreml
+        sha256: b7964df99c5404f699f606e40563be6bd9ad1a0ec69d9c7a2290735cb6d1162c
+        bytes: 617
+        optional: false
+      - src: openvino/model_openvino_model/best.bin
+        dest: archival_detector/openvino/model_openvino_model/best.bin
+        format: openvino
+        sha256: dbf29ad49de5114dcee34284379a3cb92fde0c992764555e2e3f45efeb367fba
+        bytes: 222979328
+        optional: false
+      - src: openvino/model_openvino_model/best.xml
+        dest: archival_detector/openvino/model_openvino_model/best.xml
+        format: openvino
+        sha256: b2753a5804a64206cb5393f12667fb8f4a3b86ba8e7d0088ae45c395174ac750
+        bytes: 582099
+        optional: false
+      - src: openvino/model_openvino_model/metadata.yaml
+        dest: archival_detector/openvino/model_openvino_model/metadata.yaml
+        format: openvino
+        sha256: dc458f0b9ab5e44e89eaf8efd10db23ea51c4e641e8fdd948d236066a386fe98
+        bytes: 576
+        optional: false
   plant_detector:
     required: true
+    activatable: true
+    settings:
+      imgsz: 1280
     units:
     - repo_id: phyloforfun/lm3_plant_detector__yolo26x_det_1280
       revision: 2f36f0e890e1eac5e57fe374acf7c9a3a8b3257d
@@ -68,8 +111,47 @@ actions:
         sha256: 84df88d62d51c6e8fdab20e6f3d88daa9c7ce51ae507b8ab2f762681ecde587e
         bytes: 1758
         optional: true
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        dest: plant_detector/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        format: coreml
+        sha256: cb263048de2cc669fceca2a561d24a649a617a39fd30415d64cdc84a2229fbf8
+        bytes: 298519
+        optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        dest: plant_detector/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        format: coreml
+        sha256: 5fcda846b72ce7e8fb9b99b6a761111fb451926e1bfae261f2cfc62807a14178
+        bytes: 111510848
+        optional: false
+      - src: coreml/model.mlpackage/Manifest.json
+        dest: plant_detector/coreml/model.mlpackage/Manifest.json
+        format: coreml
+        sha256: f56f9cc286e58d43c4a8dddc040fb3391c6842c287e08c8caacc2a0d115c8e57
+        bytes: 617
+        optional: false
+      - src: openvino/model_openvino_model/best.bin
+        dest: plant_detector/openvino/model_openvino_model/best.bin
+        format: openvino
+        sha256: 45963644d44016a6ecb8a382e8535cba44a2a99d4351ef2ee891c8783fd9b461
+        bytes: 222979328
+        optional: false
+      - src: openvino/model_openvino_model/best.xml
+        dest: plant_detector/openvino/model_openvino_model/best.xml
+        format: openvino
+        sha256: 02daaa566f5e1ab0cce3edebe1d1d458f84c0f2f17642e6a7dec3cd43455fad6
+        bytes: 582121
+        optional: false
+      - src: openvino/model_openvino_model/metadata.yaml
+        dest: plant_detector/openvino/model_openvino_model/metadata.yaml
+        format: openvino
+        sha256: 5cea9829c6e6c7b382a2050046cbc0ea7d4c9e4862580e09b466a37320ee5ce0
+        bytes: 603
+        optional: false
   landmark_detector:
     required: true
+    activatable: false
+    settings:
+      imgsz: 640
     units:
     - repo_id: phyloforfun/lm3_landmark_detector__yolo26x_pose_640
       revision: 11d8ef0b5d75214e3a0c6370e27f18f01116ee12
@@ -99,8 +181,47 @@ actions:
         sha256: e3d2f290653e2539e5c26c6e6011159f3ef8c60fd975d6220e64dd35d5ae5f7e
         bytes: 3344
         optional: true
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        dest: landmark_detector/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        format: coreml
+        sha256: 136d413cd3e0c69a4562e9610aef2660ac7541492d48b95e9c3b0bb13a42e157
+        bytes: 315718
+        optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        dest: landmark_detector/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        format: coreml
+        sha256: 8ec1f4466c2500739b18dbd7a745760578f528b9a0400eb31865c9b6439c276f
+        bytes: 118119488
+        optional: false
+      - src: coreml/model.mlpackage/Manifest.json
+        dest: landmark_detector/coreml/model.mlpackage/Manifest.json
+        format: coreml
+        sha256: 50045c6bbf1c30aed2eb9cadfff47c74761e16532fe6fbbe1bc7c3b7c7cd1a64
+        bytes: 617
+        optional: false
+      - src: openvino/model_openvino_model/best.bin
+        dest: landmark_detector/openvino/model_openvino_model/best.bin
+        format: openvino
+        sha256: 795a12ffc64247412df8f363a2fb942bb3da390a2c0e0d5700e9297d8a815ee5
+        bytes: 236193380
+        optional: false
+      - src: openvino/model_openvino_model/best.xml
+        dest: landmark_detector/openvino/model_openvino_model/best.xml
+        format: openvino
+        sha256: 38ff887ef3a0eb63209a3bb3971a08b40b3d5c719cae250b48a8f0b655e3e15c
+        bytes: 619039
+        optional: false
+      - src: openvino/model_openvino_model/metadata.yaml
+        dest: landmark_detector/openvino/model_openvino_model/metadata.yaml
+        format: openvino
+        sha256: 821f8648e75a2fefb9abf9fa15d88e3108b5cc6e8f20c7dac1e7288c5ed3475a
+        bytes: 782
+        optional: false
   leaf_segmenter:
     required: true
+    activatable: true
+    settings:
+      imgsz: 1024
     units:
     - repo_id: phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024
       revision: 64331bb7685863c7b3e8453cd2dfcc8a98724907
@@ -130,8 +251,47 @@ actions:
         sha256: 0eae35356756039c00d27b58deda925b9a789fd70b6c996d724a7062d1d774a5
         bytes: 1998
         optional: true
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        dest: leaf_segmenter/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        format: coreml
+        sha256: 0cb47db0aacc5a2708a78efbb4f8d75f4989e5f7bd230216998f122e674212ef
+        bytes: 326643
+        optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        dest: leaf_segmenter/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        format: coreml
+        sha256: 7987b036b22a2d175cbbdb782969e175a36036c32e6d3a7032df5220de40ec67
+        bytes: 125612864
+        optional: false
+      - src: coreml/model.mlpackage/Manifest.json
+        dest: leaf_segmenter/coreml/model.mlpackage/Manifest.json
+        format: coreml
+        sha256: fb601a9b8471b0f18c6f5f368582c306fe48be36a126c3f42225cc61802ff3f9
+        bytes: 617
+        optional: false
+      - src: openvino/model_openvino_model/best.bin
+        dest: leaf_segmenter/openvino/model_openvino_model/best.bin
+        format: openvino
+        sha256: 7ce82d3966f6e035d3c8cd3b4a3cde8cc31a23770ec2cbbf024b4682cc84203a
+        bytes: 251179264
+        optional: false
+      - src: openvino/model_openvino_model/best.xml
+        dest: leaf_segmenter/openvino/model_openvino_model/best.xml
+        format: openvino
+        sha256: ad70f6d5a4bac4b5f17360ff104fcd119ff56a2c61d6e4f981e130922eccf976
+        bytes: 637363
+        optional: false
+      - src: openvino/model_openvino_model/metadata.yaml
+        dest: leaf_segmenter/openvino/model_openvino_model/metadata.yaml
+        format: openvino
+        sha256: 96ea14ac13210628b46eacd81a580844f75b24c7d5bccc6093ac29e7113922ab
+        bytes: 494
+        optional: false
   specimen_segmenter:
     required: true
+    activatable: true
+    settings:
+      imgsz: 1024
     units:
     - repo_id: phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024
       revision: 88590ba1424f561b06de74c48692262403074e41
@@ -161,8 +321,27 @@ actions:
         sha256: 69466f9587cbf2679dae53f7553e9e9ba420e9b783e585fcc188358d6e148049
         bytes: 4958
         optional: true
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        dest: specimen_segmenter/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        format: coreml
+        sha256: b8bda5d48c7d0aa5f71b170307c4e1bd2cfc4f78c7e341c4aea8b1dbad63141f
+        bytes: 510843
+        optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        dest: specimen_segmenter/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        format: coreml
+        sha256: 0958e2392f22c779db50e98c3e750801619b2b68318d6c142e500af53cb94638
+        bytes: 132770272
+        optional: false
+      - src: coreml/model.mlpackage/Manifest.json
+        dest: specimen_segmenter/coreml/model.mlpackage/Manifest.json
+        format: coreml
+        sha256: 9bb725494817df400c4e36ee7246d882604e57ae8b9a3a47bd761e2ba95e7c06
+        bytes: 617
+        optional: false
   mp_conversion_factor:
     required: true
+    activatable: false
     units:
     - repo_id: phyloforfun/lm3_mp_conversion_factor__sqrt_fit
       revision: 3b03c05c6c140f724e65561d825970264c14f97d
@@ -170,7 +349,7 @@ actions:
       files:
       - src: json/model.json
         dest: mp_conversion_factor/model.json
-        format: meta
+        format: json
         sha256: 2b5f01bc812bdfbd17538342282492c07ecccc2da0c297126e9323dece9c3fd8
         bytes: 513
         optional: false
@@ -188,6 +367,7 @@ actions:
         optional: true
   ruler_classifier:
     required: true
+    activatable: false
     units:
     - repo_id: phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224
       revision: 020720ff170951b1e14be99f23b13fee83da961b
@@ -217,6 +397,48 @@ actions:
         sha256: b926e1a864e906b322e25d188421af8831cc2aa85aebf899f30e5bba73c1ea10
         bytes: 1311
         optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        dest: ruler_classifier/yolo26x_cls_224/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        format: coreml
+        sha256: ed12a0f4d1edc7d4fa5c8ce5d14d52914bd7fb7c6f79a3ec0dd710e2dad32e94
+        bytes: 144362
+        optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        dest: ruler_classifier/yolo26x_cls_224/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        format: coreml
+        sha256: 69aec93379b2c49c17fa2d00ea062f82fa1ad0032999a53881510ec47d68d7a4
+        bytes: 56724582
+        optional: false
+      - src: coreml/model.mlpackage/Manifest.json
+        dest: ruler_classifier/yolo26x_cls_224/coreml/model.mlpackage/Manifest.json
+        format: coreml
+        sha256: d5913b19cb8bd520423a6fa5b31b0a7b6d80b69ed16a83446c301d0a654bd128
+        bytes: 617
+        optional: false
+      - src: openvino/model_openvino_model/best.bin
+        dest: ruler_classifier/yolo26x_cls_224/openvino/model_openvino_model/best.bin
+        format: openvino
+        sha256: e2ce34795ea59ba0309c3e4db38b84b911c235aececd545fbdd7fa47673c015b
+        bytes: 113427176
+        optional: false
+      - src: openvino/model_openvino_model/best.xml
+        dest: ruler_classifier/yolo26x_cls_224/openvino/model_openvino_model/best.xml
+        format: openvino
+        sha256: 293693e781baa19b1966657f53e72f5b59a4a04035ef35d8c115205683cb968d
+        bytes: 271724
+        optional: false
+      - src: openvino/model_openvino_model/metadata.yaml
+        dest: ruler_classifier/yolo26x_cls_224/openvino/model_openvino_model/metadata.yaml
+        format: openvino
+        sha256: 973a93c13763d314ea02d401d1a1acad7df3a71bde443c6c650a80c5c0cb0de6
+        bytes: 812
+        optional: false
+      - src: torchscript/model.torchscript
+        dest: ruler_classifier/yolo26x_cls_224/torchscript/model.torchscript
+        format: torchscript
+        sha256: 7daeae49ea57c7c627c50f9212bd0f9d6eee18706a06d3abb69cd3e075fee75b
+        bytes: 113840357
+        optional: false
     - repo_id: phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224
       revision: f90297a12c786c3eaa9217da8bf6c54f46ce3150
       model_key: yolo26n_cls_224
@@ -238,6 +460,48 @@ actions:
         format: meta
         sha256: 10cd345b5d356c063430e1b90445f553f54151b2157073984059f45dd972c324
         bytes: 1112
+        optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        dest: ruler_classifier/yolo26n_cls_224/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+        format: coreml
+        sha256: 2cfcb9910a949051f29f5b40dee6ff96eaf10a0c5f969e3faa30c8176f86d0a4
+        bytes: 71629
+        optional: false
+      - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        dest: ruler_classifier/yolo26n_cls_224/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+        format: coreml
+        sha256: 1e54c95a5bb72e00c56b61cef46503099528443a9b28d6f359dd04ced8690e73
+        bytes: 3105958
+        optional: false
+      - src: coreml/model.mlpackage/Manifest.json
+        dest: ruler_classifier/yolo26n_cls_224/coreml/model.mlpackage/Manifest.json
+        format: coreml
+        sha256: c799ead5dad21f8fd661542ac35da225099c9e6c92eb9c215beb5be2cf0f0e66
+        bytes: 617
+        optional: false
+      - src: openvino/model_openvino_model/best.bin
+        dest: ruler_classifier/yolo26n_cls_224/openvino/model_openvino_model/best.bin
+        format: openvino
+        sha256: 7c1faed90cc952d033be24d57aecf3ee037d8f44ff64b69c5cce15894aa99449
+        bytes: 6201624
+        optional: false
+      - src: openvino/model_openvino_model/best.xml
+        dest: ruler_classifier/yolo26n_cls_224/openvino/model_openvino_model/best.xml
+        format: openvino
+        sha256: 94a9276e37711ec4b3c94790ebb60b53592460671e169f0a54e88285e8c2a7eb
+        bytes: 134438
+        optional: false
+      - src: openvino/model_openvino_model/metadata.yaml
+        dest: ruler_classifier/yolo26n_cls_224/openvino/model_openvino_model/metadata.yaml
+        format: openvino
+        sha256: 9df2c79c893883f8bedccb54f359d5718d505c517c659756e2341267744aebdc
+        bytes: 812
+        optional: false
+      - src: torchscript/model.torchscript
+        dest: ruler_classifier/yolo26n_cls_224/torchscript/model.torchscript
+        format: torchscript
+        sha256: 9a80499a3bbc19f523b0a471fc521965f9d499455057cd2e1e22f9a6e3d04a4b
+        bytes: 6397729
         optional: false
     - repo_id: phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp
       revision: 32eaa978ed8dafbefc7151aa08ba4ecf7f70cf40
@@ -317,6 +581,42 @@ alternates:
           sha256: 15fd52a6f2290a6269ca5968b482187f1fda82f0768cf4d251a353d004ae833d
           bytes: 7405
           optional: true
+        - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+          dest: specimen_segmenter/yolo26x_seg_1280/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+          format: coreml
+          sha256: 5b52f5ab3b91a1b3f3cffdcbf39d6af2cf59713e87506f79796506b1ba3b8e6a
+          bytes: 325981
+          optional: false
+        - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          dest: specimen_segmenter/yolo26x_seg_1280/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          format: coreml
+          sha256: d7a7937cbb80973651fd9644395cf0eacad816e76af38d713f0eeb863b3a1e8a
+          bytes: 125680832
+          optional: false
+        - src: coreml/model.mlpackage/Manifest.json
+          dest: specimen_segmenter/yolo26x_seg_1280/coreml/model.mlpackage/Manifest.json
+          format: coreml
+          sha256: 3e5d2da442a176191b6261ebb039895c5895a86a739c5d3a488395d983d420cc
+          bytes: 617
+          optional: false
+        - src: openvino/model_openvino_model/best.bin
+          dest: specimen_segmenter/yolo26x_seg_1280/openvino/model_openvino_model/best.bin
+          format: openvino
+          sha256: a998ede260b8c0086265c665759f7eda9ec15b872b2108e96e271f5fb99a6ab6
+          bytes: 251315152
+          optional: false
+        - src: openvino/model_openvino_model/best.xml
+          dest: specimen_segmenter/yolo26x_seg_1280/openvino/model_openvino_model/best.xml
+          format: openvino
+          sha256: 4992d9b91888211e564798354c095524120a5bc8f70b79411ea936aca79e9cd3
+          bytes: 636483
+          optional: false
+        - src: openvino/model_openvino_model/metadata.yaml
+          dest: specimen_segmenter/yolo26x_seg_1280/openvino/model_openvino_model/metadata.yaml
+          format: openvino
+          sha256: 3889fe34a5edce1fc68f664a373b690560ff9e1d989e118bd2c75b655fcec2dc
+          bytes: 527
+          optional: false
   archival_detector:
     yolo26n_det_640:
       settings:
@@ -350,6 +650,42 @@ alternates:
           sha256: addebed5a4e3d551ed85e72da24a674a4bb91c8a3bf6ba5cce885b6be418b79a
           bytes: 1735
           optional: true
+        - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+          dest: archival_detector/yolo26n_det_640/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+          format: coreml
+          sha256: 3e0d8e40da6278fd79b86aee4851c42836dd23d27283b400c21bc1ed032ac4a9
+          bytes: 190337
+          optional: false
+        - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          dest: archival_detector/yolo26n_det_640/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          format: coreml
+          sha256: 2c4c92c7dca28c54a73bb0597615593867497a80502febad8808099365a6934c
+          bytes: 4816800
+          optional: false
+        - src: coreml/model.mlpackage/Manifest.json
+          dest: archival_detector/yolo26n_det_640/coreml/model.mlpackage/Manifest.json
+          format: coreml
+          sha256: 30b458edb01d4fd54bde825cbb4dcb3f614791a975979be29a6cd75ca0f85d4d
+          bytes: 617
+          optional: false
+        - src: openvino/model_openvino_model/best.bin
+          dest: archival_detector/yolo26n_det_640/openvino/model_openvino_model/best.bin
+          format: openvino
+          sha256: 062aec809c226c80d0868f597499a79331ff435b1648db39b9b96bc6adbf657f
+          bytes: 9607536
+          optional: false
+        - src: openvino/model_openvino_model/best.xml
+          dest: archival_detector/yolo26n_det_640/openvino/model_openvino_model/best.xml
+          format: openvino
+          sha256: 5868699c8161701060cddaebd1e5db7e6e2626e476fafeec0b49b7305eb93767
+          bytes: 377243
+          optional: false
+        - src: openvino/model_openvino_model/metadata.yaml
+          dest: archival_detector/yolo26n_det_640/openvino/model_openvino_model/metadata.yaml
+          format: openvino
+          sha256: 28a819ad204a32db11367f24aa551c1fbcb7110eb795a52016fc16fbfc12b58c
+          bytes: 574
+          optional: false
   plant_detector:
     yolo26n_det_640:
       settings:
@@ -383,3 +719,39 @@ alternates:
           sha256: f89e4eb657159b02f650b03c67d9b3b17f85e4a03e509ccad99797470a82e477
           bytes: 1756
           optional: true
+        - src: coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+          dest: plant_detector/yolo26n_det_640/coreml/model.mlpackage/Data/com.apple.CoreML/model.mlmodel
+          format: coreml
+          sha256: 3f879f3a5c13dd48b829d657606f720012deeda92d5690cb8c320f8fd2211db4
+          bytes: 190365
+          optional: false
+        - src: coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          dest: plant_detector/yolo26n_det_640/coreml/model.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          format: coreml
+          sha256: 40243e3b114bf3d0520c94ed9d38fb8d24d4982cc43cb9b836b86c9d3198dc39
+          bytes: 4816800
+          optional: false
+        - src: coreml/model.mlpackage/Manifest.json
+          dest: plant_detector/yolo26n_det_640/coreml/model.mlpackage/Manifest.json
+          format: coreml
+          sha256: 1210cddd43a541fcd3bdb591853aab02626969768f4d240a413c1e27f0174b1a
+          bytes: 617
+          optional: false
+        - src: openvino/model_openvino_model/best.bin
+          dest: plant_detector/yolo26n_det_640/openvino/model_openvino_model/best.bin
+          format: openvino
+          sha256: c8d533366a573b4865b0cc9fe4e98ab192b181ee49c6aceb4483e60aca8848bf
+          bytes: 9607536
+          optional: false
+        - src: openvino/model_openvino_model/best.xml
+          dest: plant_detector/yolo26n_det_640/openvino/model_openvino_model/best.xml
+          format: openvino
+          sha256: d4a35217d6a97a2faf8b4aba20a46f5a941c4ee597a14d88acfbd2534c6eb7c4
+          bytes: 377265
+          optional: false
+        - src: openvino/model_openvino_model/metadata.yaml
+          dest: plant_detector/yolo26n_det_640/openvino/model_openvino_model/metadata.yaml
+          format: openvino
+          sha256: 8ec906d71f3d9f7c6a13911cfd3fe65fe4ad5443c0724706031e80e2e398822c
+          bytes: 601
+          optional: false

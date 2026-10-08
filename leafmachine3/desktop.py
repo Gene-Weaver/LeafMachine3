@@ -23,6 +23,23 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def dependency_digest(path: Path) -> str:
+    """sha256 of a package.json / package-lock.json with its own ``version`` fields blanked.
+
+    The LM3 version is stamped into both files on every commit (tools/release/bump_version.py);
+    hashing them verbatim made each bump look like a dependency change and demanded an
+    ``lm3-desktop install`` (npm ci) that installs nothing new. What the receipt must notice is the
+    dependency set, so that is what is hashed.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data.pop("version", None)
+    root_pkg = (data.get("packages") or {}).get("")
+    if isinstance(root_pkg, dict):
+        root_pkg.pop("version", None)
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def verify_project(root: Path, env: Env) -> dict:
     """Reject an unrelated interpreter, stale JavaScript lock, or missing desktop tool pins."""
     if Path(env.prefix).resolve() != (root / ".venv").resolve():
@@ -42,7 +59,7 @@ def verify_project(root: Path, env: Env) -> dict:
         if env.missing_files.get(name):
             raise DesktopEnvironmentError(f"{name} has missing files; rebuild the desktop group with uv sync --frozen --extra <gpu|cpu|macos> --group desktop --reinstall.")
     for filename, key in (("package-lock.json", "package_lock_sha256"), ("package.json", "package_json_sha256")):
-        if digest(root / "app" / filename) != contract["desktop"][key]:
+        if dependency_digest(root / "app" / filename) != contract["desktop"][key]:
             raise DesktopEnvironmentError(f"app/{filename} differs from the release contract; regenerate tools/release/write_env_contract.py.")
     if digest(root / "leafmachine3" / "_env_contract.json") != json.loads(
             (root / "app" / "desktop-contract.json").read_text())["backend_contract_sha256"]:

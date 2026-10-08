@@ -943,6 +943,8 @@ input[type=color]{padding:2px;height:28px;width:44px;cursor:pointer;background:#
   display:grid;grid-template-columns:var(--rail-w,240px) minmax(0,1fr);
   flex:1 1 auto;min-height:0;align-items:stretch;
 }
+/* YAML view: the rail is hidden, so the body takes the whole width instead of the rail's column */
+.railwrap.yaml{grid-template-columns:minmax(0,1fr)}
 .rail{
   background:var(--panel3);border-right:1px solid var(--line);
   overflow:auto;padding:8px 0 10px;display:flex;flex-direction:column;gap:1px;min-height:0;
@@ -1533,3 +1535,52 @@ body:has(.perfpanel.collapsed) .toasts{bottom:calc(var(--perf-h-collapsed) + 16p
   body,.app{height:auto;overflow:visible}
   .tabbody{overflow:visible}
 }
+
+/* ---------------------------------------------------------------- models tab */
+/* One column grid for every table on the tab: the header-only table above the cards and each
+   module card's own table share the same <colgroup> and table-layout:fixed, so columns line up
+   across cards without any card knowing about the others (layout from exp__settingslayouts/models_tab). */
+:root{ --mh-gap:10px; }
+.mh-hdr{padding:0 4px 6px}
+.mh-hdr .mh-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px}
+.mh-hdr .mh-title strong{color:var(--ink);font-size:14px}
+table.mh-grid{table-layout:fixed;width:100%;border-collapse:collapse;font-size:12.5px}
+table.mh-grid th{text-align:left;font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim);padding:6px 10px 4px}
+table.mh-grid td{padding:7px 10px;vertical-align:middle}
+.mh-hdr table.mh-grid tbody{display:none}
+.mh-card table.mh-grid thead{visibility:collapse}
+.mh-card{padding:8px 4px;margin:0 0 var(--mh-gap);max-width:none}
+.mh-card.good{border-left-color:var(--acc3)} .mh-card.warn{border-left-color:var(--warn)} .mh-card.bad{border-left-color:var(--bad)}
+.mh-card td.span{vertical-align:top;padding-top:10px}
+.mh-card tr.v + tr.v td.v{border-top:1px dashed var(--line)}
+td.mh-mod{white-space:nowrap} td.mh-mod .ink{color:var(--ink)} td.mh-mod .id{display:block;font-size:11px;color:var(--dim)}
+td.mh-k a{font:600 12.5px var(--mono);color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--dim);overflow-wrap:anywhere}
+td.mh-k a:hover{color:var(--acc2);border-bottom-color:var(--acc2)}
+td.mh-k a::after{content:" ↗";font-size:10px;color:var(--dim)}
+td.mh-k .def{margin-left:6px;font-size:12px;cursor:help}
+td.mh-k .sub{display:block;font:11.5px var(--sans);color:var(--dim);margin-top:2px}
+td.mh-rev{white-space:nowrap;min-width:11ch}
+.mh-fmts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mh-fmt{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);
+  font:600 11px var(--mono);color:var(--mute);background:var(--panel2);cursor:default}
+.mh-fmt .sz{color:var(--dim);font-weight:500}
+/* installed = blue; installed AND active = the bright green with its halo; not installed = gray */
+.mh-fmt.on{color:var(--acc2);border-color:rgba(56,189,248,.5)}
+.mh-fmt.on.act{color:var(--acc3);border-color:rgba(74,222,128,.55);box-shadow:0 0 0 2px rgba(74,222,128,.25)}
+.mh-fmt.new{color:var(--warn);border-color:rgba(251,191,36,.55);cursor:pointer}
+.mh-fmt.new:hover{background:rgba(251,191,36,.1)}
+.mh-fmt.new.act{box-shadow:0 0 0 2px rgba(251,191,36,.2)}
+.mh-fmt.get{color:var(--mute);border-color:var(--line);cursor:pointer;background:transparent}
+.mh-fmt.get:hover{color:var(--ink);border-color:var(--dim);background:var(--panel2)}
+.mh-fmt.part{color:var(--bad);border-color:rgba(248,113,113,.5);cursor:pointer}
+.mh-fmt.busy{opacity:.55;cursor:progress}
+.mh-sel{min-width:0;width:100%;font:12.5px var(--mono)}
+.mh-lock{display:inline-flex;align-items:center;gap:6px;color:var(--dim);font-size:12px}
+.mh-lock .mh-sel{width:calc(100% - 26px);color:var(--dim);border-style:dashed}
+.mh-legend{margin:12px 4px 0;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.mh-log{margin:8px 4px 0;font:12px var(--mono);max-height:140px;overflow:auto;display:none}
+
+/* a format chip whose download is in flight: the size gives way to a spinner */
+.mh-fmt .spin{display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-right-color:transparent;
+  border-radius:50%;animation:mh-spin .8s linear infinite;vertical-align:-1px}
+@keyframes mh-spin{to{transform:rotate(360deg)}}

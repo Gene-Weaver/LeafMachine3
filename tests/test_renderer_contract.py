@@ -212,7 +212,9 @@ class TestTheReplacements:
     def test_every_tab_that_shows_a_run_follows_the_same_reference(self) -> None:
         """Invariant 7. Before this, the top bar, the Status tab and the Console each resolved a
         run independently, so they could describe three different ones."""
-        for path in (STATUS_JS, RESULTS_JS, POSTPROCESS_JS, SETTINGS_JS):
+        # The Settings tab is not in this list: it stopped describing a run when its next-run
+        # card was removed (2026-10-08), so it has nothing to follow.
+        for path in (STATUS_JS, RESULTS_JS, POSTPROCESS_JS):
             assert 'addEventListener("lm3:runtime"' in read(path), path.name
         assert 'addEventListener("lm3:newrun"' not in read(STATUS_JS)
         assert 'addEventListener("lm3:newrun"' not in read(RESULTS_JS)
@@ -243,30 +245,8 @@ class TestTheReplacements:
         # Cleared only on the move, never on every reconnect.
         assert re.search(r"if \(moved\) \{", block)
 
-    def test_next_run_settings_are_labeled_as_such(self) -> None:
-        """Invariant 8, on both surfaces that edit settings."""
-        assert "renderNextRunLabel" in read(TOPBAR)
-        assert "Next run" in read(TOPBAR)
-        settings = read(SETTINGS_JS)
-        assert "nextRunNote" in settings
-        assert "NEXT run" in settings
-        assert "Settings for the next run" in read(INDEX_HTML)
-
-    def test_the_next_run_label_repaints_when_the_runtime_moves(self) -> None:
-        """Whether a run is in progress is a RUNTIME fact, not a settings one.
-
-        The label was originally painted only from ``applySettings()``, so a CLI run appearing
-        while the app sat idle left the strip in its neutral wording -- "edits apply to the next
-        run you start" -- with nothing saying that a run it cannot affect was under way. The
-        occupancy test is in ``moved`` for the same reason: a ``hardware_setup`` root takes the
-        deployment without moving ``runRef`` at all, so a repaint keyed only on the run reference
-        would miss it.
-        """
-        body = read(TOPBAR)
-        assert "before.occupied !== state.view.occupied" in body
-        # Three paint paths, all of which must keep it current: the first build, a settings
-        # load, and a runtime change.
-        assert len(re.findall(r"^\s*renderNextRunLabel\(\);", body, re.M)) == 3
+    # The next-run labels (invariant 8) were removed on 2026-10-08: the top strip's line and the
+    # Settings tab's card both went, at Will's direction, so their source contracts went with them.
 
     def test_the_results_run_selector_can_name_the_live_row_and_return_to_it(self) -> None:
         """Step 6: "Add a run selector over the existing results run list." The picker already
@@ -795,109 +775,3 @@ def _launched_run(run_id: str, run_dir: Path) -> Any:
 # ============================================================================================== #
 # 4. THE SETTINGS TAB'S NEXT-RUN CARD -- invariant 8 stated about the RIGHT run
 # ============================================================================================== #
-def apply_runtime_view_source() -> str:
-    """``settings.js``'s ``applyRuntimeView`` body, comments removed.
-
-    That card has no DOM test anywhere -- the Settings tab needs a document to mount -- so its
-    wording is pinned structurally instead: which ``view`` field each branch is keyed on, and which
-    branch is allowed to name a run. See the module docstring on what a source contract can prove.
-    """
-    body = read(SETTINGS_JS)
-    start = body.index("function applyRuntimeView(ev) {")
-    end = body.index("\n  }\n", start)
-    return strip_comments(body[start:end])
-
-
-def branches_of(source: str) -> dict[str, str]:
-    """The four ordered branches of the card, keyed by the condition that selects them.
-
-    Splitting on the literal ``else if`` chain is what makes the ORDER testable: ``tuning`` has to
-    be decided before ``live``, and ``live`` before the bare ``occupied`` fallback, or the wrong
-    sentence wins in exactly the states section 2.6 separates.
-    """
-    # Drop the shared preamble: the `const ref = ...` declaration lives above the chain, and only
-    # what each branch WRITES is under test.
-    _, chain = source.split("if (tuning) {", 1)
-    tuning, rest = chain.split("} else if (live) {", 1)
-    live, rest = rest.split("} else if (occupied) {", 1)
-    occupied, neutral = rest.split("} else {", 1)
-    return {"tuning": tuning, "live": live, "occupied": occupied, "neutral": neutral}
-
-
-class TestTheNextRunCardNamesOnlyTheRunItMeans:
-    """Section 2.6 row 2 plus invariants 5, 6 and 8.
-
-    The card exists to state invariant 8 ("editing YAML affects only the next run") on the tab where
-    every knob lives. It used to key its sharpened wording on ``view.occupied`` while reading the
-    run name out of ``view.runRef`` -- two fields ``deriveView`` deliberately lets disagree -- so
-    during a ``hardware_setup`` root it announced that LAST NIGHT'S FINISHED RUN "is running now".
-    """
-
-    def test_only_the_live_branch_may_name_a_run(self) -> None:
-        source = apply_runtime_view_source()
-        # Keyed on `live`, which is `runRef.live` -- not on `occupied`, which is the LEASE.
-        assert "const live = !!(view && view.live);" in source
-        assert "const occupied = !!(view && view.occupied);" in source
-        assert "const tuning = !!(view && view.machine && view.machine.tuning);" in source
-
-        branches = branches_of(source)
-        assert "is running now" in branches["live"]
-        for name in ("tuning", "occupied", "neutral"):
-            assert "is running now" not in branches[name], name
-            # `ref` is runRef; only the live branch is entitled to speak for it.
-            assert not re.search(r"\bref\b", branches[name]), name
-        # ... and the tuning branch must not name the machine's calibration scratch project either.
-        assert T.CALIBRATION_RUN_NAME not in source
-
-    def test_occupancy_stays_visible_in_every_held_state(self) -> None:
-        """Softening the wording must not soften the WARNING: all three held states keep the warn
-        class, so "something holds this deployment" is never quietly downgraded to neutral info."""
-        source = apply_runtime_view_source()
-        assert '(tuning || live || occupied) ? "card warn" : "card info"' in source
-
-    @requires_node
-    def test_a_tuning_root_leaves_the_last_finished_run_named_but_not_live(
-        self, tmp_path: Path
-    ) -> None:
-        """(a) The concrete regression: a finished pipeline in ``last``, a ``hardware_setup`` root
-        holding the lease. ``runRef`` is the finished run and ``occupied`` is true, so any card
-        keyed on ``occupied`` would call a finalized run "running now"."""
-        setup = {
-            "schema_version": T.SCHEMA_VERSION, "run_id": SETUP_RUN_ID,
-            "activity": "hardware_setup", "activity_role": "root", "state": "running",
-            "launcher": "gui", "pid": 99, "process_started_at": 1.0,
-            "started_at": NOW, "updated_at": NOW,
-            "deployment": {"id": "default"},
-            "config": {"path": "/cfg/LM3_settings.yaml", "sha256": "b" * 64},
-            "hardware": {"destination_path": "/cfg/hardware_settings.yaml"},
-        }
-        rows = run_cases(tmp_path, [{
-            "name": "tuning",
-            "payload": {"active": active_block(setup),
-                        "last": pipeline_record(state="done")},
-        }])
-        view = rows["tuning"]["view"]
-        assert view["occupied"] is True, "the lease is held by the tuning root"
-        assert view["live"] is False, "but nothing in the project views is running"
-        assert view["machine"]["tuning"] is True
-        assert view["runRef"]["run_name"] == CLI_RUN_NAME, "project history must not move"
-
-    @requires_node
-    def test_a_history_selection_during_a_live_run_leaves_the_selection_not_live(
-        self, tmp_path: Path
-    ) -> None:
-        """(b) The second disagreement the same bug produced: the user pauses follow-active on an
-        old run while a pipeline holds the lease. ``occupied`` is true and ``runRef`` is the
-        HISTORICAL run, so an occupied-keyed card claims that old run is running."""
-        selected = {"source": "history", "live": False, "run_id": "old",
-                    "run_name": "last_march", "run_dir": "/out/last_march",
-                    "db_path": "/out/last_march/last_march.sqlite"}
-        rows = run_cases(tmp_path, [{
-            "name": "paused",
-            "payload": {"active": active_block(pipeline_record()), "last": None},
-            "opts": {"selected": selected},
-        }])
-        view = rows["paused"]["view"]
-        assert view["mode"] == "history"
-        assert view["occupied"] is True and view["live"] is False
-        assert view["runRef"]["run_name"] == "last_march"

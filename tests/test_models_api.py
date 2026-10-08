@@ -113,3 +113,30 @@ def test_events_stream_accepts_the_query_token_because_eventsource_cannot_send_h
     assert "event: done" in text
     assert client.get(f"/v1/models/install/{task_id}/events").status_code == 401
     assert client.get(f"/v1/models/install/{task_id}/events", params={"token": "wrong"}).status_code == 401
+
+
+def test_catalog_and_activate_write_the_settings_file(client: TestClient):
+    headers = _auth(client)
+    task_id = client.post("/v1/models/install", json={}, headers=headers).json()["task_id"]
+    _wait(client, headers, task_id)
+    cat = client.get("/v1/models/catalog", headers=headers).json()
+    det = next(s for s in cat["stages"] if s["stage"] == "det")
+    assert det["activatable"] is True and det["variants"][0]["units"][0]["formats"]["onnx"]["state"] == "current"
+    assert cat["settings"]["yaml_path"]
+    # activate: the yaml gains modules.det.model pointing at the installed file, and the catalog
+    # reports it active; the response is the fresh catalog
+    res = client.post("/v1/models/activate", json={"stage": "det", "model_key": "k", "format": "onnx"}, headers=headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["activated"] == {"key": "k", "path": "models/det/model.onnx", "format": "onnx"}
+    import os
+    written = yaml.safe_load(Path(os.environ["LM3_SETTINGS"]).read_text())
+    assert written["modules"]["det"]["model"] == {"key": "k", "path": "models/det/model.onnx", "format": "onnx"}
+    det = next(s for s in body["stages"] if s["stage"] == "det")
+    assert det["active"]["matched"] is True and det["variants"][0]["units"][0]["formats"]["onnx"]["active"] is True
+    # a format LM3 cannot run, or a model that is not installed, is refused and nothing is written
+    before = Path(os.environ["LM3_SETTINGS"]).stat().st_mtime_ns
+    assert client.post("/v1/models/activate", json={"stage": "det", "model_key": "k", "format": "coreml"}, headers=headers).status_code == 409
+    assert client.post("/v1/models/activate", json={"stage": "det", "model_key": "nope", "format": "onnx"}, headers=headers).status_code in (404, 409)
+    assert client.post("/v1/models/activate", json={"stage": "det"}, headers=headers).status_code == 400
+    assert Path(os.environ["LM3_SETTINGS"]).stat().st_mtime_ns == before

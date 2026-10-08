@@ -50,6 +50,15 @@ def _doctor() -> Callable[[list[str]], int]:
 _COMMANDS["doctor"] = ("check that this install will run (Python, packages, GPU driver, accelerator)", _doctor)
 
 
+def _version() -> Callable[[list[str]], int]:
+    from leafmachine3.version_info import main as version_main  # noqa: PLC0415 - lazy by design
+
+    return version_main
+
+
+_COMMANDS["version"] = ("the LM3 version and the dependency / model locks it pins", _version)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lm3",
