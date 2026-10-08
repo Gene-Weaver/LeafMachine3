@@ -1,0 +1,79 @@
+{
+ "model": "yolo26n_det_640 (iteration 2)",
+ "conf": 0.03,
+ "imgsz": 640,
+ "split": "test",
+ "dataset": "datasets/LM3_Landmarks_Detect",
+ "examples": [
+  {
+   "file": "overlay_01_Maclura.jpg",
+   "source": "9odbfnff__US_2549478669_Moraceae_Maclura_brasiliensis__24.jpg",
+   "species": "Maclura brasiliensis",
+   "accession": "US_2549478669",
+   "n_pred": 27
+  },
+  {
+   "file": "overlay_02_Cinnamomum.jpg",
+   "source": "9odbfnff__TEX_2807528308_Lauraceae_Cinnamomum_camphora__37.jpg",
+   "species": "Cinnamomum camphora",
+   "accession": "TEX_2807528308",
+   "n_pred": 158
+  },
+  {
+   "file": "overlay_03_Ximenia.jpg",
+   "source": "gbac5kw6__NY_1928221755_Ximeniaceae_Ximenia_coriacea__L__526-1179-799-1760.jpg",
+   "species": "Ximenia coriacea",
+   "accession": "NY_1928221755",
+   "n_pred": 27
+  },
+  {
+   "file": "overlay_04_Malus.jpg",
+   "source": "9odbfnff__FLAS_1457791652_Rosaceae_Malus_angustifolia__12.jpg",
+   "species": "Malus angustifolia",
+   "accession": "FLAS_1457791652",
+   "n_pred": 32
+  },
+  {
+   "file": "overlay_05_Catalpa.jpg",
+   "source": "gteb6fi6__MNHN_437109389_Bignoniaceae_Catalpa_fargesii__7.jpg",
+   "species": "Catalpa fargesii",
+   "accession": "MNHN_437109389",
+   "n_pred": 212
+  },
+  {
+   "file": "overlay_06_Morus.jpg",
+   "source": "gbac5kw6__US_1321635795_Moraceae_Morus_alba__L__304-2554-1180-3359.jpg",
+   "species": "Morus alba",
+   "accession": "US_1321635795",
+   "n_pred": 141
+  },
+  {
+   "file": "overlay_07_Guapira.jpg",
+   "source": "9odbfnff__US_1322065299_Nyctaginaceae_Guapira_discolor__2.jpg",
+   "species": "Guapira discolor",
+   "accession": "US_1322065299",
+   "n_pred": 19
+  },
+  {
+   "file": "overlay_08_Lonicera.jpg",
+   "source": "a2o13anj__Leaf_WHOLE__O_1702311933_Caprifoliaceae_Lonicera_periclymenum__3.jpg",
+   "species": "Lonicera periclymenum",
+   "accession": "O_1702311933",
+   "n_pred": 30
+  },
+  {
+   "file": "overlay_09_Quercus.jpg",
+   "source": "efkh8u6g__A_1998814058_Fagaceae_Quercus_stellata__21.jpg",
+   "species": "Quercus stellata",
+   "accession": "A_1998814058",
+   "n_pred": 66
+  },
+  {
+   "file": "overlay_10_Platanus.jpg",
+   "source": "gteb6fi6__US_2549486894_Platanaceae_Platanus_lindeniana__10.jpg",
+   "species": "Platanus lindeniana",
+   "accession": "US_2549486894",
+   "n_pred": 300
+  }
+ ]
+}
