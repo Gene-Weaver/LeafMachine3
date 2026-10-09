@@ -193,7 +193,7 @@ def class_section(row, cls, crop_path, tile_h=CLASS_TILE_H, failure=None,
 
     units = ", ".join(PRETTY.get(u, u) for u in (sp.get("units") or [])) or "-"
     adm = ", ".join(PRETTY.get(u, u) for u in admissible_units(cls)) or "-"
-    lines = [(f"1 -- Ruler Class", F_T, (15, 15, 20)),
+    lines = [("1 -- Ruler Class", F_T, (15, 15, 20)),
              (f"{row.get('image_name')}   [detection {row['detection_id']}, "
               f"ruler conf {row['det_conf']:.2f}]", F_S, (60, 62, 70)),
              (f"RulerClassifier -> {cls}"
@@ -561,11 +561,11 @@ def build_recon_section(image_name, entries, pr, anchor, anchor_formula=None, fa
             f"conversion factor is published for this sheet.", F_B, (194, 65, 12)))
         if anchor is not None:
             head_lines.append((
-                f"FALLBACK APPLIED (use_CF_predicted_by_MP is on) -- every downstream measurement "
-                f"on this sheet uses the MP-PREDICTED anchor instead of a ruler reading:"
+                "FALLBACK APPLIED (use_CF_predicted_by_MP is on) -- every downstream measurement "
+                "on this sheet uses the MP-PREDICTED anchor instead of a ruler reading:"
                 if fallback_applied else
-                f"FALLBACK NOT APPLIED (use_CF_predicted_by_MP is off) -- this sheet's cm "
-                f"measurements stay empty. With it on, the sheet would use the MP-PREDICTED anchor:",
+                "FALLBACK NOT APPLIED (use_CF_predicted_by_MP is off) -- this sheet's cm "
+                "measurements stay empty. With it on, the sheet would use the MP-PREDICTED anchor:",
                 F_S, (194, 65, 12)))
             head_lines.append((
                 f"    {anchor_formula or ('cf = %.2f px/cm (megapixel regression)' % anchor)}"

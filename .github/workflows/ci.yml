@@ -13,12 +13,10 @@ defaults:
   run:
     shell: bash
 
-env:
-  UV_PYTHON_PREFERENCE: only-managed
-
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -84,6 +82,9 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # The last run before this cap hung on Windows for 6 h until GitHub's default limit cancelled
+    # it; macOS finishes in about a minute. A hang must cost minutes, not the runner's day.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -145,6 +146,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       LM3_EXTRA: ${{ matrix.os == 'macos-latest' && 'macos' || 'cpu' }}

@@ -14,7 +14,6 @@ import pytest
 
 from leafmachine3.core.db import ProjectDB
 from leafmachine3.core.records import CF_SOURCE_MP, CF_SOURCE_RULER, SpecimenRecord
-from leafmachine3.core.stage import WorkItem
 from leafmachine3.inference.ruler_lattice import RulerCFLattice
 from leafmachine3.modules.ruler_conversion_factor import RulerConversionFactor, _writeback
 

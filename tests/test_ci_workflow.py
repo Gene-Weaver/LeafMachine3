@@ -123,7 +123,12 @@ def test_the_linux_job_still_runs_the_whole_suite_on_the_release_python(workflow
 
 
 def test_every_ci_python_is_the_release_python(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["UV_PYTHON_PREFERENCE"] == "only-managed"
+    # `--managed-python` on every sync is the whole mechanism. It is an alias for
+    # `--python-preference only-managed`, and uv reads UV_PYTHON_PREFERENCE as that same option, so
+    # setting the env var as well makes uv 0.12 refuse EVERY sync with "the argument
+    # `--managed-python` cannot be used with `--python-preference`". That exact pair killed all six
+    # CI jobs at their first step for two days while this test asserted it was present.
+    assert "UV_PYTHON_PREFERENCE" not in (workflow.get("env") or {})
     for job in workflow["jobs"].values():
         steps = job["steps"]
         assert any(str(s.get("uses", "")).startswith("astral-sh/setup-uv@")

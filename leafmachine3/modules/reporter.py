@@ -59,8 +59,6 @@ from typing import Any, Callable, NamedTuple, Optional
 
 import numpy as np
 
-_SUB_LOCK = threading.Lock()   # guards the Reporter's cross-thread component-timing accumulator
-
 from leafmachine3.core.imaging import (
     composite,
     crop_filename,
@@ -96,6 +94,8 @@ from leafmachine3.reporting.palette import (
     SpecimenStyle,
     parse_fill_color,
 )
+
+_SUB_LOCK = threading.Lock()   # guards the Reporter's cross-thread component-timing accumulator
 
 log = logging.getLogger("leafmachine3.reporter")
 

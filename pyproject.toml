@@ -95,6 +95,11 @@ test = [
     # tests/test_version_identity.py imports setuptools.find_packages to check the package finder.
     # pip-made venvs happen to contain setuptools; uv-made ones do not, so it has to be declared.
     "setuptools>=68",
+    # tests/test_ruler_classifier.py builds a tiny real ONNX classifier to prove a member whose
+    # output size disagrees with the label map is refused. onnx otherwise lives only in the
+    # dev-only `full` group, which no CI leg installs, so without this line that test could
+    # never run on a runner. Pure-Python wheel; none of the cv2/torch conflicts that keep `full` out.
+    "onnx==1.22.0; sys_platform == 'linux'",
 ]
 
 # DEVELOPMENT ONLY -- never shipped. Locked in uv.lock so it is reproducible, but no user instruction,

@@ -30,7 +30,6 @@
 1 F841 leafmachine3/inference/ruler_lattice/engine.py
 5 E702 leafmachine3/inference/ruler_lattice/lattice.py
 3 E702 leafmachine3/inference/ruler_lattice/qc.py
-3 F541 leafmachine3/inference/ruler_lattice/qc.py
 1 E702 leafmachine3/inference/ruler_lattice/sheet_cf.py
 1 F401 leafmachine3/modules/ect.py
 2 E702 leafmachine3/modules/experiments/ACF_comb/comb_eval.py
@@ -44,7 +43,6 @@
 1 E741 leafmachine3/modules/experiments/bilateral_symmetry/report.py
 1 F841 leafmachine3/modules/experiments/bilateral_symmetry/report.py
 3 F401 leafmachine3/modules/experiments/bilateral_symmetry/run.py
-7 E402 leafmachine3/modules/reporter.py
 2 F401 leafmachine3/modules/reporter.py
 1 F401 leafmachine3/postprocessing/generate_leaf_collage.py
 1 E741 leafmachine3/postprocessing/stl_webview/_build.py

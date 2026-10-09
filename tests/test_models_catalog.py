@@ -7,7 +7,6 @@ test_models_installer.py. Nothing names a real model: the tab is driven by the l
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 
 import pytest
@@ -230,8 +229,10 @@ def test_concurrent_status_calls_do_not_lose_the_record(world):
             errors.append(exc)
 
     threads = [threading.Thread(target=poll) for _ in range(6)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
     assert not errors, errors
     assert installer.read_record(world.root)["actions"]["det"]["revisions"]["org/det"] == "r1"
     assert not list(world.root.glob(".installed.*.tmp"))
