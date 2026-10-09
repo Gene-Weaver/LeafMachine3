@@ -100,6 +100,8 @@ test = [
     # dev-only `full` group, which no CI leg installs, so without this line that test could
     # never run on a runner. Pure-Python wheel; none of the cv2/torch conflicts that keep `full` out.
     "onnx==1.22.0; sys_platform == 'linux'",
+    # The platform-primitives CI leg runs pytest --timeout so a hung Windows test is named, not waited on.
+    "pytest-timeout>=2.3",
 ]
 
 # DEVELOPMENT ONLY -- never shipped. Locked in uv.lock so it is reproducible, but no user instruction,
