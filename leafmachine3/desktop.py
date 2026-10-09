@@ -62,7 +62,7 @@ def verify_project(root: Path, env: Env) -> dict:
         if dependency_digest(root / "app" / filename) != contract["desktop"][key]:
             raise DesktopEnvironmentError(f"app/{filename} differs from the release contract; regenerate tools/release/write_env_contract.py.")
     if digest(root / "leafmachine3" / "_env_contract.json") != json.loads(
-            (root / "app" / "desktop-contract.json").read_text())["backend_contract_sha256"]:
+            (root / "app" / "desktop-contract.json").read_text(encoding="utf-8"))["backend_contract_sha256"]:
         raise DesktopEnvironmentError("The Python and Electron release contracts disagree; regenerate them.")
     return contract
 
@@ -75,15 +75,18 @@ def receipt_for(contract: dict) -> dict:
 
 
 def verify_install(app: Path, contract: dict) -> None:
+    # Every file here is UTF-8 and is read as such explicitly. The platform default is cp1252 on
+    # Windows, and electron-builder's package.json carries curly quotes in its description, so the
+    # Windows CI leg died here with "'charmap' codec can't decode byte 0x9d" after a successful install.
     receipt = app / "node_modules" / ".lm3-lock.json"
-    if not receipt.is_file() or json.loads(receipt.read_text()) != receipt_for(contract):
+    if not receipt.is_file() or json.loads(receipt.read_text(encoding="utf-8")) != receipt_for(contract):
         raise DesktopEnvironmentError("Desktop dependencies need installation: run the same uv command with `lm3-desktop install`.")
     for name, key in (("electron", "electron"), ("electron-builder", "electron_builder")):
         package = app / "node_modules" / name / "package.json"
-        if not package.is_file() or json.loads(package.read_text())["version"] != contract["desktop"][key]:
+        if not package.is_file() or json.loads(package.read_text(encoding="utf-8"))["version"] != contract["desktop"][key]:
             raise DesktopEnvironmentError(f"{name} differs from the lock; run lm3-desktop install through uv.")
     runtime = app / "node_modules" / "electron" / "dist" / "version"
-    if not runtime.is_file() or runtime.read_text().strip() != contract["desktop"]["electron"]:
+    if not runtime.is_file() or runtime.read_text(encoding="utf-8").strip() != contract["desktop"]["electron"]:
         raise DesktopEnvironmentError("The pinned Electron runtime is missing; run lm3-desktop install through uv.")
 
 
@@ -129,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             # postinstall hook. Do it now using the locked package's pinned checksum manifest.
             result = npm(["run", "install:electron"], cwd=app, env=child_env)
             if result == 0:
-                (app / "node_modules" / ".lm3-lock.json").write_text(json.dumps(receipt_for(contract)) + "\n")
+                (app / "node_modules" / ".lm3-lock.json").write_text(json.dumps(receipt_for(contract)) + "\n", encoding="utf-8")
                 verify_install(app, contract)
         return result
     except (DesktopEnvironmentError, OSError, ValueError) as exc:
