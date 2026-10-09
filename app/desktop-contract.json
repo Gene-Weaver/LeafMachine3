@@ -1,6 +1,6 @@
 {
  "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
- "lm3_version": "3.0.1026",
+ "lm3_version": "3.0.1027",
  "python": "3.11.17",
  "uv": "0.12.23",
  "node": "24.19.0",
@@ -8,5 +8,5 @@
  "electron_builder": "26.15.3",
  "package_lock_sha256": "b65015b93d766c2c2ec89e3e1f6ff5d0dc9e600acf4533fd408d220f133d16e4",
  "package_json_sha256": "64998be6e8d671d2ced426dd5df24ee93dacdd6780991d04e0cad8754aaf78f1",
- "backend_contract_sha256": "2eec66092d15507b554cc068985feee4b03f9ec0e67d9db5cbd2930f78adc9bd"
+ "backend_contract_sha256": "571381c5f86da9126b13fdd1d6f4e151c4d0e5b17b9cd0cd672a0ea7d3163cf6"
 }
