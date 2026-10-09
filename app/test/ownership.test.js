@@ -167,16 +167,20 @@ test("legacy environments, Conda and lm3 on PATH cannot become a packaged backen
 });
 
 test("stale Python pins, pip venvs and conflicting hardware require a new uv sync", () => {
-  const { root, prefix, site } = uvProject();
+  // The fixture and the resolver must agree on a platform. Left to default, the fixture is Linux
+  // (.venv/bin/uv) while the resolver takes process.platform, so on the Windows runner it looked
+  // for Scripts\uv.exe, found nothing, and returned null before reaching any check under test.
+  const platform = "linux";
+  const { root, prefix, site } = uvProject(platform);
   fs.writeFileSync(path.join(root, ".python-version"), "3.11.0");
-  assert.throws(() => main.resolveBackendLaunch({ root, env: {} }), main.BackendLaunchError);
+  assert.throws(() => main.resolveBackendLaunch({ root, env: {}, platform }), main.BackendLaunchError);
   fs.writeFileSync(path.join(root, ".python-version"), main.DESKTOP_CONTRACT.python);
   fs.writeFileSync(path.join(prefix, "pyvenv.cfg"), "version_info = 3.11.17\n");
-  assert.throws(() => main.resolveBackendLaunch({ root, env: {} }), main.BackendLaunchError);
+  assert.throws(() => main.resolveBackendLaunch({ root, env: {}, platform }), main.BackendLaunchError);
   fs.writeFileSync(path.join(prefix, "pyvenv.cfg"),
     `uv = ${main.DESKTOP_CONTRACT.uv}\nversion_info = ${main.DESKTOP_CONTRACT.python}\ninclude-system-site-packages = false\n`);
   fs.mkdirSync(path.join(site, "onnxruntime_gpu-1.20.2.dist-info"));
-  assert.throws(() => main.resolveBackendLaunch({ root, env: {} }), main.BackendLaunchError);
+  assert.throws(() => main.resolveBackendLaunch({ root, env: {}, platform }), main.BackendLaunchError);
 });
 
 test("a matching authenticated doctor report passes; missing, stale and unhealthy reports fail", () => {
