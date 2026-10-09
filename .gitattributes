@@ -3,3 +3,7 @@ app/package.json text eol=lf
 app/package-lock.json text eol=lf
 app/desktop-contract.json text eol=lf
 leafmachine3/_env_contract.json text eol=lf
+# tools/release/write_env_contract.py hashes these two lock files verbatim; a CRLF checkout on a
+# Windows runner read the contract as stale against one written on Linux.
+uv.lock text eol=lf
+leafmachine3/modelhub/models.lock.yaml text eol=lf

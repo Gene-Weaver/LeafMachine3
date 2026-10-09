@@ -175,6 +175,18 @@ def detect_variant(env: Env) -> tuple[Optional[str], str]:
     return None, "none"
 
 
+def _uv_managed(base_prefix: str, install_dir: str) -> bool:
+    """Was this interpreter installed by uv? uv keeps its Pythons under ``<data dir>/uv/python/``
+    unless ``UV_PYTHON_INSTALL_DIR`` says otherwise -- and astral-sh/setup-uv on a GitHub runner
+    always says otherwise (``<workspace>/_temp/uv-python-dir``), so the old substring test refused
+    every CI leg's own interpreter. Pure string logic: checks 1-4 run no subprocess."""
+    bp = base_prefix.replace("\\", "/").rstrip("/")
+    if "/uv/python/" in bp + "/":
+        return True
+    root = install_dir.replace("\\", "/").rstrip("/")
+    return bool(root) and (bp == root or bp.startswith(root + "/"))
+
+
 def check_interpreter(env: Env) -> Check:
     want = env.contract["python"]
     want_minor = ".".join(want.split(".")[:2])
@@ -187,7 +199,7 @@ def check_interpreter(env: Env) -> Check:
         return Check(1, "interpreter", FAIL,
                      f"{env.executable} is not inside a virtual environment",
                      "run LeafMachine3 through uv from its folder (uv run lm3 ...), never with a system Python")
-    managed = "/uv/python/" in env.base_prefix.replace("\\", "/")
+    managed = _uv_managed(env.base_prefix, env.environ.get("UV_PYTHON_INSTALL_DIR", ""))
     if env.python_version != want or not managed:
         why = []
         if env.python_version != want:

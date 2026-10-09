@@ -113,6 +113,22 @@ def test_patch_mismatch_or_non_uv_interpreter_warns_but_stays_ready():
     assert rep.ready
 
 
+def test_uv_python_install_dir_override_counts_as_uv_managed():
+    """astral-sh/setup-uv installs under UV_PYTHON_INSTALL_DIR, not <data dir>/uv/python/. The Linux
+    and macOS desktop CI legs refused their own interpreter until the override was honored."""
+    root = "/home/runner/work/_temp/uv-python-dir"
+    rep = run(make_env(base_prefix=f"{root}/cpython-3.11.17-linux-x86_64-gnu",
+                       environ={"UV_PYTHON_INSTALL_DIR": root, "LM3_DESKTOP": "1"}))
+    assert rep.checks[0].status == doctor.OK and "uv-managed" in rep.checks[0].detail
+    win = run(make_env(base_prefix=r"D:\a\_temp\uv-python-dir\cpython-3.11.17-windows-x86_64-none",
+                       environ={"UV_PYTHON_INSTALL_DIR": r"D:\a\_temp\uv-python-dir", "LM3_DESKTOP": "1"}))
+    assert win.checks[0].status == doctor.OK
+    # the override widens the accepted set to that directory only; a conda base under it is still foreign
+    conda = run(make_env(base_prefix="/home/u/miniconda3",
+                         environ={"UV_PYTHON_INSTALL_DIR": root, "LM3_DESKTOP": "1"}))
+    assert conda.checks[0].status == FAIL and "not installed by uv" in conda.checks[0].detail
+
+
 # -------------------------------------------------------------------------------------------------- check 2
 
 def test_both_onnxruntime_builds_installed_is_the_2026_10_06_incident():
