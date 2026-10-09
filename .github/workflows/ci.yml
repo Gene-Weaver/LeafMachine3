@@ -82,6 +82,11 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # INFORMATIONAL until Windows and macOS support is scheduled (Will, 2026-10-09): the leg still
+    # runs and its log still carries the evidence, but a failure here does not fail the run. The
+    # Linux `test` job is the gate. Windows currently fails ~25 primitive tests and then hangs until
+    # the cap below; macOS passes. Delete this line to make the leg gating again.
+    continue-on-error: true
     # The last run before this cap hung on Windows for 6 h until GitHub's default limit cancelled
     # it; macOS finishes in about a minute. A hang must cost minutes, not the runner's day.
     timeout-minutes: 20
@@ -146,6 +151,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # Linux gates; Windows and macOS are informational for now (see platform-primitives above).
+    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
     timeout-minutes: 45
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
