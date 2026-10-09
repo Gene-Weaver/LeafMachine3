@@ -815,6 +815,25 @@ holds the example output, a demo script that reproduces every figure, and
 [`verify_lm3_momocs.R`](tools/MOMOCS/verify_lm3_momocs.R), which checks your own export in R. LM3 does not
 install R or any R package; the script's header lists what to install.
 
+From the guide's example, one *Ulmus americana* sheet with 13 leaves:
+
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="docs/readme_github/momocs/conversion.jpg" width="400" alt="LM3 leaf mask and the Momocs JPG made from it"><br><sub><b>Mask to Momocs image.</b> The Reporter's tip-up mask (left) becomes a padded black-on-white JPG that <code>import_jpg</code> reads directly.</sub></td>
+    <td align="center" width="50%"><img src="docs/readme_github/momocs/stack.jpg" width="340" alt="13 leaf outlines overlaid"><br><sub><b>13 leaves, overlaid.</b> Already tip up, so they only need centering and scaling.</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/readme_github/momocs/pca.jpg" width="400" alt="PCA morphospace of the leaf outlines"><br><sub><b>Morphospace.</b> PCA of 12-harmonic elliptic Fourier coefficients; each point is a leaf.</sub></td>
+    <td align="center"><img src="docs/readme_github/momocs/pc_contrib.jpg" width="400" alt="Shape change along PC1 to PC3"><br><sub><b>What each axis means.</b> The mean leaf from &minus;2 to +2 SD along PC1&ndash;PC3.</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/readme_github/momocs/keypoints_procrustes.jpg" width="400" alt="LM3 keypoints before and after Procrustes"><br><sub><b>LM3 keypoints as landmarks.</b> 31 per leaf, as found on the sheet (left) and after Procrustes (right).</sub></td>
+    <td align="center"><img src="docs/readme_github/momocs/keypoints_mean.jpg" width="230" alt="Mean keypoint configuration"><br><sub><b>Mean keypoint configuration,</b> linked along the midvein, petiole, apex, base and width.</sub></td>
+  </tr>
+</table>
+
+Every step, with its code, is in the [guide](tools/MOMOCS/LM3_Momocs_Guide.html).
+
 Writes every leaf in the formats read by the R morphometrics packages
 [Momocs](https://github.com/MomX/Momocs) (legacy, still on CRAN) and its rewrite
 [Momocs2](https://github.com/MomX/Momocs2), which imports through
