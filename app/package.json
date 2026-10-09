@@ -1,6 +1,6 @@
 {
   "name": "lm3-desktop",
-  "version": "3.0.1019",
+  "version": "3.0.1020",
   "description": "LeafMachine3 desktop app -- an Electron shell around the local LM3 server UI.",
   "main": "main.js",
   "engines": {
