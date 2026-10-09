@@ -596,6 +596,36 @@ The transform is computed with the [`ect`](https://github.com/MunchLab/ect) Pyth
 - Munch, E. (2025). An invitation to the Euler Characteristic Transform. *The American
   Mathematical Monthly*, 132(1), 15–25. <https://doi.org/10.1080/00029890.2024.2409616>
 
+#### ECT options
+
+`modules.ect.num_dirs` (default 360) sets the ECT's resolution. It is both the number of
+directions and the number of thresholds, so the matrix and every ECT image are `num_dirs` x
+`num_dirs` px. Each row below is the same leaf at one setting (magma palette, log color):
+
+- **180**: a direction every other degree.
+- **360** (default): one direction per degree. A good tradeoff: cheap to compute, a convenient
+  input size for downstream models such as CNN classifiers, and fine enough to resolve small
+  margin features like teeth.
+- **720**: two directions per degree.
+
+<table>
+  <tr><th>oriented leaf</th><th>ECT (Cartesian)</th><th>radial ECT + outline</th></tr>
+  <tr><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__mask.png" height="250" alt="oriented leaf"><br><sub><b>180</b></sub></td><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__ECT-cartesian__d180__magma__log.png" width="250" alt="ECT (Cartesian), 180 directions"></td><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__ECT-radial-overlay__d180__magma__log.png" width="250" alt="radial ECT + outline, 180 directions"></td></tr>
+  <tr><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__mask.png" height="250" alt="oriented leaf"><br><sub><b>360 (default)</b></sub></td><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__ECT-cartesian__d360__magma__log.png" width="250" alt="ECT (Cartesian), 360 directions"></td><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__ECT-radial-overlay__d360__magma__log.png" width="250" alt="radial ECT + outline, 360 directions"></td></tr>
+  <tr><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__mask.png" height="250" alt="oriented leaf"><br><sub><b>720</b></sub></td><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__ECT-cartesian__d720__magma__log.png" width="250" alt="ECT (Cartesian), 720 directions"></td><td align="center"><img src="docs/readme_github/ect_resolution/simple_toothed__ECT-radial-overlay__d720__magma__log.png" width="250" alt="radial ECT + outline, 720 directions"></td></tr>
+</table>
+
+| `num_dirs` | Image size | `compute_ect` | 3 renders | Total per leaf |
+|---|---|---|---|---|
+| 180 | 180 x 180 px | 0.061 s | 0.054 s | 0.115 s |
+| 360 | 360 x 360 px | 0.064 s | 0.133 s | 0.197 s |
+| 720 | 720 x 720 px | 0.079 s | 0.446 s | 0.525 s |
+
+Mean of 10 runs on each of the 5 sample leaves, one CPU process. Rendering, not the transform,
+is what grows with resolution. Reproduce with
+[`examples/ECT_resolution_options/ect_resolution_comparison.py`](examples/ECT_resolution_options/ect_resolution_comparison.py),
+which writes all five leaves to that folder.
+
 ---
 
 ## Module Outputs
