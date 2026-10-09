@@ -1,4 +1,4 @@
-[![LeafMachine3](docs/readme_github/main_readme_banner/T03__black__300dpi.jpg "LeafMachine3")](https://leafmachine.org/)
+[![LeafMachine3](docs/readme_github/main_readme_banner/U05__black__300dpi.jpg "LeafMachine3")](https://leafmachine.org/)
 
 **Automated trait extraction from herbarium specimen images.** LeafMachine3 is a modular suite of
 machine learning and computer vision tools that locates, isolates, and measures the plant and
