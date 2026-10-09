@@ -1319,7 +1319,9 @@ def _fp_candidate_rows(cands, chosen_type, chosen_assign, n=5):
         order = {k: j for j, k in enumerate(FP_CORNERS)}
         txt = " ".join(f"{v}:det{k}" for k, v in sorted(asg.items(),
                                                        key=lambda kv: order.get(kv[1], 9)))
-        num = lambda key, fmt: "-" if _fp_num(c.get(key)) is None else fmt % _fp_num(c[key])
+
+        def num(key, fmt, c=c):
+            return "-" if _fp_num(c.get(key)) is None else fmt % _fp_num(c[key])
         ins = c.get("inside_image")
         best = (c.get("sheet_type") == chosen_type
                 and (not chosen_assign or {str(k): v for k, v in asg.items()}
@@ -1360,7 +1362,9 @@ def _fp_page_schematic(model, cmap, margins, *, height=FP_SCHEMATIC_H):
             state = (m.get("verdict") or st) if m else "observed"
             col = _FP_OK if st == "used" else _FP_BAD
         caps[c] = (f"{c}{'' if det is None else ' det%s' % det}  {state}", col)
-    cw = lambda c: F_XS.getlength(caps[c][0])
+
+    def cw(c):
+        return F_XS.getlength(caps[c][0])
     # wide enough that a left and a right caption never overlap
     W = int(max(round(pw * k), cw("TL") + cw("TR") + 16, cw("BL") + cw("BR") + 16)) + 2 * ox
     H = height
@@ -1378,9 +1382,9 @@ def _fp_page_schematic(model, cmap, margins, *, height=FP_SCHEMATIC_H):
                                          for s in ("left", "right", "top", "bottom")):
         cen = [p for c in FP_CORNERS for r, p in model["square_centers_mm"][c].items() if r != "BR"]
         xs, ys = [p[0] for p in cen], [p[1] for p in cen]
-        l, r = min(xs) - _fp_num(margins["left"]), max(xs) + _fp_num(margins["right"])
+        lft, r = min(xs) - _fp_num(margins["left"]), max(xs) + _fp_num(margins["right"])
         t, b = min(ys) - _fp_num(margins["top"]), max(ys) + _fp_num(margins["bottom"])
-        _fp_dashed_poly(d, [P(l, t), P(r, t), P(r, b), P(l, b)], (56, 132, 255), width=2,
+        _fp_dashed_poly(d, [P(lft, t), P(r, t), P(r, b), P(lft, b)], (56, 132, 255), width=2,
                         dash=8, gap=5)
     side = 10.0 * k
     for c in FP_CORNERS:
@@ -1527,8 +1531,12 @@ def fp_sheet_section(sheet, markers):
 
     n = {k: s.get(k) for k in ("n_fp_detected", "n_fp_measured", "n_fp_valid", "n_fp_used",
                                "n_fp_rejected", "n_fp_inferred")}
-    cnt = lambda k: "-" if n[k] is None else str(n[k])
-    fnum = lambda k, fmt: "-" if _fp_num(s.get(k)) is None else fmt % _fp_num(s[k])
+
+    def cnt(k):
+        return "-" if n[k] is None else str(n[k])
+
+    def fnum(k, fmt):
+        return "-" if _fp_num(s.get(k)) is None else fmt % _fp_num(s[k])
     orient = s.get("orientation_deg")
 
     lines = [("FieldPrism Sheet Identification", F_T, (15, 15, 20)),
@@ -1561,7 +1569,9 @@ def fp_sheet_section(sheet, markers):
     cf_fp = _fp_num(s.get("cf_px_per_cm_fp"))
     cf_fit, cf_mean = _fp_num(s.get("cf_px_per_cm_sheet_fit")), _fp_num(s.get("cf_px_per_cm_marker_mean"))
     detail = s.get("cf_source_detail")
-    rel = lambda v: ("" if v is None or not cf_fp else f"   ({100.0 * (v / cf_fp - 1.0):+.2f}% vs anchor)")
+
+    def rel(v):
+        return "" if v is None or not cf_fp else f"   ({100.0 * (v / cf_fp - 1.0):+.2f}% vs anchor)"
     spread = _fp_num(s.get("fp_peer_spread_pct"))
     lines += [
         ("", F_XS, _FP_GRAY),

@@ -357,10 +357,10 @@ factor is reported in both frames, and `_cm` values are frame-independent.
 printed field sheet with a photogrammetric marker near each corner, then rectifies the photo so
 the sheet is square to the camera. FieldPrism is described in this publication but has been updated since. The Android and iOS apps replace the apparatus described in the paper.
 
-Weaver, W. N., and S. A. Smith (2023),
-FieldPrism: A system for creating snapshot vouchers from field images using photogrammetric
-markers and QR codes, *Applications in Plant Sciences* 11(5): e11545,
-<https://doi.org/10.1002/aps3.11545>
+> Weaver, W. N., and S. A. Smith (2023),
+> FieldPrism: A system for creating snapshot vouchers from field images using photogrammetric
+> markers and QR codes, *Applications in Plant Sciences* 11(5): e11545,
+> <https://doi.org/10.1002/aps3.11545>
 
 LeafMachine3 reads the app's processed images directly.
 Put the app's rectified output (the `FPfit` images) in your input folder; nothing needs
@@ -692,15 +692,17 @@ and the radial form with the leaf outline drawn over it, plus the raw coordinate
 The transform is computed with the [`ect`](https://github.com/MunchLab/ect) Python package
 ([documentation](https://munchlab.github.io/ect/)). If you use the ECT outputs, please cite:
 
-- Ayub, Y., McGuire-Scullen, S., Percival, S., Weaver, W. N., … Munch, E., & Chitwood, D. H.
-  (2026). The Euler Characteristic Transform enables classification of complex plant shapes and
-  prediction of leaf venation from blade geometry. *bioRxiv*.
-  <https://doi.org/10.64898/2026.04.13.718293>
-- Ayub, Y., Munch, E., McGuire Scullen, S., & Chitwood, D. H. (2026). ect: A Python package for
-  the Euler Characteristic Transform. *Journal of Open Source Software*, 11(120), 9691.
-  <https://doi.org/10.21105/joss.09691>
-- Munch, E. (2025). An invitation to the Euler Characteristic Transform. *The American
-  Mathematical Monthly*, 132(1), 15–25. <https://doi.org/10.1080/00029890.2024.2409616>
+> Ayub, Y., McGuire-Scullen, S., Percival, S., Weaver, W. N., … Munch, E., & Chitwood, D. H.
+> (2026). The Euler Characteristic Transform enables classification of complex plant shapes and
+> prediction of leaf venation from blade geometry. *bioRxiv*.
+> <https://doi.org/10.64898/2026.04.13.718293>
+
+> Ayub, Y., Munch, E., McGuire Scullen, S., & Chitwood, D. H. (2026). ect: A Python package for
+> the Euler Characteristic Transform. *Journal of Open Source Software*, 11(120), 9691.
+> <https://doi.org/10.21105/joss.09691>
+
+> Munch, E. (2025). An invitation to the Euler Characteristic Transform. *The American
+> Mathematical Monthly*, 132(1), 15–25. <https://doi.org/10.1080/00029890.2024.2409616>
 
 #### ECT options
 
@@ -935,14 +937,18 @@ specimen-segmenter targets are machine-generated.
 ## Related Projects and Citation
 
 - **LeafMachine2** — [github.com/Gene-Weaver/LeafMachine2](https://github.com/Gene-Weaver/LeafMachine2).
-  Weaver, W. N., & Smith, S. A. (2023). From leaves to labels: Building modular machine learning
-  networks for rapid herbarium specimen analysis with LeafMachine2. *Applications in Plant
-  Sciences*, 11(5), e11548. <https://doi.org/10.1002/aps3.11548>
+
+  > Weaver, W. N., & Smith, S. A. (2023). From leaves to labels: Building modular machine learning
+  > networks for rapid herbarium specimen analysis with LeafMachine2. *Applications in Plant
+  > Sciences*, 11(5), e11548. <https://doi.org/10.1002/aps3.11548>
+
 - **FieldPrism** — [fieldprism.org](https://fieldprism.org/): field images with photogrammetric
   markers and QR codes; LeafMachine3 measures its rectified sheets (see [FieldPrism sheets](#fieldprism-sheets)).
-  Weaver, W. N., & Smith, S. A. (2023). FieldPrism: A system for creating snapshot vouchers from
-  field images using photogrammetric markers and QR codes. *Applications in Plant Sciences*, 11(5),
-  e11545. <https://doi.org/10.1002/aps3.11545>
+
+  > Weaver, W. N., & Smith, S. A. (2023). FieldPrism: A system for creating snapshot vouchers from
+  > field images using photogrammetric markers and QR codes. *Applications in Plant Sciences*, 11(5),
+  > e11545. <https://doi.org/10.1002/aps3.11545>
+
 - **VoucherVision** — [github.com/Gene-Weaver/VoucherVision](https://github.com/Gene-Weaver/VoucherVision):
   label transcription with large language models; the Archival Detector's label crops are its input.
 - **leafmachine.org** — <https://leafmachine.org>
@@ -950,9 +956,7 @@ specimen-segmenter targets are machine-generated.
 A LeafMachine3 paper is in preparation. Until it is published, please cite the LeafMachine2 paper
 above and link this repository:
 
-```
-Weaver, W. N. (2026). LeafMachine3. https://github.com/Gene-Weaver/LeafMachine3
-```
+> Weaver, W. N. (2026). LeafMachine3. <https://github.com/Gene-Weaver/LeafMachine3>
 
 ---
 

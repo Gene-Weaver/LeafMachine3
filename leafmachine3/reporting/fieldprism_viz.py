@@ -355,9 +355,9 @@ def _own_text_boxes(sq: dict, px: float, S: float) -> list[tuple]:
 
 def _centered_ink_box(text: str, center: tuple[float, float], px: float) -> tuple[float, ...]:
     """The ink box ``draw_text(..., mode="center")`` gives ``text`` at ``center`` (no drawing)."""
-    l, t, r, b = _font(_font_px(px)).getbbox(text, anchor="ls")
-    ox, oy = center[0] - (l + r) / 2.0, center[1] - (t + b) / 2.0
-    return (ox + l, oy + t, ox + r, oy + b)
+    lft, t, r, b = _font(_font_px(px)).getbbox(text, anchor="ls")
+    ox, oy = center[0] - (lft + r) / 2.0, center[1] - (t + b) / 2.0
+    return (ox + lft, oy + t, ox + r, oy + b)
 
 
 def _top_line_box(out: np.ndarray, text: str, sq: dict, px: float, s: float):
@@ -616,8 +616,8 @@ def _font_px(px: float) -> int:
 
 
 def _ink_size(text: str, px: float) -> tuple[float, float]:
-    l, t, r, b = _font(_font_px(px)).getbbox(text, anchor="ls")
-    return float(r - l), float(b - t)
+    lft, t, r, b = _font(_font_px(px)).getbbox(text, anchor="ls")
+    return float(r - lft), float(b - t)
 
 
 def draw_text(
@@ -632,20 +632,20 @@ def draw_text(
     white paper. ``measure_only`` returns the box without drawing.
     """
     font = _font(_font_px(px))
-    l, t, r, b = font.getbbox(text, anchor="ls")
+    lft, t, r, b = font.getbbox(text, anchor="ls")
     if mode == "center":
-        ox, oy = org[0] - (l + r) / 2.0, org[1] - (t + b) / 2.0
+        ox, oy = org[0] - (lft + r) / 2.0, org[1] - (t + b) / 2.0
     else:
         ox, oy = float(org[0]), float(org[1])
-    ink = (ox + l, oy + t, ox + r, oy + b)
+    ink = (ox + lft, oy + t, ox + r, oy + b)
     if measure_only or not text:
         return ink
     m = int(math.ceil(3 * _SHADOW_SIGMA)) + 2 if shadow else 1
-    X0, Y0 = int(math.floor(ox + l)) - m, int(math.floor(oy + t)) - m
+    X0, Y0 = int(math.floor(ox + lft)) - m, int(math.floor(oy + t)) - m
     fx, fy = ox - math.floor(ox), oy - math.floor(oy)          # keep the sub-pixel origin
-    w, h = int(r - l) + 2 * m + 2, int(b - t) + 2 * m + 2
+    w, h = int(r - lft) + 2 * m + 2, int(b - t) + 2 * m + 2
     canvas = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(canvas).text((m - l + fx, m - t + fy), text, font=font, fill=255, anchor="ls")
+    ImageDraw.Draw(canvas).text((m - lft + fx, m - t + fy), text, font=font, fill=255, anchor="ls")
     cov = np.asarray(canvas, dtype=np.float32) / 255.0
 
     H, W = out.shape[:2]

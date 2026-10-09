@@ -259,7 +259,10 @@ LETTER_CENTERS = qc._fp_sheet_model("Letter")["square_centers_mm"]
 
 def _sheet_rows(observed=("TL", "TR", "BL", "BR"), status="identified", s_mm=10.0, **over):
     """A ruler_FP_sheet row + its marker rows for a Letter sheet at s_mm px/mm, unrotated."""
-    tf = lambda p: [p[0] * s_mm + 40.0, p[1] * s_mm + 30.0]
+
+    def tf(p):
+        return [p[0] * s_mm + 40.0, p[1] * s_mm + 30.0]
+
     corners, markers, asg = {}, [], {}
     for i, c in enumerate(qc.FP_CORNERS):
         sq = {r: tf(p) for r, p in LETTER_CENTERS[c].items()}

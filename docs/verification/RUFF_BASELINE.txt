@@ -27,7 +27,6 @@
 6 F401 leafmachine3/inference/ruler_lattice/analysis.py
 1 E741 leafmachine3/inference/ruler_lattice/engine.py
 1 F401 leafmachine3/inference/ruler_lattice/engine.py
-1 F841 leafmachine3/inference/ruler_lattice/engine.py
 5 E702 leafmachine3/inference/ruler_lattice/lattice.py
 3 E702 leafmachine3/inference/ruler_lattice/qc.py
 1 E702 leafmachine3/inference/ruler_lattice/sheet_cf.py
