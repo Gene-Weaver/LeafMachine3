@@ -5,7 +5,7 @@ This is the palette-picking harness behind ``modules.ect.palette`` and
 ``modules.ect.apply_log_to_visual_for_bold_color``: point it at a binary mask PNG and it writes the
 full cross-product of
 
-    {360, 720 directions} x {18 palettes} x {linear, log} x {cartesian, radial}
+    {360, 720 directions} x {24 palettes} x {linear, log} x {cartesian, radial}
 
 so the options can be compared side by side on a REAL leaf instead of guessed at from a colorbar.
 
@@ -60,21 +60,21 @@ from leafmachine3.reporting.ect_viz import (                   # noqa: E402
 PALETTES: tuple[str, ...] = (
     "bone", "gray", "pink", "magma", "viridis", "cividis", "winter", "cool", "summer", "spring",
     "YlGn", "Blues", "Greens", "Purples", "Greys", "Oranges", "Reds", "cubehelix",
+    "CMRmap", "plasma", "inferno", "nipy_spectral", "afmhot", "YlOrBr",
 )
 #: Every other built-in Matplotlib colormap, in the order of Matplotlib's "Choosing Colormaps" guide
 #: (sequential, diverging, cyclic, qualitative, miscellaneous). NOT recommended for the ECT -- the
 #: README shows them for fun. Render with ``--extras`` (360 directions is enough for the README).
 EXTRA_PALETTES: tuple[str, ...] = (
-    "plasma", "inferno",
-    "YlOrBr", "YlOrRd", "OrRd", "PuRd", "RdPu", "BuPu", "GnBu", "PuBu", "YlGnBu", "PuBuGn", "BuGn",
-    "autumn", "Wistia", "hot", "afmhot", "gist_heat", "copper",
+    "YlOrRd", "OrRd", "PuRd", "RdPu", "BuPu", "GnBu", "PuBu", "YlGnBu", "PuBuGn", "BuGn",
+    "autumn", "Wistia", "hot", "gist_heat", "copper",
     "PiYG", "PRGn", "BrBG", "PuOr", "RdGy", "RdBu", "RdYlBu", "RdYlGn", "Spectral", "coolwarm",
     "bwr", "seismic", "berlin", "managua", "vanimo",
     "twilight", "twilight_shifted", "hsv",
     "Pastel1", "Pastel2", "Paired", "Accent", "okabe_ito", "Dark2", "Set1", "Set2", "Set3",
     "tab10", "tab20", "tab20b", "tab20c",
     "flag", "prism", "ocean", "gist_earth", "terrain", "gist_stern", "gnuplot", "gnuplot2",
-    "CMRmap", "brg", "gist_rainbow", "rainbow", "jet", "turbo", "nipy_spectral", "gist_ncar",
+    "brg", "gist_rainbow", "rainbow", "jet", "turbo", "gist_ncar",
 )
 DIRS: tuple[int, ...] = (360, 720)
 SCALES: tuple[str, ...] = ("linear", "log")
@@ -124,7 +124,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dirs", type=int, nargs="+", default=list(DIRS),
                     help=f"direction counts to render (default: {' '.join(map(str, DIRS))})")
     ap.add_argument("--palettes", nargs="+", default=list(PALETTES),
-                    help="Matplotlib colormap names, CASE-SENSITIVE (default: all 18)")
+                    help="Matplotlib colormap names, CASE-SENSITIVE (default: all 24)")
     ap.add_argument("--extras", action="store_true",
                     help=f"render the {len(EXTRA_PALETTES)} EXTRA_PALETTES instead of --palettes")
     ap.add_argument("--scales", nargs="+", choices=SCALES, default=list(SCALES),
