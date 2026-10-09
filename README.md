@@ -55,6 +55,7 @@ reproduces every figure.*
   15. [Metric Grounding](#15-metric-grounding)
   16. [Reporter](#16-reporter)
   17. [Shape (ECT)](#17-shape-ect)
+- [Module Outputs](#module-outputs)
 - [Outputs](#outputs)
 - [Postprocessing Tools](#postprocessing-tools)
 - [Models](#models)
@@ -332,8 +333,8 @@ and everything downstream of it, then reruns them.
 ## In-Depth: the processing modules
 
 One block per module, in runtime pipeline order. ECT runs after Reporter because it consumes
-the oriented masks Reporter writes. Each gives what the module does, the model it
-runs if it has one, and what it produces. Model metrics are quoted from the Hugging Face model
+the oriented masks Reporter writes. Each gives what the module does and the model it runs if
+it has one; what each module writes is collected in [Module Outputs](#module-outputs). Model metrics are quoted from the Hugging Face model
 cards, which hold the full training details.
 
 ### 1. MP Conversion Factor
@@ -350,8 +351,6 @@ convert measurements; the `use_CF_predicted_by_MP` option of stage 7 makes it th
 | Trained on | 708 human ruler measurements, 549 sheets, 48 herbaria |
 | Accuracy | R² 0.905; mean absolute error 2.3 %, 95th percentile 7.5 % (in-sample) |
 
-*Output:* `specimen.cf_px_per_cm_predicted_by_mp`. CPU only; runs before any image is decoded.
-
 ### 2. Archival Detector
 
 Places bounding boxes around the non-plant components of the sheet: rulers, barcodes, color
@@ -367,8 +366,6 @@ screening a collection for envelopes or attached items).
 | Classes | 9: Ruler, Barcode, Colorcard, Label, Map, Envelope, Photo, Attached Item, Weights |
 | Trained on | 8,470 sheets from 67 annotation projects |
 | Accuracy | test mAP50 0.949, mAP50-95 0.775 (nano alternate: 0.884 / 0.678) |
-
-*Output:* `archival_detection` table; `Crops/RGB__<class>/` and `detections.csv`.
 
 ### 3. Plant Detector
 
@@ -391,9 +388,6 @@ The plant data set is far more heterogeneous than the archival one, so its mAP i
 was for LeafMachine2. What matters in practice is that a leaf the detector misses is never
 segmented or landmarked, so the detector is tuned for recall on whole leaves.
 
-*Output:* `plant_detection` table; `Leaf_Original/Leaf_BBox/` for leaves, `Crops/RGB__<class>/`
-for everything else.
-
 ### 4. Specimen Segmenter
 
 A whole-sheet plant-versus-background mask, independent of the plant boxes. It removes the paper,
@@ -413,17 +407,12 @@ BiRefNet scores slightly higher at the median and is markedly slower on CPU; YOL
 more of the paper enclosed by stems. Faint, dried-brown material on similarly colored paper is
 the known weak case for all three.
 
-*Output:* `specimen_mask` table; `Specimen_Masks/*_Specimen/` and `Overlay/Overlay_Specimen_Segmentation/`.
-
 ### 5. Phenology Detector
 
 Reads the plant detections to decide whether leaves, flowers, and fruits are present on the sheet.
 No model: it applies count thresholds to the Plant Detector's boxes. The output file is laid out
 like LeafMachine2's `phenology.csv` so existing phenology scripts read it unchanged; the two
 LeafMachine2 columns that LeafMachine3 does not produce (`leaflet`, `specimen`) are left blank.
-
-*Output:* `phenology` table; `has_leaves` / `has_flowers` / `has_fruits` on the specimen;
-`Data/phenology.csv`.
 
 ### 6. Ruler Classifier
 
@@ -449,8 +438,6 @@ The 18 classes, one squarified four-tile example each (the classifier's actual i
 | Trained on | 13,707 labeled ruler crops |
 | Accuracy | test accuracy 0.990 / 0.987 / 0.985 (balanced 0.980 / 0.974 / 0.978) for the three members |
 
-*Output:* `ruler_classification` table; `specimen.ruler_class_type`.
-
 ### 7. Ruler Conversion Factor
 
 Measures pixels per centimeter from the ruler's tick lattice. Rather than binarizing the ruler
@@ -461,9 +448,6 @@ otherwise the sheet is left unconverted rather than mis-converted. The QC panel 
 the lattice fit, and the verdict.
 
 ![Ruler lattice QC panels for the three specimens](docs/readme_github/ruler_cf_lattice.jpg)
-
-No model; CPU. *Output:* `ruler_CF_lattice` tables; `specimen.cf_px_per_cm` + `cf_source`;
-`Overlay/Overlay_Ruler_Lattice/` and `Data/ruler_conversion_factor.csv` (the verdict and why).
 
 #### When the ruler conversion factor fails
 
@@ -505,8 +489,6 @@ asked about. Holes and petioles are attached to their owning leaf.
 | Trained on | 16,895 single-leaf crops from 5 annotation projects |
 | Accuracy | test mask mAP50 0.726; per class Leaf 0.933, Petiole 0.818, Hole 0.429 |
 
-*Output:* `leaf_segmentation` table; `Specimen_Masks/*__Leaf/` per leaf and per sheet.
-
 ### 9. Morphology
 
 Shape metrics for every leaf mask, in the LeafMachine2 vocabulary: area, perimeter, centroid,
@@ -516,8 +498,7 @@ area including holes, excluding holes, total hole area, and hole count are all r
 
 ![Hole-aware lamina products: RGB, mask with holes removed, filled silhouette](docs/readme_github/morphology_holes.jpg)
 
-No model; CPU. The rotated-box method is selectable (`pca`, the default, `feret`, `lm2`,
-`minarearect`). *Output:* `leaf_morphology` table; the green rotated boxes on the summary overlay.
+The rotated-box method is selectable (`pca`, the default, `feret`, `lm2`, `minarearect`).
 
 ### 10. Landmark Detector
 
@@ -535,8 +516,6 @@ point with a confidence, so missing or occluded points are known to be missing.
 | Trained on | 15,217 single-leaf crops, 358,054 keypoint instances, 23 annotation projects |
 | Accuracy | test box mAP50 0.995; pose mAP50 0.763, mAP50-95 0.433 (OKS) |
 
-*Output:* `leaf_landmark` table (specimen and crop coordinates); `Data/landmarks.csv`.
-
 ### 11. Landmark Measurements
 
 Derives per-leaf biology from the keypoints: the midvein trace length and its straight-line
@@ -547,9 +526,6 @@ a low-confidence keypoint is left `NULL`; nothing is fabricated.
 
 ![Landmark overlays with the derived measurements for a second leaf per specimen](docs/readme_github/landmark_measurements.jpg)
 
-No model; CPU. *Output:* `leaf_landmark_measurement` table; the cyan/white/black lines and the
-measurement block on `Overlay/Overlay_Landmarks/`.
-
 ### 12. Leaf Orientation
 
 Computes the rotation that stands each leaf tip-up and base-down, from the lamina tip → base axis
@@ -558,9 +534,6 @@ mounted (`Leaf_Original/`) and oriented (`Leaf_Oriented/`). Oriented leaves are 
 and shape stages consume.
 
 ![As-mounted and oriented cutouts, one leaf per specimen](docs/readme_github/leaf_orientation.jpg)
-
-No model; CPU. *Output:* `oriented_leaf_rotation_angle_degreesCW` and `oriented_leaf_success` on
-`leaf_morphology`.
 
 ### 13. Petiole Width
 
@@ -571,9 +544,6 @@ checked by eye.
 
 ![Petiole width overlays, one leaf per specimen](docs/readme_github/petiole_width.jpg)
 
-No model; CPU. *Output:* `leaf_petiole` table (`width_px`, `length_px`, `touches_leaf`);
-`Overlay/Overlay_Petiole/`.
-
 ### 14. Bilateral Symmetry
 
 Scores how closely each oriented leaf mirrors itself across its traced midvein, and rolls that up
@@ -583,8 +553,6 @@ are not trustworthy. The Leaf Collage tool uses this ranking to pick leaves.
 
 ![Bilateral symmetry panels](docs/readme_github/bilateral_symmetry.jpg)
 
-No model; CPU. *Output:* `bilateral_symmetry` table; `Leaf_Data/Bilateral_Symmetry/`.
-
 ### 15. Metric Grounding
 
 Converts every pixel measurement to real units using the sheet's conversion factor: areas to
@@ -592,9 +560,6 @@ cm², lengths to cm. By default that is only a ruler factor the lattice stage pu
 confidence; sheets without one keep their pixel values, and their `_cm` columns are empty rather
 than wrong. With `use_CF_predicted_by_MP` on (stage 7), those sheets are grounded with the
 resolution estimate instead.
-
-No model; CPU. *Output:* the `_cm` and `_cm2` columns in `Data/leaf_measurements.csv`, with
-`cf_source` on each row saying where the factor came from.
 
 ### 16. Reporter
 
@@ -609,8 +574,6 @@ The seven per-leaf products: the detector crop, the lamina mask, the lamina + pe
 filled lamina silhouette, and RGB cutouts of each (the lamina-holes cutout keeps the tissue and
 paints holes a recoverable near-black).
 
-No model. *Output:* everything under `reports/`; see [Outputs](#outputs).
-
 ### 17. Shape (ECT)
 
 Computes the Euler Characteristic Transform of every oriented leaf, a topological shape
@@ -619,9 +582,6 @@ across leaves and taxa. Three images are written per leaf: the Cartesian ECT, it
 and the radial form with the leaf outline drawn over it, plus the raw coordinates as HDF5.
 
 ![ECT: oriented leaf, Cartesian ECT, radial ECT, radial ECT with outline](docs/readme_github/ect.jpg)
-
-No model; CPU. *Output:* `leaf_ect` table; `Leaf_Data/Oriented_Leaf_ECT/`,
-`Oriented_Leaf_Radial_ECT/`, `Oriented_Leaf_Radial_ECT_Overlay/`, `Coordinates/*.h5`.
 
 The transform is computed with the [`ect`](https://github.com/MunchLab/ect) Python package
 ([documentation](https://munchlab.github.io/ect/)). If you use the ECT outputs, please cite:
@@ -635,6 +595,34 @@ The transform is computed with the [`ect`](https://github.com/MunchLab/ect) Pyth
   <https://doi.org/10.21105/joss.09691>
 - Munch, E. (2025). An invitation to the Euler Characteristic Transform. *The American
   Mathematical Monthly*, 132(1), 15–25. <https://doi.org/10.1080/00029890.2024.2409616>
+
+---
+
+## Module Outputs
+
+What each module writes, in pipeline order: its database tables and specimen columns, and the
+report folders and CSVs built from them. The Model column says whether the stage runs a trained
+model (details in its [In-Depth](#in-depth-the-processing-modules) block) or is pure CPU code.
+
+| Module | Model | Output |
+|---|---|---|
+| 1. [MP Conversion Factor](#1-mp-conversion-factor) | fit (CPU; runs before any image is decoded) | `specimen.cf_px_per_cm_predicted_by_mp` |
+| 2. [Archival Detector](#2-archival-detector) | yes | `archival_detection` table; `Crops/RGB__<class>/` and `detections.csv` |
+| 3. [Plant Detector](#3-plant-detector) | yes | `plant_detection` table; `Leaf_Original/Leaf_BBox/` for leaves, `Crops/RGB__<class>/` for everything else |
+| 4. [Specimen Segmenter](#4-specimen-segmenter) | yes | `specimen_mask` table; `Specimen_Masks/*_Specimen/` and `Overlay/Overlay_Specimen_Segmentation/` |
+| 5. [Phenology Detector](#5-phenology-detector) | none (CPU) | `phenology` table; `has_leaves` / `has_flowers` / `has_fruits` on the specimen; `Data/phenology.csv` |
+| 6. [Ruler Classifier](#6-ruler-classifier) | yes | `ruler_classification` table; `specimen.ruler_class_type` |
+| 7. [Ruler Conversion Factor](#7-ruler-conversion-factor) | none (CPU) | `ruler_CF_lattice` tables; `specimen.cf_px_per_cm` + `cf_source`; `Overlay/Overlay_Ruler_Lattice/` and `Data/ruler_conversion_factor.csv` (the verdict and why) |
+| 8. [Leaf Segmenter](#8-leaf-segmenter) | yes | `leaf_segmentation` table; `Specimen_Masks/*__Leaf/` per leaf and per sheet |
+| 9. [Morphology](#9-morphology) | none (CPU) | `leaf_morphology` table; the green rotated boxes on the summary overlay |
+| 10. [Landmark Detector](#10-landmark-detector) | yes | `leaf_landmark` table (specimen and crop coordinates); `Data/landmarks.csv` |
+| 11. [Landmark Measurements](#11-landmark-measurements) | none (CPU) | `leaf_landmark_measurement` table; the cyan/white/black lines and the measurement block on `Overlay/Overlay_Landmarks/` |
+| 12. [Leaf Orientation](#12-leaf-orientation) | none (CPU) | `oriented_leaf_rotation_angle_degreesCW` and `oriented_leaf_success` on `leaf_morphology` |
+| 13. [Petiole Width](#13-petiole-width) | none (CPU) | `leaf_petiole` table (`width_px`, `length_px`, `touches_leaf`); `Overlay/Overlay_Petiole/` |
+| 14. [Bilateral Symmetry](#14-bilateral-symmetry) | none (CPU) | `bilateral_symmetry` table; `Leaf_Data/Bilateral_Symmetry/` |
+| 15. [Metric Grounding](#15-metric-grounding) | none (CPU) | the `_cm` and `_cm2` columns in `Data/leaf_measurements.csv`, with `cf_source` on each row saying where the factor came from |
+| 16. [Reporter](#16-reporter) | none | everything under `reports/`; see [Outputs](#outputs) |
+| 17. [Shape (ECT)](#17-shape-ect) | none (CPU) | `leaf_ect` table; `Leaf_Data/Oriented_Leaf_ECT/`, `Oriented_Leaf_Radial_ECT/`, `Oriented_Leaf_Radial_ECT_Overlay/`, `Coordinates/*.h5` |
 
 ---
 
