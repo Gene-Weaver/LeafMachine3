@@ -5,7 +5,7 @@ This is the palette-picking harness behind ``modules.ect.palette`` and
 ``modules.ect.apply_log_to_visual_for_bold_color``: point it at a binary mask PNG and it writes the
 full cross-product of
 
-    {360, 720 directions} x {17 palettes} x {linear, log} x {cartesian, radial}
+    {360, 720 directions} x {18 palettes} x {linear, log} x {cartesian, radial}
 
 so the options can be compared side by side on a REAL leaf instead of guessed at from a colorbar.
 
@@ -55,7 +55,7 @@ from leafmachine3.reporting.ect_viz import (                   # noqa: E402
 #: Perceptually-uniform, sequential, and single-hue families worth auditing for the ECT.
 PALETTES: tuple[str, ...] = (
     "bone", "gray", "pink", "magma", "viridis", "cividis", "winter", "cool", "summer", "spring",
-    "YlGn", "Blues", "Greens", "Purples", "Greys", "Oranges", "Reds",
+    "YlGn", "Blues", "Greens", "Purples", "Greys", "Oranges", "Reds", "cubehelix",
 )
 DIRS: tuple[int, ...] = (360, 720)
 SCALES: tuple[str, ...] = ("linear", "log")
@@ -105,7 +105,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dirs", type=int, nargs="+", default=list(DIRS),
                     help=f"direction counts to render (default: {' '.join(map(str, DIRS))})")
     ap.add_argument("--palettes", nargs="+", default=list(PALETTES),
-                    help="Matplotlib colormap names, CASE-SENSITIVE (default: all 17)")
+                    help="Matplotlib colormap names, CASE-SENSITIVE (default: all 18)")
     ap.add_argument("--scales", nargs="+", choices=SCALES, default=list(SCALES),
                     help="linear and/or log (default: both)")
     args = ap.parse_args(argv)
