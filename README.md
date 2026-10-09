@@ -355,10 +355,14 @@ factor is reported in both frames, and `_cm` values are frame-independent.
 [FieldPrism](https://fieldprism.org/) ([iOS](https://apps.apple.com/us/app/fieldprism/id6761267750),
 [Android](https://play.google.com/apps/testing/com.leafmachine.fieldprism)) photographs plants on a
 printed field sheet with a photogrammetric marker near each corner, then rectifies the photo so
-the sheet is square to the camera. It is described in Weaver, W. N., and S. A. Smith (2023),
+the sheet is square to the camera. FieldPrism is described in this publication but has been updated since. The Android and iOS apps replace the apparatus described in the paper.
+
+Weaver, W. N., and S. A. Smith (2023),
 FieldPrism: A system for creating snapshot vouchers from field images using photogrammetric
 markers and QR codes, *Applications in Plant Sciences* 11(5): e11545,
-<https://doi.org/10.1002/aps3.11545>. LeafMachine3 reads the app's processed images directly.
+<https://doi.org/10.1002/aps3.11545>
+
+LeafMachine3 reads the app's processed images directly.
 Put the app's rectified output (the `FPfit` images) in your input folder; nothing needs
 configuring.
 
