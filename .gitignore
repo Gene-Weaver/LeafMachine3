@@ -125,3 +125,6 @@ tests/test_global_greening_wrapper.py
 
 # A local test image, not shipped.
 /examples/images/15_1_FPfit.JPG
+
+# Local ECT experiment (inverted leaf mask), not shipped.
+/examples/ECT_inverse/
