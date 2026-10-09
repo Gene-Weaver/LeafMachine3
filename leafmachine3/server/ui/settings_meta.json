@@ -359,6 +359,17 @@
           "blurb": "The whole-sheet specimen mask overlay and its colors."
         }
       ]
+    },
+    {
+      "id": "momocs",
+      "label": "Momocs Export",
+      "blurb": "Every leaf as a Momocs-ready image and outline, for the R morphometrics packages Momocs and Momocs2.",
+      "keys": [
+        "modules.momocs"
+      ],
+      "stage": "momocs",
+      "phase": "output",
+      "order": 18
     }
   ],
   "version": {
@@ -1877,6 +1888,75 @@
     "type": "bool",
     "important": false,
     "group": "ECT"
+  },
+  "modules.momocs.enabled": {
+    "label": "Enabled",
+    "help": "Write every leaf as a Momocs-ready image and outline for the R packages Momocs and Momocs2.",
+    "type": "bool",
+    "important": false,
+    "group": "Momocs"
+  },
+  "modules.momocs.include_petiole": {
+    "label": "Include petiole",
+    "help": "Trace the lamina plus its petiole instead of the lamina alone. Leaves with no detected petiole are left out, so every outline in the run describes the same part. Holes are always filled.",
+    "type": "bool",
+    "important": false,
+    "group": "Momocs"
+  },
+  "modules.momocs.oriented": {
+    "label": "Use oriented leaves",
+    "help": "Use LM3's tip-up leaves. Off uses each leaf as it lay on the sheet. When on, leaves that could not be oriented are left out.",
+    "type": "bool",
+    "important": false,
+    "group": "Momocs"
+  },
+  "modules.momocs.pad_px": {
+    "label": "White border (px)",
+    "help": "White margin around each leaf. Both R importers trace the wrong shape, without an error, when a leaf touches the image edge.",
+    "type": "int",
+    "min": 2,
+    "max": 200,
+    "important": false,
+    "group": "Momocs"
+  },
+  "modules.momocs.largest_component_only": {
+    "label": "Keep largest piece only",
+    "help": "Drop stray fragments so the R importers trace the leaf rather than a speck.",
+    "type": "bool",
+    "important": false,
+    "group": "Momocs"
+  },
+  "modules.momocs.jpg_quality": {
+    "label": "JPEG quality",
+    "help": "Quality of the leaf images. Momocs reads JPEG only; 100 keeps the edges crisp.",
+    "type": "int",
+    "min": 50,
+    "max": 100,
+    "important": false,
+    "group": "Momocs"
+  },
+  "modules.momocs.outline_points": {
+    "label": "Outline points",
+    "help": "Points per outline in the JSON files. 0 keeps every boundary pixel, as Momit's from_mask does; any other number resamples each outline evenly to that many points.",
+    "type": "int",
+    "min": 0,
+    "max": 10000,
+    "important": false,
+    "group": "Momocs"
+  },
+  "modules.momocs.write_fac_csv": {
+    "label": "Write grouping table",
+    "help": "momocs_fac.csv: one row per leaf image (sheet, leaf, box, orientation, scale), to pass to Out(fac = ...) in Momocs.",
+    "type": "bool",
+    "important": false,
+    "group": "Momocs"
+  },
+  "modules.momocs.write_momit_json": {
+    "label": "Write combined JSON",
+    "help": "momocs_outlines.json: every outline in the run in Momit's format, for Momit::from_json (Momocs2) or Momit::to_Momocs (Momocs).",
+    "type": "bool",
+    "important": false,
+    "group": "Momocs"
   },
   "report.overlay.enabled": {
     "label": "Write summary overlay",

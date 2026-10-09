@@ -56,7 +56,7 @@ const LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"];
 const LEVEL_RANK = { DEBUG: 0, INFO: 1, SUCCESS: 1, WARNING: 2, ERROR: 3, CRITICAL: 4 };
 
 /**
- * The 16 LM3 modules in canonical order, with a one-line description of what
+ * The 18 LM3 modules in canonical order, with a one-line description of what
  * each actually does (written from the module docstrings, not invented).
  *
  * The live names/order always come from the snapshot; this table supplies the
@@ -90,12 +90,16 @@ const MODULE_INFO = [
    "Works out the rotation that stands each leaf tip-up, from its keypoints, for the oriented leaf products."],
   ["petiole_width", "Petiole Width",
    "Measures petiole thickness perpendicular to the landmark centerline and reports the median."],
+  ["bilateral_symmetry", "Bilateral Symmetry",
+   "Measures how well each oriented leaf mirrors about its traced midvein, and ranks leaves by an archetype score for choosing figure exemplars."],
   ["metric_grounding", "Metric Grounding",
    "Applies each sheet's conversion factor to the stored pixel measurements, turning them into cm and cm²."],
   ["reporter", "Reporter",
    "Renders every requested output — overlays, crops, masks and leaf products — from the stored records and the originals."],
   ["ect", "ECT",
    "Computes the Euler Characteristic Transform of each oriented leaf and writes its radial and Cartesian views."],
+  ["momocs", "Momocs",
+   "Writes every leaf as a padded black-on-white image plus Momit JSON outlines, ready for the R packages Momocs and Momocs2."],
 ];
 
 const INFO_BY_KEY = new Map(MODULE_INFO.map(([k, name, blurb]) => [k, { key: k, name, blurb }]));

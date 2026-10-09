@@ -44,6 +44,7 @@ TABLES = {
     "leaf_petiole": (["instance_index"], {"petiole_id", "leaf_id", "specimen_id", "detection_id", "created_at", "width_segment_json", "sample_segments_json"}),
     "bilateral_symmetry": (["instance_index"], {"bsym_id", "leaf_id", "specimen_id", "detection_id", "created_at", "qc_png", "midvein_json", "reasons_json"}),
     "leaf_ect": (["instance_index"], {"leaf_id", "specimen_id", "detection_id", "created_at", "h5_path", "radial_png", "ect_png", "overlay_png"}),
+    "leaf_momocs": (["instance_index"], {"leaf_id", "specimen_id", "detection_id", "created_at", "source_mask", "mask_path", "json_path"}),
     "image_status": (["stage_key"], {"specimen_id", "updated_at"}),
 }
 

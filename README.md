@@ -57,6 +57,7 @@ reproduces every figure.*
   15. [Metric Grounding](#15-metric-grounding)
   16. [Reporter](#16-reporter)
   17. [Shape (ECT)](#17-shape-ect)
+  18. [Momocs Export](#18-momocs-export)
 - [Module Outputs](#module-outputs)
 - [Outputs](#outputs)
 - [Postprocessing Tools](#postprocessing-tools)
@@ -78,7 +79,7 @@ rebuilds every step on current models and a runtime that is simpler to install a
 - **Output:** a per-specimen summary overlay for quality control, cropped components, per-leaf
   masks and cutouts (as mounted and oriented tip-up), and CSV tables with one row per leaf, per
   specimen, per detection, and per landmark.
-- **Pipeline:** seventeen modules run in a fixed order, each one feeding the next. The first two
+- **Pipeline:** eighteen modules run in a fixed order, each one feeding the next. The first two
   detectors place bounding boxes around plant and archival components; everything downstream
   works on those crops. Every module can be switched off individually.
 
@@ -86,7 +87,7 @@ rebuilds every step on current models and a runtime that is simpler to install a
 MP Conversion Factor → Archival Detector → Plant Detector → Specimen Segmenter → Phenology Detector
 → Ruler Classifier → Ruler Conversion Factor → Leaf Segmenter → Morphology → Landmark Detector
 → Landmark Measurements → Leaf Orientation → Petiole Width → Bilateral Symmetry
-→ Metric Grounding → Reporter → Shape (ECT)
+→ Metric Grounding → Reporter → Shape (ECT) → Momocs Export
 ```
 
 **What changed from LeafMachine2**
@@ -211,7 +212,7 @@ Six tabs, left to right:
 | **Postprocessing** | standalone tools that run on a finished run (STL export, leaf collage) |
 
 Set the **input folder**, name the **project**, press **Start LM3**. The stage bar across the top
-mirrors the seventeen modules and fills in as the run advances.
+mirrors the eighteen modules and fills in as the run advances.
 
 ![Live Status tab during a run](docs/readme_github/gui_live_status.jpg)
 
@@ -296,6 +297,7 @@ runs/<run_name>/
     Crops/                   RGB crops of every non-leaf detection (rulers, labels, fruits, ...)
     Specimen_Masks/          whole-sheet and per-leaf binary masks and RGB cutouts
     Leaf_Data/               bilateral symmetry panels, ECT images and coordinates
+    Leaf_Momocs/             every leaf as a Momocs-ready image, plus outlines for the R packages Momocs and Momocs2
     Data/                    the numbers: leaf_measurements.csv is the one to open first
   logs/
 ```
@@ -319,7 +321,7 @@ and, if its long side exceeds the working limit, downsampled into a working copy
 module measures on. Every pixel value in the outputs is in that working frame; `work_scale` on
 every row converts back.
 
-**Modules.** The seventeen modules in pipeline order, each with an **Enabled** switch and its own
+**Modules.** The eighteen modules in pipeline order, each with an **Enabled** switch and its own
 settings. Disabled modules are marked complete without doing work; enabled downstream modules
 still run, but may have no inputs. Turn off dependent modules too when you do not need them.
 
@@ -437,8 +439,8 @@ In the Settings tab these live under **Scale › Ruler Conversion Factor › Fie
 
 ## In-Depth: the processing modules
 
-One block per module, in runtime pipeline order. ECT runs after Reporter because it consumes
-the oriented masks Reporter writes. Each gives what the module does and the model it runs if
+One block per module, in runtime pipeline order. ECT and Momocs Export run after Reporter because
+they consume the leaf masks Reporter writes. Each gives what the module does and the model it runs if
 it has one; what each module writes is collected in [Module Outputs](#module-outputs). Model metrics are quoted from the Hugging Face model
 cards, which hold the full training details.
 
@@ -804,6 +806,47 @@ ECT. Every palette and view for all five sample leaves is in
   <tr><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__jet__linear.png" width="120" alt="jet linear"><br><sub>linear</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__jet__log.png" width="120" alt="jet log"><br><sub>log</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__turbo__linear.png" width="120" alt="turbo linear"><br><sub>linear</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__turbo__log.png" width="120" alt="turbo log"><br><sub>log</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__gist_ncar__linear.png" width="120" alt="gist_ncar linear"><br><sub>linear</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__gist_ncar__log.png" width="120" alt="gist_ncar log"><br><sub>log</sub></td></tr>
 </table>
 
+### 18. Momocs Export
+
+Writes every leaf in the formats read by the R morphometrics packages
+[Momocs](https://github.com/MomX/Momocs) (legacy, still on CRAN) and its rewrite
+[Momocs2](https://github.com/MomX/Momocs2), which imports through
+[Momit](https://github.com/MomX/Momit). It reads the Reporter's holes-filled leaf masks and writes,
+under `reports/Leaf_Momocs/`:
+
+- one JPG per leaf: the leaf in black on white, padded by a white border;
+- `momocs_fac.csv`: one row per JPG (sheet, leaf, detection box, rotation, scale), the grouping table;
+- `momocs_outlines.json`: every outline in the run in Momit's JSON format, plus one such file per
+  sheet in `Momit_JSON/`.
+
+Either route loads the same outlines:
+
+```r
+library(Momocs)
+coo <- import_jpg(list.files("reports/Leaf_Momocs", "jpg$", full.names = TRUE))
+fac <- read.csv("reports/Leaf_Momocs/momocs_fac.csv")
+leaves <- Out(coo, fac = fac[match(names(coo), fac$id), ])
+
+tb <- Momit::from_json("reports/Leaf_Momocs/momocs_outlines.json")   # a Momocs2 table
+leaves <- Momit::to_Momocs(tb)                                       # or a legacy Momocs Out
+```
+
+The image format is fixed because each alternative goes wrong in R without an error. Unpadded masks
+that touch the image edge, white-on-black masks, open holes, and coordinates with y increasing
+downward all import as the wrong shape. Outlines start at the lowest point (the base of a tip-up
+leaf) and run clockwise, as Momocs `import_jpg` traces them.
+
+`modules.momocs.include_petiole` (default off) traces the lamina plus petiole and leaves out leaves
+with no petiole. `oriented` (default on) uses LM3's tip-up leaves; for those, run
+`efourier(..., norm = FALSE)`, because the default normalization turns them on their side. Momocs
+1.5.0's `coo_baseline` rotates in the wrong direction unless a shape already lies along the
+x axis; Momocs2's version is correct.
+
+If you use these outputs, please cite:
+
+> Bonhomme, V., Picq, S., Gaucherel, C., & Claude, J. (2014). Momocs: Outline analysis using R.
+> *Journal of Statistical Software*, 56(13), 1–24. <https://doi.org/10.18637/jss.v056.i13>
+
 ---
 
 ## Module Outputs
@@ -832,6 +875,7 @@ CPU code.
 | 15. [Metric Grounding](#15-metric-grounding) | none (CPU) | the `_cm` and `_cm2` columns in `Data/leaf_measurements.csv`, with `cf_source` on each row saying where the factor came from |
 | 16. [Reporter](#16-reporter) | none | everything under `reports/`; see [Outputs](#outputs) |
 | 17. [Shape (ECT)](#17-shape-ect) | none (CPU) | `leaf_ect` table; `Leaf_Data/Oriented_Leaf_ECT/`, `Oriented_Leaf_Radial_ECT/`, `Oriented_Leaf_Radial_ECT_Overlay/`, `Coordinates/*.h5` |
+| 18. [Momocs Export](#18-momocs-export) | none (CPU) | `leaf_momocs` table; `Leaf_Momocs/*.jpg`, `momocs_fac.csv`, `momocs_outlines.json`, `Momit_JSON/<stem>.json` |
 
 ---
 
@@ -852,6 +896,8 @@ reports/
   Crops/RGB__<class>/              every non-leaf detection
   Specimen_Masks/                  whole-sheet and per-leaf masks, binary and RGB
   Leaf_Data/                       Bilateral_Symmetry/, Oriented_Leaf_ECT/, ..., Coordinates/
+  Leaf_Momocs/                     <stem>__or-MOMOCS-lamina__x_y_x_y.jpg per leaf, momocs_fac.csv,
+                                   momocs_outlines.json, Momit_JSON/<stem>.json per sheet
   Data/                            CSV export (below)
 ```
 

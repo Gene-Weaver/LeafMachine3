@@ -1,5 +1,5 @@
 /* ==========================================================================
-   LM3 — THE 17 MODULES, once.
+   LM3 — THE 18 MODULES, once.
    --------------------------------------------------------------------------
    Canonical order + device/exec facts, mirroring pipeline.STAGE_ORDER and
    progress_api.module_table(). Held statically HERE, in its own module, because
@@ -14,7 +14,7 @@
    user nothing. Live data is merged over this table by key, and any module the
    server reports that we do not know about is appended rather than dropped.
 
-   `short` exists because 17 full names do not fit across a 1400 px window at
+   `short` exists because 18 full names do not fit across a 1400 px window at
    10.5 px; the full name is always in the tooltip.
 
    ADDING A MODULE is three edits that a test enforces (tests/test_settings_ui.py):
@@ -59,6 +59,7 @@ export const MODULES = [
   { key: "ect",                   name: "Shape (ECT)",             short: "ECT",         order: 17, phase: "leaf",   railOrder: 15, device: "cpu", exec: "process", depends: ["reporter"] },
   { key: "metric_grounding",      name: "Metric Grounding",        short: "Grounding",   order: 15, phase: "output", railOrder: 16, device: "cpu", exec: "thread",  depends: ["ruler_cf", "leaf_segmenter", "petiole_width"] },
   { key: "reporter",              name: "Reporter",                short: "Reporter",    order: 16, phase: "output", railOrder: 17, device: "cpu", exec: "thread",  depends: ["archival_detector", "plant_detector", "specimen_segmenter", "phenology_detector", "ruler_classifier", "ruler_cf", "leaf_segmenter", "morphology", "landmark_detector", "landmark_measurements", "leaf_orientation", "petiole_width", "metric_grounding"] },
+  { key: "momocs",                name: "Momocs Export",           short: "Momocs",      order: 18, phase: "output", railOrder: 18, device: "cpu", exec: "thread",  depends: ["reporter"] },
 ];
 
 /** key -> module record. */

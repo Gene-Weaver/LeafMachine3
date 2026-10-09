@@ -117,6 +117,8 @@ modules:
   ect: {enabled: true, include_petiole: false, include_holes: false, num_dirs: 360, bound_radius: 1, palette: CMRmap,
     apply_log_to_visual_for_bold_color: true, radial_viz: true, cartesian_viz: true, radial_overlay_viz: true,
     outline_simple: true, simplify_tolerance: 0.0025, simplify_cutoff: 500, export_literal_coords: false}
+  momocs: {enabled: true, include_petiole: false, oriented: true, pad_px: 10, largest_component_only: true,
+    jpg_quality: 100, outline_points: 0, write_fac_csv: true, write_momit_json: true}
 report:
   overlay:
     enabled: true

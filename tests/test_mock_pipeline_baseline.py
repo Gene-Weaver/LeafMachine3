@@ -158,6 +158,11 @@ def _baseline_config(images_dir: Path, output_dir: Path) -> dict:
             # installing it is not a prerequisite this baseline is allowed to impose.
             "ect": {"enabled": False, "num_dirs": 64, "radial_viz": True, "cartesian_viz": True,
                     "radial_overlay_viz": True},
+            # ON: unlike ECT it needs no third-party package (cv2 + numpy only). Pinned in full so a
+            # change to builtin_defaults()["modules"]["momocs"] cannot move the baseline.
+            "momocs": {"enabled": True, "include_petiole": False, "oriented": True, "pad_px": 10,
+                       "largest_component_only": True, "jpg_quality": 100, "outline_points": 0,
+                       "write_fac_csv": True, "write_momit_json": True},
         },
         "naming": {
             "bbox_prefix": "BBOX",
@@ -468,6 +473,7 @@ _META = {
     "recorded_by": "tests/test_mock_pipeline_baseline.py",
     "ect_module": "disabled -- the third-party `ect` package is not installed in this interpreter; "
                   "the baseline must not require installing it (see the module docstring)",
+    "momocs_module": "enabled -- needs no third-party package; settings pinned in _baseline_config",
     "excluded_from_fingerprint": [
         "timestamps (ingested_at, started_at, finished_at, updated_at, orig_mtime)",
         "absolute paths (original_path, working_path, crop_path, ...)",

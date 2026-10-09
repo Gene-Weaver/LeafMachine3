@@ -97,9 +97,11 @@ _STAGE_META: tuple[tuple[str, str, str, str], ...] = (
     ("landmark_measurements", "Landmark Measurements", "cpu", "thread"),
     ("leaf_orientation", "Leaf Orientation", "cpu", "thread"),
     ("petiole_width", "Petiole Width", "cpu", "thread"),
+    ("bilateral_symmetry", "Bilateral Symmetry", "cpu", "process"),
     ("metric_grounding", "Metric Grounding", "cpu", "thread"),
     ("reporter", "Reporter", "cpu", "thread"),
     ("ect", "ECT", "cpu", "process"),
+    ("momocs", "Momocs", "cpu", "thread"),
 )
 
 

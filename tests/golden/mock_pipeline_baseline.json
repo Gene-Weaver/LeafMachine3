@@ -8,6 +8,7 @@
       "SQLite -wal / -shm sidecars, whose presence is checkpoint timing"
     ],
     "gate": "plan §8 gate 60 -- the deterministic mock pipeline's DB rows, resume behavior, and output inventory match the pre-refactor baseline",
+    "momocs_module": "enabled -- needs no third-party package; settings pinned in _baseline_config",
     "n_specimens": 2,
     "plan_step": "§4 Step 1 -- Characterization, isolation, and path unification",
     "recorded_by": "tests/test_mock_pipeline_baseline.py",
@@ -61,6 +62,12 @@
       [
         "specimen_00",
         "metric_grounding",
+        "done",
+        0
+      ],
+      [
+        "specimen_00",
+        "momocs",
         "done",
         0
       ],
@@ -163,6 +170,12 @@
       [
         "specimen_01",
         "metric_grounding",
+        "done",
+        0
+      ],
+      [
+        "specimen_01",
+        "momocs",
         "done",
         0
       ],
@@ -282,6 +295,14 @@
       "reports/Data/run_stages.csv",
       "reports/Data/specimen_summary.csv",
       "reports/Data/stage_errors.csv",
+      "reports/Leaf_Momocs/",
+      "reports/Leaf_Momocs/Momit_JSON/",
+      "reports/Leaf_Momocs/Momit_JSON/specimen_00.json",
+      "reports/Leaf_Momocs/Momit_JSON/specimen_01.json",
+      "reports/Leaf_Momocs/momocs_fac.csv",
+      "reports/Leaf_Momocs/momocs_outlines.json",
+      "reports/Leaf_Momocs/specimen_00__or-MOMOCS-lamina__70_90_294_396.jpg",
+      "reports/Leaf_Momocs/specimen_01__or-MOMOCS-lamina__70_90_294_396.jpg",
       "reports/Leaf_Oriented/",
       "reports/Leaf_Oriented/LaminaPetiole_Mask/",
       "reports/Leaf_Oriented/LaminaPetiole_Mask/specimen_00__or-SEG-laminaPetiole__70_90_294_396.png",
@@ -487,6 +508,13 @@
         "done",
         2,
         2
+      ],
+      [
+        "momocs",
+        18,
+        "done",
+        2,
+        2
       ]
     ],
     "report_manifest_kinds": {
@@ -550,6 +578,14 @@
       "reports/Data/run_stages.csv",
       "reports/Data/specimen_summary.csv",
       "reports/Data/stage_errors.csv",
+      "reports/Leaf_Momocs/",
+      "reports/Leaf_Momocs/Momit_JSON/",
+      "reports/Leaf_Momocs/Momit_JSON/specimen_00.json",
+      "reports/Leaf_Momocs/Momit_JSON/specimen_01.json",
+      "reports/Leaf_Momocs/momocs_fac.csv",
+      "reports/Leaf_Momocs/momocs_outlines.json",
+      "reports/Leaf_Momocs/specimen_00__or-MOMOCS-lamina__70_90_294_396.jpg",
+      "reports/Leaf_Momocs/specimen_01__or-MOMOCS-lamina__70_90_294_396.jpg",
       "reports/Leaf_Oriented/",
       "reports/Leaf_Oriented/LaminaPetiole_Mask/",
       "reports/Leaf_Oriented/LaminaPetiole_Mask/specimen_00__or-SEG-laminaPetiole__70_90_294_396.png",
@@ -687,18 +723,19 @@
     "table_row_counts": {
       "archival_detection": 6,
       "bilateral_symmetry": 2,
-      "image_status": 34,
+      "image_status": 36,
       "landmark_schema": 31,
       "landmark_skeleton": 28,
       "leaf_ect": 0,
       "leaf_landmark": 62,
       "leaf_landmark_measurement": 2,
+      "leaf_momocs": 2,
       "leaf_morphology": 2,
       "leaf_petiole": 2,
       "leaf_segmentation": 6,
       "phenology": 2,
       "plant_detection": 6,
-      "project_status": 17,
+      "project_status": 18,
       "report_manifest": 62,
       "ruler_CF_lattice": 2,
       "ruler_CF_lattice_crop": 2,

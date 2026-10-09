@@ -7,6 +7,7 @@ overlay, then runs it a SECOND time and asserts the run resumes cleanly (no dupl
 from __future__ import annotations
 
 import csv as _csv
+import json
 import sqlite3
 from pathlib import Path
 
@@ -155,6 +156,16 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         # ECT stage: at least one oriented leaf got an ECT (loaded from the Reporter's Leaf_Oriented masks)
         ect_rows = list(conn.execute("SELECT h5_path, mask_includes, num_dirs FROM leaf_ect"))
         assert ect_rows and all(r["mask_includes"] == "lamina" for r in ect_rows)
+
+        # Momocs stage: every exported leaf has its JPG on disk, listed in the run-level files
+        mom_rows = list(conn.execute("SELECT mask_path, json_path, tree, mask_includes FROM leaf_momocs"))
+        assert mom_rows and all(r["tree"] == "Leaf_Oriented" and r["mask_includes"] == "lamina" for r in mom_rows)
+        assert all(Path(r["mask_path"]).is_file() and Path(r["json_path"]).is_file() for r in mom_rows)
+        mom_dir = Path(mom_rows[0]["mask_path"]).parent
+        fac = (mom_dir / "momocs_fac.csv").read_text().splitlines()
+        assert len(fac) == len(mom_rows) + 1                  # header + one row per image
+        run_json = json.loads((mom_dir / "momocs_outlines.json").read_text())
+        assert run_json["metadata"]["n_rows"] == len(mom_rows)
     finally:
         conn.close()
 

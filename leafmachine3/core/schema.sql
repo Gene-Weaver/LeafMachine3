@@ -335,6 +335,23 @@ CREATE TABLE IF NOT EXISTS leaf_ect (
 );
 CREATE INDEX IF NOT EXISTS ix_ect_spec ON leaf_ect (specimen_id);
 
+-- leaf_momocs : one Momocs/Momocs2-ready image per leaf (Momocs stage), read from the Reporter's
+-- holes-filled leaf-product mask. mask_path / json_path are this stage's own files; source_mask is the
+-- Reporter's (a foreign reference, never deleted with this table).
+CREATE TABLE IF NOT EXISTS leaf_momocs (
+    leaf_id      INTEGER PRIMARY KEY REFERENCES leaf_segmentation(leaf_id) ON DELETE CASCADE,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    detection_id INTEGER, instance_index INTEGER,
+    tree          TEXT,                         -- Leaf_Oriented | Leaf_Original
+    mask_includes TEXT,                         -- lamina | lamina_petiole   (holes always filled)
+    source_mask  TEXT,                          -- reports/<tree>/<product>/<leaf>.png (Reporter's)
+    mask_path    TEXT,                          -- reports/Leaf_Momocs/<leaf>.jpg (black leaf on white)
+    json_path    TEXT,                          -- reports/Leaf_Momocs/Momit_JSON/<sheet>.json
+    n_outline_points INTEGER, image_width INTEGER, image_height INTEGER,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_momocs_spec ON leaf_momocs (specimen_id);
+
 -- project_status : stage-level ledger. Drives whole-module skip + config-drift + restart.
 CREATE TABLE IF NOT EXISTS project_status (
     stage_key   TEXT PRIMARY KEY,              -- canonical STAGE_KEYS, seeded at init

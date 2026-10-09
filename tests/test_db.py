@@ -46,7 +46,7 @@ def test_schema_seeds_project_status(db: ProjectDB) -> None:
         "mp_conversion_factor", "archival_detector", "plant_detector", "specimen_segmenter",
         "phenology_detector", "ruler_classifier", "ruler_cf", "leaf_segmenter", "morphology",
         "landmark_detector", "landmark_measurements", "leaf_orientation", "petiole_width",
-        "bilateral_symmetry", "metric_grounding", "reporter", "ect",
+        "bilateral_symmetry", "metric_grounding", "reporter", "ect", "momocs",
     ]
     assert all(r["state"] == "pending" for r in rows)
 

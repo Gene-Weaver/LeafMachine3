@@ -141,6 +141,9 @@ _CATEGORY_BLURB: dict[str, str] = {
     "Leaf_Data/Oriented_Leaf_Radial_ECT_Overlay":
         "Polar Euler Characteristic Transform with the traced leaf outline drawn on top, tip up in both.",
     "Leaf_Data": "Shape-analysis products from the ECT module.",
+    "Leaf_Momocs/Momit_JSON": "Each sheet's leaf outlines in Momit's JSON format, read by Momit::from_json in R.",
+    "Leaf_Momocs": "Every leaf as a padded black-on-white JPG for Momocs import_jpg, with momocs_fac.csv "
+                   "(the grouping table) and momocs_outlines.json (all outlines, for Momocs2 via Momit).",
     "Collage": "Leaf collages from the postprocessing tab: the run's high-scoring leaves tiled "
                "into the shape of one primary mask, each PNG paired with a .json of its leaves.",
     "Data": "The run's measurements as CSV: one row per leaf in leaf_measurements.csv, plus "

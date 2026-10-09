@@ -52,6 +52,7 @@ CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "metric_grounding",
     "reporter",
     "ect",
+    "momocs",
 )
 
 # Stages that require an exported single-file model artifact when enabled.
@@ -289,6 +290,11 @@ def builtin_defaults() -> dict[str, Any]:
             "metric_grounding": {"enabled": True},
             "reporter": {"enabled": True},
             "ect": {"enabled": True},
+            # Every knob, not just `enabled`: the settings form renders only leaves of the MERGED
+            # tree, and existing LM3_settings.yaml files predate this block.
+            "momocs": {"enabled": True, "include_petiole": False, "oriented": True, "pad_px": 10,
+                       "largest_component_only": True, "jpg_quality": 100, "outline_points": 0,
+                       "write_fac_csv": True, "write_momit_json": True},
         },
         # NB: no EMPTY "report" mapping. An empty mapping is not a no-op here -- the
         # settings form walks the merged tree and treats a childless dict as a LEAF,

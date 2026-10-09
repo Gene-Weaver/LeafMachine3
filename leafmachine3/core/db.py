@@ -64,9 +64,11 @@ _CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "landmark_measurements",
     "leaf_orientation",
     "petiole_width",
+    "bilateral_symmetry",
     "metric_grounding",
     "reporter",
     "ect",
+    "momocs",
 )
 
 # Duplicated specimen/leaf columns each stage OWNS -- nulled when that stage is reset.
@@ -1101,6 +1103,31 @@ class ProjectDB:
     def leaf_ect(self, specimen_id: int) -> list[sqlite3.Row]:
         return self._query("SELECT * FROM leaf_ect WHERE specimen_id = ? ORDER BY leaf_id", (specimen_id,))
 
+    def record_leaf_momocs(self, specimen_id: int, rows) -> None:
+        """Delete-then-insert this specimen's ``leaf_momocs`` rows (one per exported leaf image)."""
+        self._exec("DELETE FROM leaf_momocs WHERE specimen_id = ?", (specimen_id,))
+        for r in rows:
+            self._exec(
+                """
+                INSERT INTO leaf_momocs
+                    (leaf_id, specimen_id, detection_id, instance_index, tree, mask_includes,
+                     source_mask, mask_path, json_path, n_outline_points, image_width, image_height)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (int(r["leaf_id"]), int(specimen_id), r.get("detection_id"), r.get("instance_index"),
+                 r.get("tree"), r.get("mask_includes"), r.get("source_mask"), r.get("mask_path"),
+                 r.get("json_path"), r.get("n_outline_points"), r.get("image_width"), r.get("image_height")),
+            )
+
+    def leaf_momocs(self, specimen_id: int) -> list[sqlite3.Row]:
+        return self._query("SELECT * FROM leaf_momocs WHERE specimen_id = ? ORDER BY leaf_id", (specimen_id,))
+
+    def leaf_momocs_json_paths(self) -> list[str]:
+        """Every sheet-level Momit JSON the Momocs stage wrote, in specimen order (run-level rebuild)."""
+        return [r["json_path"] for r in self._query(
+            "SELECT json_path FROM leaf_momocs WHERE json_path IS NOT NULL "
+            "GROUP BY json_path ORDER BY MIN(specimen_id)")]
+
     # ---- CSV export readers (reports/Data) -------------------------------- #
     # Whole-project, run-once reads backing `reporting.data_export`. They live here because this is
     # the only module allowed to issue SQL; the exporter owns the column ORDER, units and prose.
@@ -1536,7 +1563,7 @@ class ProjectDB:
     # ruler_classification's pre-made tile; only rot_path/tick_mask_path are the lattice's own.
     _DEFAULT_ARTIFACT_COLS: tuple[str, ...] = (
         "crop_path", "mask_path", "refined_path", "h5_path", "radial_png", "ect_png", "overlay_png",
-        "squarify_path", "qc_png",
+        "squarify_path", "qc_png", "json_path",
     )
     _OWNED_ARTIFACT_COLS: dict[str, tuple[str, ...]] = {
         "ruler_CF_lattice_crop": ("rot_path", "tick_mask_path"),
