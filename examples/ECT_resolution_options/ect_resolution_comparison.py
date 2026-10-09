@@ -2,7 +2,7 @@
 """Render and time each leaf's ECT at 180, 360 (the default), and 720 directions.
 
 The companion to ``examples/ECT_color_options/ect_color_options.py``: same sample masks, same
-renderers, but the palette is fixed to the LM3 default (``magma`` with the visual log) and the
+renderers, but the palette is fixed to the LM3 default (``CMRmap`` with the visual log) and the
 direction count varies. ``num_dirs`` sets both axes of the ECT -- the number of directions and the
 number of thresholds -- so every render is ``num_dirs x num_dirs`` px:
 
@@ -44,7 +44,7 @@ from ect_color_options import (                                # noqa: E402
 from leafmachine3.reporting.ect_viz import render_radial_ect_overlay   # noqa: E402
 
 DIRS: tuple[int, ...] = (180, 360, 720)
-PALETTE = "magma"
+PALETTE = "CMRmap"
 REPEATS = 10
 
 

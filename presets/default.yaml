@@ -109,7 +109,7 @@ modules:
   bilateral_symmetry: {enabled: true, min_kpt_conf: 0.25, n_bins: 200, min_score: 0.5, qc_images: flagged}
   metric_grounding: {enabled: true, missing_cf_policy: skip, round_ndigits: 4}
   reporter: {enabled: true}
-  ect: {enabled: true, include_petiole: false, include_holes: false, num_dirs: 360, bound_radius: 1, palette: magma,
+  ect: {enabled: true, include_petiole: false, include_holes: false, num_dirs: 360, bound_radius: 1, palette: CMRmap,
     apply_log_to_visual_for_bold_color: true, radial_viz: true, cartesian_viz: true, radial_overlay_viz: true,
     outline_simple: true, simplify_tolerance: 0.0025, simplify_cutoff: 500, export_literal_coords: false}
 report:
