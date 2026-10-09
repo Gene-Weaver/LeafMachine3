@@ -175,7 +175,7 @@ def test_cf_summary_names_the_cf_in_use(monkeypatch) -> None:
     assert "CF used for this sheet: 101.00 px/cm -- measured from the ruler" in measured
 
 
-def test_settings_default_is_off() -> None:
+def test_settings_default_is_on() -> None:
     from leafmachine3.core.config import builtin_defaults
 
-    assert builtin_defaults()["modules"]["ruler_cf"]["use_CF_predicted_by_MP"] is False
+    assert builtin_defaults()["modules"]["ruler_cf"]["use_CF_predicted_by_MP"] is True

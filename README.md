@@ -449,8 +449,8 @@ cards, which hold the full training details.
 Predicts a pixels-per-centimeter conversion factor from the image's resolution alone. Herbarium
 sheets are a standard size, so megapixels alone carry most of the scale information. The value
 is a **prior**: the ruler stages publish a measured factor only when it agrees with this estimate
-or rests on enough ruler length to outvote it. By default the value itself is never used to
-convert measurements; the `use_CF_predicted_by_MP` option of stage 7 makes it the fallback.
+or rests on enough ruler length to outvote it. By default it is also the fallback: a sheet without a published ruler
+factor is converted with it (`use_CF_predicted_by_MP`, stage 7; turn it off to leave those sheets in pixels).
 
 | Model | [`lm3_mp_conversion_factor__sqrt_fit`](https://huggingface.co/phyloforfun/lm3_mp_conversion_factor__sqrt_fit) |
 |---|---|
@@ -561,7 +561,7 @@ instead; see [FieldPrism sheets](#fieldprism-sheets).
 
 ![CF banners on the summary overlay: three fallbacks and one measured factor](docs/readme_github/banners.jpg)
 
-With `modules.ruler_cf.use_CF_predicted_by_MP: true` (off by default), a sheet with no ruler, or
+With `modules.ruler_cf.use_CF_predicted_by_MP: true` (the default), a sheet with no ruler, or
 one whose lattice did not pass, gets the stage 1 prediction instead, so it still has cm
 measurements. Every output says which kind it is: `specimen.cf_source` and the `cf_source` CSV
 column read `measured_from_ruler`, `measured_from_fieldprism` or `predicted_from_megapixels`. The CF banner on the summary
@@ -664,10 +664,10 @@ are not trustworthy. The Leaf Collage tool uses this ranking to pick leaves.
 ### 15. Metric Grounding
 
 Converts every pixel measurement to real units using the sheet's conversion factor: areas to
-cm², lengths to cm. By default that is only a ruler factor the lattice stage published with high
-confidence; sheets without one keep their pixel values, and their `_cm` columns are empty rather
-than wrong. With `use_CF_predicted_by_MP` on (stage 7), those sheets are grounded with the
-resolution estimate instead.
+cm², lengths to cm. The factor is the one the lattice stage published with high confidence or, on a
+sheet without one, the resolution estimate from stage 1 (`use_CF_predicted_by_MP`, stage 7, on by
+default); `cf_source` on every row says which. With the option off, those sheets keep their pixel
+values and their `_cm` columns are empty.
 
 ### 16. Reporter
 
@@ -807,6 +807,13 @@ ECT. Every palette and view for all five sample leaves is in
 </table>
 
 ### 18. Momocs Export
+
+**Step-by-step guide:** [`tools/MOMOCS/LM3_Momocs_Guide.html`](tools/MOMOCS/LM3_Momocs_Guide.html) (download or
+clone the repo and open it in a browser). It walks one real sheet from LM3 into Momocs and Momocs2: loading,
+shape descriptors, Fourier analysis, morphospace, groups, and LM3's keypoints as landmarks. The folder also
+holds the example output, a demo script that reproduces every figure, and
+[`verify_lm3_momocs.R`](tools/MOMOCS/verify_lm3_momocs.R), which checks your own export in R. LM3 does not
+install R or any R package; the script's header lists what to install.
 
 Writes every leaf in the formats read by the R morphometrics packages
 [Momocs](https://github.com/MomX/Momocs) (legacy, still on CRAN) and its rewrite

@@ -144,7 +144,9 @@ def _baseline_config(images_dir: Path, output_dir: Path) -> dict:
             },
             "ruler_classifier": {"enabled": True, "models_dir": "models/ruler_classifier",
                                  "ensemble_members": ["a", "b", "c"], "min_conf": 0.35},
-            "ruler_cf": {"enabled": True},
+            # Pinned to the value the golden was recorded with. The builtin default became True
+            # (2026-10-09); the MP fallback itself is covered by test_cf_predicted_by_mp.py.
+            "ruler_cf": {"enabled": True, "use_CF_predicted_by_MP": False},
             "leaf_segmenter": {"enabled": True, "include_partial": False},
             "morphology": {"enabled": True, "classes": ["Leaf"], "find_minimum_bounding_box": True},
             "landmark_detector": {"enabled": True, "source_classes": ["Leaf_WHOLE"],

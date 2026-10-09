@@ -1370,7 +1370,7 @@
   },
   "modules.ruler_cf.use_CF_predicted_by_MP": {
     "label": "Use MP-predicted CF as fallback",
-    "help": "When a sheet has no ruler, or the lattice method does not pass, use the conversion factor predicted from the image's megapixels so the sheet still gets cm measurements. Off by default: those sheets keep empty cm columns. Never applied to a sheet with FieldPrism markers. Every output records the source in cf_source (measured_from_ruler, measured_from_fieldprism or predicted_from_megapixels).",
+    "help": "When a sheet has no ruler, or the lattice method does not pass, use the conversion factor predicted from the image's megapixels so the sheet still gets cm measurements. On by default; off leaves those sheets' cm columns empty. Never applied to a sheet with FieldPrism markers. Every output records the source in cf_source (measured_from_ruler, measured_from_fieldprism or predicted_from_megapixels).",
     "type": "bool",
     "important": true,
     "group": "Ruler CF"

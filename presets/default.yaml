@@ -82,7 +82,7 @@ modules:
     enabled: true
     anchor_tol: 0.25
     min_frame_cm: null
-    use_CF_predicted_by_MP: false
+    use_CF_predicted_by_MP: true
     fieldprism: {enabled: true, peer_tol: 0.03, anchor_tol: 0.03, allow_single_marker: true}
   leaf_segmenter:
     enabled: true

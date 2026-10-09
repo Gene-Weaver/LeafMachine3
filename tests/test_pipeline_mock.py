@@ -148,10 +148,15 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         assert lat and all(r["status"] in ("published", "withheld", "no_reading", "no_ruler") for r in lat)
         crop_rows = conn.execute("SELECT COUNT(*) FROM ruler_CF_lattice_crop").fetchone()[0]
         assert crop_rows >= len(lat)                     # >= one crop row per sheet
-        # gate honoured: cf_px_per_cm is set iff the sheet published (NULL otherwise -> MP fallback)
-        for r in conn.execute("SELECT s.cf_px_per_cm, l.status FROM specimen s "
-                              "JOIN ruler_CF_lattice l USING (specimen_id)"):
-            assert (r["cf_px_per_cm"] is not None) == (r["status"] == "published")
+        # gate honoured: a published sheet carries its measured CF; every other sheet gets the MP
+        # prediction (use_CF_predicted_by_MP is on by default) and says so in cf_source
+        for r in conn.execute("SELECT s.cf_px_per_cm, s.cf_source, s.cf_px_per_cm_predicted_by_mp, l.status "
+                              "FROM specimen s JOIN ruler_CF_lattice l USING (specimen_id)"):
+            assert r["cf_px_per_cm"] is not None
+            if r["status"] == "published":
+                assert r["cf_source"] in ("measured_from_ruler", "measured_from_fieldprism")
+            else:
+                assert r["cf_source"] == "predicted_from_megapixels"
 
         # ECT stage: at least one oriented leaf got an ECT (loaded from the Reporter's Leaf_Oriented masks)
         ect_rows = list(conn.execute("SELECT h5_path, mask_includes, num_dirs FROM leaf_ect"))

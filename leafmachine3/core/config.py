@@ -272,7 +272,7 @@ def builtin_defaults() -> dict[str, Any]:
             # YAML) so the settings form, which renders leaves of the MERGED tree, always shows it.
             # The `fieldprism` block drives FieldPrism (FP) marker sheets; its tolerances mirror
             # inference.ruler_lattice.fieldprism.FP_PEER_TOL / FP_ANCHOR_TOL.
-            "ruler_cf": {"enabled": True, "use_CF_predicted_by_MP": False,
+            "ruler_cf": {"enabled": True, "use_CF_predicted_by_MP": True,
                          "fieldprism": {"enabled": True, "peer_tol": 0.03, "anchor_tol": 0.03,
                                         "allow_single_marker": True}},
             "leaf_segmenter": {"enabled": True},

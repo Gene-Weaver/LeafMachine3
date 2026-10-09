@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LM3 Momocs Guide</title>
+<style>
+/* GitHub dark-mode Markdown look: one 1012px column, system fonts, GitHub's dark palette, ruled
+   h1/h2, bordered zebra tables, and GitHub-style alert callouts. Single committed dark theme. */
+:root {
+  --bg: #0d1117;          /* canvas */
+  --bg-subtle: #151b23;   /* code blocks, table zebra, callouts */
+  --fg: #f0f6fc;          /* text */
+  --fg-muted: #9198a1;    /* secondary text */
+  --border: #3d444d;      /* table and figure borders */
+  --border-muted: #3d444db3; /* heading rules */
+  --accent: #4493f8;      /* links */
+  --code-bg: #656c7633;   /* inline code */
+  --note: #4493f8;        /* [!NOTE] */
+  --warn: #d29922;        /* [!WARNING] */
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif,
+          "Apple Color Emoji", "Segoe UI Emoji";
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--font);
+  padding-inline: 16px; padding-block: 32px 64px; word-wrap: break-word; }
+main { max-width: 1012px; margin: 0 auto; }
+.col { max-width: none; }
+header.top { padding-block: 0; }
+.eyebrow { font: 12px/1.5 var(--mono); color: var(--fg-muted); }
+h1, h2, h3 { font-weight: 600; line-height: 1.25; margin: 24px 0 16px; }
+h1 { font-size: 2em; padding-bottom: .3em; border-bottom: 1px solid var(--border-muted); margin-top: 8px; }
+h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid var(--border-muted); margin-top: 40px;
+  display: flex; gap: .6rem; align-items: baseline; }
+h2 .n { font: 600 .55em/1 var(--mono); color: var(--fg-muted); white-space: nowrap; }
+h3 { font-size: 1.25em; }
+.phase { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted);
+  margin: 48px 0 -24px; }
+p { margin: 0 0 16px; }
+.lede { font-size: 16px; }
+.meta { color: var(--fg-muted); font-size: 14px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+code { font: 85% var(--mono); background: var(--code-bg); padding: .2em .4em; border-radius: 6px; white-space: break-spaces; }
+pre { font: 85%/1.45 var(--mono); background: var(--bg-subtle); padding: 16px; overflow-x: auto; border-radius: 6px;
+  margin: 0 0 16px; max-width: 100%; }
+pre code { background: none; padding: 0; font-size: 100%; white-space: pre; border-radius: 0; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+nav.toc a { font-size: 12px; font-weight: 500; line-height: 18px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 2em; color: var(--accent); }
+nav.toc a:hover { background: var(--bg-subtle); text-decoration: none; }
+.tablewrap { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; border-spacing: 0; width: max-content; max-width: 100%; font-size: 14px; }
+th, td { padding: 6px 13px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+th { font-weight: 600; }
+tbody tr:nth-child(2n) { background: var(--bg-subtle); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.note { border-left: .25em solid var(--warn); padding: 8px 16px; margin: 0 0 16px; color: var(--fg); }
+.note b { color: var(--warn); }
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 24px; margin: 8px 0 24px; }
+.plate { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.plate.wide { grid-column: 1 / -1; }
+.sheet { background: #ffffff; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.sheet img { display: block; width: 100%; height: auto; max-width: 100%; }
+figcaption { font-size: 14px; color: var(--fg-muted); }
+figcaption strong { color: var(--fg); font-weight: 600; }
+.label { margin-bottom: 4px; }
+.label code { font-size: 12px; }
+ul.traps { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; }
+ul.traps li { border-left: .25em solid var(--warn); padding: 8px 16px; }
+ul.traps b { color: var(--warn); }
+table.links { margin-top: 4px; }
+.files td:first-child { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+@media (max-width: 600px) { h1 { font-size: 1.6em; } h2 { font-size: 1.3em; } }
+</style>
+</head>
+<body>
+<main>
+
+<header class="top">
+  <div class="eyebrow">LeafMachine3 &middot; tools/MOMOCS</div>
+  <h1>Leaf Shape in Momocs</h1>
+  <div class="col">
+    <p class="lede">Use LeafMachine3 leaf outlines in the R packages <b>Momocs</b> and <b>Momocs2</b>.
+    Every example uses one LM3 run: an American elm sheet, <code>VT_2573061663_Ulmaceae_Ulmus_americana</code>,
+    with 13 leaves. Its files are in <code>example/</code>.</p>
+    <p class="meta">Tested with R 4.1.2, Momocs 1.5.0, Momocs2 0.1.0 and Momit 0.1.0. LM3 does not install R packages; see step 3.</p>
+  </div>
+  <div class="tablewrap"><table class="links"><thead><tr><th>Package</th><th>Role</th><th>GitHub</th><th>Website</th></tr></thead><tbody>
+    <tr><td><b>Momocs</b></td><td>Outline morphometrics (legacy, on CRAN)</td>
+      <td><a href="https://github.com/MomX/Momocs">MomX/Momocs</a></td>
+      <td><a href="https://momx.github.io/Momocs/">momx.github.io/Momocs</a> &middot; <a href="https://cran.r-project.org/package=Momocs">CRAN</a></td></tr>
+    <tr><td><b>Momocs2</b></td><td>The rewrite of Momocs</td>
+      <td><a href="https://github.com/MomX/Momocs2">MomX/Momocs2</a></td>
+      <td><a href="https://momx.github.io/Momocs2/">momx.github.io/Momocs2</a></td></tr>
+    <tr><td><b>Momit</b></td><td>Imports LM3's JSON into Momocs2</td>
+      <td><a href="https://github.com/MomX/Momit">MomX/Momit</a></td>
+      <td><a href="https://momx.github.io/Momit/">momx.github.io/Momit</a></td></tr>
+  </tbody></table></div>
+  <nav class="toc" aria-label="Steps">
+    <a href="#s1">1 Turn it on</a><a href="#s2">2 What LM3 writes</a><a href="#s3">3 Install R packages</a>
+    <a href="#s4">4 Verify</a><a href="#s5">5 Load</a><a href="#s6">6 Normalize</a><a href="#s7">7 Descriptors</a>
+    <a href="#s8">8 Harmonics</a><a href="#s9">9 Fourier</a><a href="#s10">10 Morphospace</a><a href="#s11">11 Groups</a>
+    <a href="#s12">12 Momocs2</a><a href="#s13">13 Landmarks</a><a href="#traps">Pitfalls</a><a href="#files">Files</a>
+  </nav>
+</header>
+
+<div class="phase">In LeafMachine3</div>
+
+<section id="s1">
+  <h2><span class="n">Step 1</span>Turn on Momocs Export</h2>
+  <div class="col"><p>Momocs Export (module 18) is on by default. Find it under <b>Settings &rarr; Output &rarr; Momocs
+  Export</b>, or as <code>modules.momocs</code> in <code>LM3_settings.yaml</code>. It reads the Reporter's leaf masks,
+  so on an existing run only this module reruns.</p></div>
+  <pre><code>modules:
+  momocs: {enabled: true, include_petiole: false, oriented: true, pad_px: 10, largest_component_only: true,
+    jpg_quality: 100, outline_points: 0, write_fac_csv: true, write_momit_json: true}</code></pre>
+  <div class="tablewrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>enabled</code></td><td class="num"><code>true</code></td><td>Write the Momocs files.</td></tr>
+<tr><td><code>include_petiole</code></td><td class="num"><code>false</code></td><td>Include the petiole. Leaves without one are skipped.</td></tr>
+<tr><td><code>oriented</code></td><td class="num"><code>true</code></td><td>Use tip-up leaves. <code>false</code>: leaves as mounted.</td></tr>
+<tr><td><code>pad_px</code></td><td class="num"><code>10</code></td><td>White border, px.</td></tr>
+<tr><td><code>largest_component_only</code></td><td class="num"><code>true</code></td><td>Keep only the largest piece.</td></tr>
+<tr><td><code>jpg_quality</code></td><td class="num"><code>100</code></td><td>JPEG quality.</td></tr>
+<tr><td><code>outline_points</code></td><td class="num"><code>0</code></td><td>Points per JSON outline; <code>0</code> = every boundary pixel.</td></tr>
+<tr><td><code>write_fac_csv</code></td><td class="num"><code>true</code></td><td>Write <code>momocs_fac.csv</code>.</td></tr>
+<tr><td><code>write_momit_json</code></td><td class="num"><code>true</code></td><td>Write <code>momocs_outlines.json</code>.</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="s2">
+  <h2><span class="n">Step 2</span>What LM3 writes</h2>
+  <div class="col"><p>Each run writes <code>reports/Leaf_Momocs/</code>:</p></div>
+  <pre><code>reports/Leaf_Momocs/
+  &lt;sheet&gt;__or-MOMOCS-lamina__x1_y1_x2_y2.jpg   one per leaf, black on white
+  momocs_fac.csv                               one row per JPG (Momocs&#x27;s fac)
+  momocs_outlines.json                         all outlines, Momit JSON
+  Momit_JSON/&lt;sheet&gt;.json                      the same, per sheet</code></pre>
+  <div class="col"><p>Each leaf mask is hole-filled, reduced to its largest piece, made black on white, and padded.</p></div>
+  <div class="gallery">
+  <figure class="plate">
+  <div class="sheet"><img src="example/VT_2573061663_Ulmaceae_Ulmus_americana__Overlay_small.jpg" alt="The sheet." loading="lazy"></div>
+  <figcaption><div class="label"><code>reports/Overlay/Overlay_Summary/</code></div><strong>The sheet.</strong> LM3's summary overlay: every detected leaf, with its mask and keypoints.</figcaption>
+</figure>
+  <figure class="plate">
+  <div class="sheet"><img src="figures/00_mask_to_momocs.png" alt="One leaf, before and after." loading="lazy"></div>
+  <figcaption><div class="label"><code>Leaf_Oriented/Lamina_Holes_Mask &rarr; Leaf_Momocs</code></div><strong>One leaf, before and after.</strong> Left: the Reporter's tip-up mask. Right: the Momocs image made from it.</figcaption>
+</figure>
+  </div>
+  <h3>The grouping table</h3>
+  <div class="col"><p>One row per image. The JSON stores the same columns with each outline.</p></div>
+  <div class="tablewrap"><table><thead><tr><th>Column</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>id</code></td><td>Image name without <code>.jpg</code>. Momocs uses it as the outline name.</td></tr>
+<tr><td><code>image</code></td><td>JPG file name.</td></tr>
+<tr><td><code>image_stem</code></td><td>Source sheet. Join your own metadata on this column.</td></tr>
+<tr><td><code>specimen_id, leaf_id, detection_id, instance_index</code></td><td>Keys into the run database and the <code>reports/Data/</code> CSVs.</td></tr>
+<tr><td><code>tree</code></td><td><code>Leaf_Oriented</code> (tip up, default) or <code>Leaf_Original</code> (as mounted).</td></tr>
+<tr><td><code>mask_includes</code></td><td><code>lamina</code>, or <code>lamina_petiole</code> when <code>include_petiole</code> is on.</td></tr>
+<tr><td><code>box_x1, box_y1, box_x2, box_y2</code></td><td>Detection box on the working image, px.</td></tr>
+<tr><td><code>orientation_angle_degreesCW</code></td><td>Clockwise rotation applied to stand the leaf tip up.</td></tr>
+<tr><td><code>outline_points</code></td><td>Points in the JSON outline.</td></tr>
+<tr><td><code>pad_px, image_width, image_height</code></td><td>White border and JPG size, px.</td></tr>
+<tr><td><code>cf_px_per_cm, cf_source</code></td><td>Scale in px per cm, and its source: <code>measured_from_ruler</code>, <code>measured_from_fieldprism</code> or <code>predicted_from_megapixels</code>.</td></tr>
+<tr><td><code>cf_px_per_cm_predicted_by_mp</code></td><td>Scale estimated from image resolution alone.</td></tr>
+<tr><td><code>work_scale</code></td><td>Working image size relative to the original scan.</td></tr>
+  </tbody></table></div>
+</section>
+
+<div class="phase">In R</div>
+
+<section id="s3">
+  <h2><span class="n">Step 3</span>Install the R packages</h2>
+  <div class="col"><p>Requires R 4.1 or newer. Momocs is on CRAN. Momocs2 and Momit (its JSON importer) are on GitHub.</p></div>
+  <pre><code>install.packages(c(&quot;Momocs&quot;, &quot;ggplot2&quot;, &quot;patchwork&quot;, &quot;remotes&quot;, &quot;magick&quot;, &quot;jsonlite&quot;))
+remotes::install_github(&quot;MomX/Momocs2&quot;)
+remotes::install_github(&quot;MomX/Momit&quot;)</code></pre>
+  <p class="note"><b>R older than 4.4:</b> install these first, then Momocs:
+  <code>remotes::install_version("RRPP", "1.4.0")</code>, <code>remotes::install_version("geomorph", "4.0.6")</code>.</p>
+</section>
+
+<section id="s4">
+  <h2><span class="n">Step 4</span>Verify your export</h2>
+  <div class="col"><p>Loads a <code>Leaf_Momocs</code> folder both ways, checks that they agree, and saves a preview of every
+  outline. Without a path it checks the example. Routes with missing packages are skipped.</p></div>
+  <pre><code>Rscript verify_lm3_momocs.R  path/to/your_run/reports/Leaf_Momocs</code></pre>
+  <pre>LM3 -&gt; Momocs export check
+Folder: LM3/tools/MOMOCS/example/Leaf_Momocs 
+
+1. Files
+  PASS  leaf images found  (13 JPG)
+  PASS  momocs_fac.csv found
+  PASS  momocs_outlines.json found
+  PASS  every image is a dark leaf on white with a white border
+
+2. Route 1: Momocs import_jpg + momocs_fac.csv
+  PASS  import_jpg reads every image  (13 outlines)
+  PASS  every outline has at least 3 points  (smallest has 395)
+  PASS  every outline runs clockwise
+  PASS  momocs_fac.csv has exactly one row per image  (13 rows, 13 images)
+  PASS  efourier runs on the whole set  (13 leaves x 48 coefficients)
+
+3. Route 2: Momit::from_json -&gt; Momocs2
+  PASS  one JSON row per leaf image  (13 rows, 13 images)
+  PASS  JSON ids match the image file names
+  PASS  outlines load as a Momocs2 &#x27;out&#x27; column
+  PASS  every JSON outline runs clockwise
+  PASS  every JSON outline starts at its lowest point
+  PASS  Momocs2 eft runs
+  PASS  Momit::to_Momocs builds a legacy Out
+
+4. Routes agree
+  PASS  both routes trace the same outline (within 2 px)  (edge offset 0.80 to 0.86 px over 13 leaves)
+
+Quick look saved: LM3/tools/MOMOCS/example/Leaf_Momocs/lm3_momocs_check.png 
+
+Summary: 17 PASS, 0 FAIL, 0 SKIP
+Your LM3 export is ready for Momocs and Momocs2.</pre>
+</section>
+
+<section id="s5">
+  <h2><span class="n">Step 5</span>Load the leaves into Momocs</h2>
+  <div class="col"><p>Read the JPGs, then attach <code>momocs_fac.csv</code> in the same order (match on <code>id</code>).</p></div>
+  <pre><code>library(Momocs)
+jpgs &lt;- list.files(&quot;example/Leaf_Momocs&quot;, pattern = &quot;\\.jpg$&quot;, full.names = TRUE)
+coo  &lt;- import_jpg(jpgs)
+fac  &lt;- read.csv(&quot;example/Leaf_Momocs/momocs_fac.csv&quot;)
+fac  &lt;- fac[match(names(coo), fac$id), ]
+fac$size_class &lt;- cut(rank(sapply(coo, coo_area)), 3, labels = c(&quot;small&quot;, &quot;medium&quot;, &quot;large&quot;))  # demo groups, step 11
+leaves &lt;- Out(coo, fac = fac)
+panel(leaves)</code></pre>
+  <div class="gallery"><figure class="plate">
+  <div class="sheet"><img src="figures/01_panel.png" alt="All 13 leaves." loading="lazy"></div>
+  <figcaption><div class="label"><code>panel()</code></div><strong>All 13 leaves.</strong> Colored by demo size class (step 11).</figcaption>
+</figure></div>
+</section>
+
+<section id="s6">
+  <h2><span class="n">Step 6</span>Center, scale and resample</h2>
+  <div class="col"><p>Leaves are already tip up. Center, scale and resample.</p></div>
+  <pre><code>norm &lt;- leaves %&gt;% coo_center() %&gt;% coo_scale() %&gt;% coo_sample(200)
+stack(norm)</code></pre>
+  <p class="note"><b>Tiny leaves:</b> <code>coo_sample(200)</code> needs at least 200 points. Drop specks first
+  (<code>filter(leaves, outline_points &gt;= 200)</code>) or use <code>coo_interpolate</code>.</p>
+  <div class="gallery"><figure class="plate">
+  <div class="sheet"><img src="figures/02_stack.png" alt="The leaves overlaid." loading="lazy"></div>
+  <figcaption><div class="label"><code>stack()</code></div><strong>The leaves overlaid.</strong> The notch at the base is real: elm bases are uneven, and the petiole is excluded.</figcaption>
+</figure></div>
+</section>
+
+<section id="s7">
+  <h2><span class="n">Step 7</span>Shape descriptors</h2>
+  <div class="col"><p>Measurements are in pixels. For cm², divide by <code>cf_px_per_cm</code>² (71.41 px/cm on this sheet, from its ruler).</p></div>
+  <pre><code>area_px  &lt;- sapply(leaves$coo, coo_area)
+area_cm2 &lt;- area_px / leaves$fac$cf_px_per_cm^2
+data.frame(area_cm2, elongation = sapply(leaves$coo, coo_elongation),
+           circularity = sapply(leaves$coo, coo_circularity), solidity = sapply(leaves$coo, coo_solidity))</code></pre>
+  <div class="tablewrap"><table><thead><tr><th>Leaf (box)</th><th>Area px</th><th>Area cm²</th><th>Perimeter px</th><th>Elongation</th>
+  <th>Circularity</th><th>Convexity</th><th>Solidity</th></tr></thead><tbody>
+<tr><td><code>1432_1583_1580_1718</code></td><td class="num">8996</td><td class="num">1.8</td><td class="num">466.9</td><td class="num">0.1323</td><td class="num">24.23</td><td class="num">0.7686</td><td class="num">0.9343</td></tr>
+<tr><td><code>1628_1006_1743_1186</code></td><td class="num">9732</td><td class="num">1.9</td><td class="num">488.6</td><td class="num">0.3381</td><td class="num">24.53</td><td class="num">0.7386</td><td class="num">0.9374</td></tr>
+<tr><td><code>1498_714_1699_989</code></td><td class="num">30000</td><td class="num">5.9</td><td class="num">898.1</td><td class="num">0.2775</td><td class="num">26.89</td><td class="num">0.6939</td><td class="num">0.9349</td></tr>
+<tr><td><code>1690_1109_1985_1449</code></td><td class="num">55120</td><td class="num">10.8</td><td class="num">1268</td><td class="num">0.3662</td><td class="num">29.16</td><td class="num">0.7123</td><td class="num">0.9421</td></tr>
+<tr><td><code>1086_1595_1439_1898</code></td><td class="num">59840</td><td class="num">11.7</td><td class="num">1275</td><td class="num">0.3049</td><td class="num">27.17</td><td class="num">0.7012</td><td class="num">0.9478</td></tr>
+<tr><td><code>1674_616_2025_1157</code></td><td class="num">98660</td><td class="num">19.3</td><td class="num">1794</td><td class="num">0.4304</td><td class="num">32.62</td><td class="num">0.6776</td><td class="num">0.9428</td></tr>
+<tr><td><code>1207_928_1583_1553</code></td><td class="num">127500</td><td class="num">25.0</td><td class="num">1893</td><td class="num">0.4242</td><td class="num">28.11</td><td class="num">0.7464</td><td class="num">0.9355</td></tr>
+<tr><td><code>28_1363_533_2156</code></td><td class="num">222300</td><td class="num">43.6</td><td class="num">2633</td><td class="num">0.4725</td><td class="num">31.2</td><td class="num">0.7073</td><td class="num">0.9444</td></tr>
+<tr><td><code>554_1708_1160_2401</code></td><td class="num">226700</td><td class="num">44.5</td><td class="num">2579</td><td class="num">0.4592</td><td class="num">29.35</td><td class="num">0.7184</td><td class="num">0.9429</td></tr>
+<tr><td><code>1195_2193_1914_2818</code></td><td class="num">234300</td><td class="num">45.9</td><td class="num">2626</td><td class="num">0.4535</td><td class="num">29.43</td><td class="num">0.7283</td><td class="num">0.9432</td></tr>
+<tr><td><code>455_383_1237_1026</code></td><td class="num">282000</td><td class="num">55.3</td><td class="num">2877</td><td class="num">0.4505</td><td class="num">29.35</td><td class="num">0.7355</td><td class="num">0.9326</td></tr>
+<tr><td><code>385_923_1152_1710</code></td><td class="num">355200</td><td class="num">69.7</td><td class="num">3141</td><td class="num">0.4303</td><td class="num">27.77</td><td class="num">0.7328</td><td class="num">0.9558</td></tr>
+<tr><td><code>63_2281_1022_3038</code></td><td class="num">388600</td><td class="num">76.2</td><td class="num">3315</td><td class="num">0.4871</td><td class="num">28.28</td><td class="num">0.7402</td><td class="num">0.9475</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="s8">
+  <h2><span class="n">Step 8</span>Choose the number of harmonics</h2>
+  <div class="col"><p>On these leaves, 5 harmonics capture 90% of shape power, 7 capture 95%, 17 capture 99% and 28 capture 99.9%.
+  Teeth appear past about 20. This guide uses 12: the full leaf shape, without teeth.</p></div>
+  <pre><code>calibrate_harmonicpower_efourier(norm, nb.h = 30)
+calibrate_reconstructions_efourier(norm, range = c(1, 2, 4, 6, 8, 12, 16, 20, 30))</code></pre>
+  <div class="gallery">
+  <figure class="plate">
+  <div class="sheet"><img src="figures/03_harmonic_power.png" alt="Cumulative harmonic power." loading="lazy"></div>
+  <figcaption><div class="label"><code>calibrate_harmonicpower_efourier()</code></div><strong>Cumulative harmonic power.</strong> Spread over 13 leaves, harmonics 2&ndash;30.</figcaption>
+</figure>
+  <figure class="plate">
+  <div class="sheet"><img src="figures/04_reconstructions.png" alt="Reconstructions." loading="lazy"></div>
+  <figcaption><div class="label"><code>calibrate_reconstructions_efourier()</code></div><strong>Reconstructions.</strong> Largest leaf, 1&ndash;30 harmonics. Black: the real outline.</figcaption>
+</figure>
+  </div>
+</section>
+
+<section id="s9">
+  <h2><span class="n">Step 9</span>Elliptic Fourier analysis</h2>
+  <pre><code>ef &lt;- efourier(norm, nb.h = 12, norm = FALSE)</code></pre>
+  <p class="note"><b>Use <code>norm = FALSE</code>.</b> LM3 already oriented the leaves. The default, <code>norm = TRUE</code>,
+  re-aligns each leaf on its first ellipse: it turns them sideways and can flip some 180°.</p>
+</section>
+
+<section id="s10">
+  <h2><span class="n">Step 10</span>Morphospace</h2>
+  <div class="col"><p>PCA of the Fourier coefficients. PC1&ndash;PC3 hold 48.6%, 34.6% and 5.8% of shape variation.</p></div>
+  <pre><code>pc &lt;- PCA(ef)
+plot_PCA(pc, ~size_class)
+PCcontrib(pc, nax = 1:3)</code></pre>
+  <div class="gallery">
+  <figure class="plate">
+  <div class="sheet"><img src="figures/05_pca.png" alt="Morphospace." loading="lazy"></div>
+  <figcaption><div class="label"><code>PCA() · plot_PCA()</code></div><strong>Morphospace.</strong> Each point is a leaf; the background shows the shape at each position.</figcaption>
+</figure>
+  <figure class="plate">
+  <div class="sheet"><img src="figures/06_pc_contrib.png" alt="What each axis means." loading="lazy"></div>
+  <figcaption><div class="label"><code>PCcontrib()</code></div><strong>What each axis means.</strong> Mean shape at &minus;2 to +2 SD along PC1&ndash;PC3.</figcaption>
+</figure>
+  </div>
+</section>
+
+<section id="s11">
+  <h2><span class="n">Step 11</span>Groups</h2>
+  <div class="col"><p>Group methods need a factor. The example uses three size classes, for demonstration only.
+  Join real factors on <code>image_stem</code>:</p></div>
+  <pre><code>meta &lt;- read.csv(&quot;my_specimens.csv&quot;)              # one row per sheet: image_stem, species, site, ...
+leaves$fac$species &lt;- meta$species[match(leaves$fac$image_stem, meta$image_stem)]
+
+ms &lt;- MSHAPES(ef, ~size_class); plot_MSHAPES(ms)
+MANOVA(pc, ~size_class, retain = 3)
+CLUST(ef, ~size_class, hclust_method = &quot;ward.D2&quot;, k = 3)</code></pre>
+  <div class="gallery">
+  <figure class="plate">
+  <div class="sheet"><img src="figures/07_mshapes.png" alt="Mean shapes by group." loading="lazy"></div>
+  <figcaption><div class="label"><code>MSHAPES() · plot_MSHAPES()</code></div><strong>Mean shapes by group.</strong> Pairwise overlays.</figcaption>
+</figure>
+  <figure class="plate">
+  <div class="sheet"><img src="figures/08_clust.png" alt="Hierarchical clustering." loading="lazy"></div>
+  <figcaption><div class="label"><code>CLUST()</code></div><strong>Hierarchical clustering.</strong> Ward clustering, 3 groups.</figcaption>
+</figure>
+  </div>
+</section>
+
+<section id="s12">
+  <h2><span class="n">Step 12</span>The same leaves in Momocs2</h2>
+  <div class="col"><p>Momocs2 has no image importer. Momit reads <code>momocs_outlines.json</code>, grouping columns included,
+  and can convert it to a legacy Momocs object.</p></div>
+  <pre><code>tb &lt;- Momit::from_json(&quot;example/Leaf_Momocs/momocs_outlines.json&quot;)
+tb &lt;- tb %&gt;% Momocs2::coo_center() %&gt;% Momocs2::coo_scale() %&gt;% Momocs2::coo_sample(200)
+Momocs2::mosaic(tb)
+Momocs2::eft(tb, nb_h = 12)
+legacy &lt;- Momit::to_Momocs(tb)      # a legacy Momocs Out, with the same fac</code></pre>
+  <p class="note"><b>Prefix calls with <code>Momocs2::</code>:</b> Momocs masks its <code>coo_*</code> functions. Harmonic power also
+  differs: Momocs2 counts the first harmonic, so it reports 99% at 2 harmonics here. Don't compare thresholds across packages.</p>
+  <div class="gallery">
+  <figure class="plate">
+  <div class="sheet"><img src="figures/09_momocs2_mosaic.png" alt="Momocs2 mosaic." loading="lazy"></div>
+  <figcaption><div class="label"><code>Momocs2::mosaic()</code></div><strong>Momocs2 mosaic.</strong> Outlines from the JSON.</figcaption>
+</figure>
+  <figure class="plate">
+  <div class="sheet"><img src="figures/10_momocs2_reconstruction.png" alt="Momocs2 reconstructions." loading="lazy"></div>
+  <figcaption><div class="label"><code>Momocs2::eft_calibrate_reconstruction()</code></div><strong>Momocs2 reconstructions.</strong> Largest leaf, increasing harmonics.</figcaption>
+</figure>
+  </div>
+</section>
+
+<section id="s13">
+  <h2><span class="n">Step 13</span>LM3 keypoints as landmarks</h2>
+  <div class="col"><p>LM3 places 31 keypoints per leaf (tip, base, 15 midvein points, apex, base corners, petiole, widest point) in
+  <code>reports/Data/landmarks.csv</code>. They join to the Momocs files on the detection box. After Procrustes, PC1&ndash;PC3 hold
+  52.9%, 22.9% and 12.4% of the variation.</p></div>
+  <pre><code>lm &lt;- read.csv(&quot;example/Data/landmarks.csv&quot;)
+lm &lt;- lm[lm$instance_index == 0, ]
+lm$y &lt;- -lm$y                                    # image y runs down; Momocs y runs up
+lm$box &lt;- sub(&quot;.*__&quot;, &quot;&quot;, lm$crop_file_token)    # x1_y1_x2_y2, as in the image names
+L  &lt;- lapply(split(lm, lm$box), function(d) as.matrix(d[order(d$kpt_index), c(&quot;x&quot;, &quot;y&quot;)]))
+Lp &lt;- fgProcrustes(Ldk(L))
+PCA(Lp)</code></pre>
+  <div class="gallery">
+  <figure class="plate wide">
+  <div class="sheet"><img src="figures/11_landmarks.png" alt="31 keypoints per leaf." loading="lazy"></div>
+  <figcaption><div class="label"><code>Ldk() · fgProcrustes()</code></div><strong>31 keypoints per leaf.</strong> Left: raw positions. Right: after Procrustes, tip up.</figcaption>
+</figure>
+  <figure class="plate">
+  <div class="sheet"><img src="figures/12_landmark_mean.png" alt="Mean keypoint configuration." loading="lazy"></div>
+  <figcaption><div class="label"><code>MSHAPES() · ldk_links()</code></div><strong>Mean keypoint configuration.</strong> Linked along midvein, petiole, apex, base and width.</figcaption>
+</figure>
+  </div>
+</section>
+
+<section id="traps">
+  <h2>Silent pitfalls</h2>
+  <div class="col"><p>These give wrong results without an error. LM3's export avoids the first four.</p></div>
+  <ul class="traps">
+    <li><b>Light leaf on dark, or a leaf touching the edge:</b> both importers trace the wrong region.</li>
+    <li><b>Open holes:</b> Momocs walks down from the image center to find the edge, and can trace a hole instead.</li>
+    <li><b>y-down coordinates:</b> leaves load mirrored.</li>
+    <li><b>Empty images:</b> <code>import_jpg</code> loops forever.</li>
+    <li><b><code>efourier(norm = TRUE)</code> on oriented leaves:</b> see step 9.</li>
+    <li><b><code>coo_baseline</code> (Momocs 1.5.0)</b> rotates the wrong way unless the shape is already horizontal. Use <code>Momocs2::coo_baseline</code>.</li>
+    <li><b>Groups from file names:</b> <code>lf_structure()</code> can't split LM3 names. Use <code>momocs_fac.csv</code>.</li>
+  </ul>
+</section>
+
+<section id="files">
+  <h2>Files in this folder</h2>
+  <div class="tablewrap"><table class="files"><thead><tr><th>Path</th><th>Contents</th></tr></thead><tbody>
+    <tr><td>LM3_Momocs_Guide.html</td><td>This guide.</td></tr>
+    <tr><td>verify_lm3_momocs.R</td><td>Checks an export (step 4). R requirements are in its header.</td></tr>
+    <tr><td>demo_lm3_momocs.R</td><td>Steps 5&ndash;13; writes every figure.</td></tr>
+    <tr><td>example/Leaf_Momocs/</td><td>The example sheet's Momocs export.</td></tr>
+    <tr><td>example/Data/landmarks.csv</td><td>Its keypoints.</td></tr>
+    <tr><td>example/*_Overlay_small.jpg</td><td>Its summary overlay, downsized.</td></tr>
+    <tr><td>figures/</td><td>Figures on this page, and <code>descriptors.csv</code>.</td></tr>
+  </tbody></table></div>
+  <div class="col"><p>Redraw the figures (run from this folder):</p></div>
+  <pre><code>Rscript demo_lm3_momocs.R example/Leaf_Momocs figures</code></pre>
+  <div class="col"><p>Cite Momocs as:</p>
+  <p class="meta">Bonhomme, V., Picq, S., Gaucherel, C., &amp; Claude, J. (2014). Momocs: Outline analysis using R.
+  <i>Journal of Statistical Software</i>, 56(13), 1–24. <a href="https://doi.org/10.18637/jss.v056.i13">doi:10.18637/jss.v056.i13</a></p></div>
+</section>
+
+</main>
+</body>
+</html>

@@ -12,10 +12,9 @@ local inside ``process_specimen``.
 
 CF PUBLISHING IS GATED. A sheet's CF is written to ``specimen.cf_px_per_cm`` (working frame,
 ``cf_source = 'measured_from_ruler'``) only when the engine certifies it 'high' confidence
-('published'). By default a withheld / no-reading / no-ruler sheet leaves ``cf_px_per_cm`` NULL --
-a visible absence rather than an unknown unit-misnaming error.
+('published'). A withheld / no-reading / no-ruler sheet has no measured CF.
 
-``modules.ruler_cf.use_CF_predicted_by_MP`` (off by default) changes only those sheets: they get
+``modules.ruler_cf.use_CF_predicted_by_MP`` (on by default) changes only those sheets: they get
 the megapixel prediction instead, in the WORKING frame (the engine's ``mp_anchor_working``, so a
 linear original-frame model is rescaled exactly as the lattice anchor is), with ``cf_source =
 'predicted_from_megapixels'`` and no ``ruler_unit_type``. With the option on, sheets that have NO
@@ -74,7 +73,7 @@ class RulerConversionFactor(PipelineStage):
             "min_frame_cm": (None if g("min_frame_cm", None) is None else float(g("min_frame_cm", None))),
             "squarify_sz": int((squarify.get("sz") if hasattr(squarify, "get") else None) or 720),
             "squarify_method": str((squarify.get("method") if hasattr(squarify, "get") else None) or "tile_four"),
-            "use_mp_fallback": bool(g("use_CF_predicted_by_MP", False)),
+            "use_mp_fallback": bool(g("use_CF_predicted_by_MP", True)),
             # FieldPrism markers: the modules.ruler_cf.fieldprism block (defaults =
             # fieldprism.FP_PEER_TOL / FP_ANCHOR_TOL; an absent block means all defaults)
             "fp_enabled": bool(fpg("enabled", True)),
