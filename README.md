@@ -355,8 +355,12 @@ factor is reported in both frames, and `_cm` values are frame-independent.
 [FieldPrism](https://fieldprism.org/) ([iOS](https://apps.apple.com/us/app/fieldprism/id6761267750),
 [Android](https://play.google.com/apps/testing/com.leafmachine.fieldprism)) photographs plants on a
 printed field sheet with a photogrammetric marker near each corner, then rectifies the photo so
-the sheet is square to the camera. LeafMachine3 reads those processed images directly. Put the
-app's rectified output (the `FPfit` images) in your input folder; nothing needs configuring.
+the sheet is square to the camera. It is described in Weaver, W. N., and S. A. Smith (2023),
+FieldPrism: A system for creating snapshot vouchers from field images using photogrammetric
+markers and QR codes, *Applications in Plant Sciences* 11(5): e11545,
+<https://doi.org/10.1002/aps3.11545>. LeafMachine3 reads the app's processed images directly.
+Put the app's rectified output (the `FPfit` images) in your input folder; nothing needs
+configuring.
 
 Each marker is a 3 × 3 grid of 1 cm cells with four filled squares, top-left (TL), top-right (TR),
 center (C) and bottom-left (BL), and an empty bottom-right (BR) cell. The archival detector finds
@@ -408,7 +412,9 @@ Other outputs:
   orientation, markers used and inferred, the fit, the factor). `specimen_summary.csv` and
   `leaf_measurements.csv` add `fp_sheet_type`, `fp_sheet_status`, `fp_orientation_deg`,
   `fp_n_markers_detected`, `fp_n_markers_used`, `fp_n_markers_inferred`, `fp_cf_px_per_cm`,
-  `fp_confidence` and `ruler_cf_anchor_source`.
+  `fp_confidence` and `ruler_cf_anchor_source`. The settings that turn the two FieldPrism CSV
+  files on or off are not in the FieldPrism settings group; they are under **Reporter › Data
+  export (CSV)**, alongside the other CSV files.
 
 ![FieldPrism sheet identification QC: three markers read, the fourth inferred, Letter identified](docs/readme_github/fieldprism/qc_sheet_5_1_FPfit.png)
 
@@ -422,11 +428,6 @@ In the Settings tab these live under **Scale › Ruler Conversion Factor › Fie
 | `modules.ruler_cf.fieldprism.allow_single_marker` | `true` | let one valid marker on its own publish a factor |
 | `report.overlay.draw_fieldprism` | `true` | draw the markers and sheet size on the summary overlay |
 | `report.overlay_fieldprism.enabled` | `true` | write `Overlay/Overlay_FieldPrism/` |
-
-The two CSV files are switched with the other CSV files under **Reporter › Data export**.
-FieldPrism is described in Weaver, W. N., and S. A. Smith (2023), FieldPrism: A system for
-creating snapshot vouchers from field images using photogrammetric markers and QR codes,
-*Applications in Plant Sciences* 11(5): e11545, <https://doi.org/10.1002/aps3.11545>.
 
 ---
 
