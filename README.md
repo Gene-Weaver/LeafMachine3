@@ -601,21 +601,22 @@ The transform is computed with the [`ect`](https://github.com/MunchLab/ect) Pyth
 ## Module Outputs
 
 What each module writes, in pipeline order: its database tables and specimen columns, and the
-report folders and CSVs built from them. The Model column says whether the stage runs a trained
-model (details in its [In-Depth](#in-depth-the-processing-modules) block) or is pure CPU code.
+report folders and CSVs built from them. The Model column links every Hugging Face model the
+stage can run (default first; see [Models](#models) to install an alternate), or says it is pure
+CPU code.
 
 | Module | Model | Output |
 |---|---|---|
-| 1. [MP Conversion Factor](#1-mp-conversion-factor) | fit (CPU; runs before any image is decoded) | `specimen.cf_px_per_cm_predicted_by_mp` |
-| 2. [Archival Detector](#2-archival-detector) | yes | `archival_detection` table; `Crops/RGB__<class>/` and `detections.csv` |
-| 3. [Plant Detector](#3-plant-detector) | yes | `plant_detection` table; `Leaf_Original/Leaf_BBox/` for leaves, `Crops/RGB__<class>/` for everything else |
-| 4. [Specimen Segmenter](#4-specimen-segmenter) | yes | `specimen_mask` table; `Specimen_Masks/*_Specimen/` and `Overlay/Overlay_Specimen_Segmentation/` |
+| 1. [MP Conversion Factor](#1-mp-conversion-factor) | [`phyloforfun/lm3_mp_conversion_factor__sqrt_fit`](https://huggingface.co/phyloforfun/lm3_mp_conversion_factor__sqrt_fit) (CPU; runs before any image is decoded) | `specimen.cf_px_per_cm_predicted_by_mp` |
+| 2. [Archival Detector](#2-archival-detector) | [`phyloforfun/lm3_archival_detector__yolo26x_det_1280`](https://huggingface.co/phyloforfun/lm3_archival_detector__yolo26x_det_1280) (default)<br>[`phyloforfun/lm3_archival_detector__yolo26n_det_640`](https://huggingface.co/phyloforfun/lm3_archival_detector__yolo26n_det_640) | `archival_detection` table; `Crops/RGB__<class>/` and `detections.csv` |
+| 3. [Plant Detector](#3-plant-detector) | [`phyloforfun/lm3_plant_detector__yolo26x_det_1280`](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26x_det_1280) (default)<br>[`phyloforfun/lm3_plant_detector__yolo26n_det_640`](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26n_det_640) | `plant_detection` table; `Leaf_Original/Leaf_BBox/` for leaves, `Crops/RGB__<class>/` for everything else |
+| 4. [Specimen Segmenter](#4-specimen-segmenter) | [`phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024) (default)<br>[`phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024)<br>[`phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280) | `specimen_mask` table; `Specimen_Masks/*_Specimen/` and `Overlay/Overlay_Specimen_Segmentation/` |
 | 5. [Phenology Detector](#5-phenology-detector) | none (CPU) | `phenology` table; `has_leaves` / `has_flowers` / `has_fruits` on the specimen; `Data/phenology.csv` |
-| 6. [Ruler Classifier](#6-ruler-classifier) | yes | `ruler_classification` table; `specimen.ruler_class_type` |
+| 6. [Ruler Classifier](#6-ruler-classifier) | ensemble of all three:<br>[`phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224)<br>[`phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224)<br>[`phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp) | `ruler_classification` table; `specimen.ruler_class_type` |
 | 7. [Ruler Conversion Factor](#7-ruler-conversion-factor) | none (CPU) | `ruler_CF_lattice` tables; `specimen.cf_px_per_cm` + `cf_source`; `Overlay/Overlay_Ruler_Lattice/` and `Data/ruler_conversion_factor.csv` (the verdict and why) |
-| 8. [Leaf Segmenter](#8-leaf-segmenter) | yes | `leaf_segmentation` table; `Specimen_Masks/*__Leaf/` per leaf and per sheet |
+| 8. [Leaf Segmenter](#8-leaf-segmenter) | [`phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024`](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024) | `leaf_segmentation` table; `Specimen_Masks/*__Leaf/` per leaf and per sheet |
 | 9. [Morphology](#9-morphology) | none (CPU) | `leaf_morphology` table; the green rotated boxes on the summary overlay |
-| 10. [Landmark Detector](#10-landmark-detector) | yes | `leaf_landmark` table (specimen and crop coordinates); `Data/landmarks.csv` |
+| 10. [Landmark Detector](#10-landmark-detector) | [`phyloforfun/lm3_landmark_detector__yolo26x_pose_640`](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640) | `leaf_landmark` table (specimen and crop coordinates); `Data/landmarks.csv` |
 | 11. [Landmark Measurements](#11-landmark-measurements) | none (CPU) | `leaf_landmark_measurement` table; the cyan/white/black lines and the measurement block on `Overlay/Overlay_Landmarks/` |
 | 12. [Leaf Orientation](#12-leaf-orientation) | none (CPU) | `oriented_leaf_rotation_angle_degreesCW` and `oriented_leaf_success` on `leaf_morphology` |
 | 13. [Petiole Width](#13-petiole-width) | none (CPU) | `leaf_petiole` table (`width_px`, `length_px`, `touches_leaf`); `Overlay/Overlay_Petiole/` |
