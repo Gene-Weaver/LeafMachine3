@@ -25,13 +25,19 @@ try:  # pragma: no cover - cv2 is always present at runtime
 except Exception:  # pragma: no cover
     cv2 = None
 
+from leafmachine3.core import records as _records
 from leafmachine3.core.imaging import decode_polygon, mask_bbox, scale_polygon
 from leafmachine3.core.records import CF_SOURCE_MP, CF_SOURCE_RULER
 from leafmachine3.core.landmarks import KPT_GROUP, MIDVEIN_N, SKELETON
+from leafmachine3.reporting import fieldprism_viz as fpv
 from leafmachine3.reporting.palette import (
-    LEAF_DET_CLASSES, RGB, CFScalebarStyle, GroupStyle, LandmarkStyle, OverlayStyle, PetioleStyle,
-    SpecimenStyle,
+    LEAF_DET_CLASSES, RGB, CFScalebarStyle, FieldPrismStyle, GroupStyle, LandmarkStyle, OverlayStyle,
+    PetioleStyle, SpecimenStyle,
 )
+
+# A CF published from FieldPrism markers. Read defensively so this module also imports against a
+# records.py that predates FieldPrism support.
+CF_SOURCE_FP = getattr(_records, "CF_SOURCE_FP", "measured_from_fieldprism")
 
 log = logging.getLogger("leafmachine3.overlay")
 
@@ -87,6 +93,8 @@ def build_summary_image(
     cf_style: Optional[CFScalebarStyle] = None,
     cf_source: Optional[str] = None,
     cf_note: Optional[str] = None,
+    fieldprism: Optional[dict] = None,
+    fp_style: Optional[FieldPrismStyle] = None,
 ) -> np.ndarray:
     """Render the Summary_Image overlay onto a copy of ``image_bgr``.
 
@@ -110,6 +118,15 @@ def build_summary_image(
             A measured CF is labeled "(measured from ruler)" in the banner.
         cf_note: Optional second banner line saying WHY a predicted CF was used -- see
             :func:`cf_fallback_reason`. Ignored unless the CF is predicted.
+        fieldprism: ``{"sheet": ruler_FP_sheet row | None, "markers": [ruler_FP_marker rows]}``
+            (see :func:`~leafmachine3.reporting.fieldprism_viz.fieldprism_from_record`), or
+            ``None``. When the sheet has FieldPrism markers (and ``style.draw_fieldprism``), the
+            FP detector boxes are not drawn at all (no fill, border, label or ruler raft); the
+            markers are labeled like the FieldPrism app (TL/TR/C/BL, predicted BR cell, "1 cm =");
+            reconstructed markers are drawn dashed; one 1 cm + 1 inch raft goes in the top-left
+            corner under the banner whenever a CF is shown, and the sheet badge sits right of it.
+            ``None`` renders exactly what this function drew before FieldPrism support.
+        fp_style: Resolved :class:`FieldPrismStyle`; the app colors when omitted.
 
     Returns:
         A new BGR ``np.ndarray``, the same shape as ``image_bgr`` -- EXCEPT under
@@ -118,6 +135,8 @@ def build_summary_image(
     """
     out = image_bgr.copy()
     scale = 1.0 / float(work_scale or 1.0)
+    fp = fieldprism if (style.draw_fieldprism and fpv.has_fp_markers(fieldprism)) else None
+    is_fp_box = fpv.fp_box_matcher(fp) if fp else None
 
     # In "rotated" mode leaf boxes come from Morphology's rotated (min) bounding box; the
     # axis-aligned YOLO leaf boxes are suppressed. Falls back to YOLO if no morphology exists.
@@ -126,7 +145,10 @@ def build_summary_image(
     # Masks are painted first (under boxes/labels) so outlines stay crisp on top.
     if style.draw_masks:
         _draw_masks(out, leaves, style, scale)
-    _draw_boxes(out, detections, style, scale, skip_plant_leaf=rotated_mode)
+    # FieldPrism markers are shown the app's way (TL/TR/C/BL labels + the green BR cell), so their
+    # detector boxes -- fill, border and "Ruler 0.93" label -- are left off this overlay entirely.
+    box_dets = [d for d in detections if not is_fp_box(d)] if is_fp_box else detections
+    _draw_boxes(out, box_dets, style, scale, skip_plant_leaf=rotated_mode)
     if rotated_mode and style.group("leaf").visible:
         _draw_rotated_boxes(out, morphology, style, scale)
     predicted = cf_source == CF_SOURCE_MP
@@ -145,17 +167,45 @@ def build_summary_image(
     # The two CF scale overlays LAST: the ruler rafts must cover whatever was drawn over the
     # rulers, and the exterior checkerboard changes the canvas size, so nothing may follow it.
     # cf_px_per_cm is a WORKING-frame value; * scale puts it in the original frame drawn on here.
+    # A FieldPrism sheet also gets the corner raft under a MEASURED CF: its FP boxes carry no raft
+    # (the marker labels are their scale), so the corner is where the sheet's 1 cm / 1 inch lives;
+    # any non-FP ruler still gets its own raft. The sheet badge then goes right of the corner raft,
+    # and the FP markers are drawn last so their app-style lines can steer clear of all three.
     cf_orig = (float(cf_px_per_cm) * scale) if cf_px_per_cm else None
-    if cf_orig and cf_orig > 0:
-        cfs = cf_style or CFScalebarStyle()
-        if style.insert_cf_in_rulers:
-            if predicted:
-                _draw_corner_cf_raft(out, cf_orig, cfs, top=banner_bottom)
-            else:
-                _draw_ruler_cf_bars(out, detections, cf_orig, cfs, scale)
-        if style.insert_cf_exterior:
-            out = _append_cf_exterior(out, cf_orig, cfs, predicted=predicted)
+    raft = None
+    cfs = cf_style or CFScalebarStyle()
+    if cf_orig and cf_orig > 0 and style.insert_cf_in_rulers:
+        if predicted or fp:
+            raft = _draw_corner_cf_raft(out, cf_orig, cfs, top=banner_bottom)
+        if not predicted:
+            _draw_ruler_cf_bars(out, detections, cf_orig, cfs, scale, skip=is_fp_box)
+    if fp:
+        fps = fp_style or FieldPrismStyle()
+        taken = [] if raft is None else [(0, banner_bottom, raft[0], raft[1])]
+        if banner_bottom:
+            taken.append((0, 0, _cf_banner_layout(float(cf_px_per_cm), style, cf_source,
+                                                  cf_note if predicted else None)[0], banner_bottom))
+        badge = _draw_fp_sheet_badge(out, fp, fps, style, banner_bottom, raft[0] if raft else None)
+        if badge is not None:
+            taken.append(badge)
+        fpv.draw_fp_markers(out, fp, fps, scale, avoid=taken)
+    if cf_orig and cf_orig > 0 and style.insert_cf_exterior:
+        out = _append_cf_exterior(out, cf_orig, cfs, predicted=predicted)
     return out
+
+
+def _draw_fp_sheet_badge(out: np.ndarray, fp: dict, fps: FieldPrismStyle, style: OverlayStyle,
+                         top: int, raft_right: Optional[int]) -> Optional[tuple[int, int, int, int]]:
+    """The FieldPrism sheet badge, top-aligned with the corner raft immediately to its right, or
+    flush left under the banner when no raft was drawn; returns its box. Sized like the box labels:
+    reference px scaled by the image resolution and ``style.font_scale``."""
+    text = fpv.fp_badge_text(fp.get("sheet"), fp.get("markers") or [])
+    if not text:
+        return None
+    rr = _res_ratio(out)
+    px = max(8.0, fps.badge_font_px * rr * max(0.1, float(style.font_scale)))
+    x = 0 if raft_right is None else raft_right + max(4, int(round(8 * rr)))
+    return fpv.draw_fp_badge(out, text, x, max(0, int(top)), px, fps)
 
 
 # -- CF scale overlays -------------------------------------------------------------
@@ -170,7 +220,7 @@ def _fill_solid(out: np.ndarray, x1: int, y1: int, x2: int, y2: int, bgr: tuple[
 
 def _draw_ruler_cf_bars(
     out: np.ndarray, detections: Sequence[dict], cf_px_per_cm: float,
-    cfs: CFScalebarStyle, scale: float,
+    cfs: CFScalebarStyle, scale: float, skip: Optional[Any] = None,
 ) -> None:
     """Lay a 1 cm + 1 inch scale raft over every detected Ruler (``insert_cf_in_rulers``).
 
@@ -184,6 +234,7 @@ def _draw_ruler_cf_bars(
     blended with the ruler underneath would be unmeasurable at its ends.
 
     ``cf_px_per_cm`` is already in the ORIGINAL frame; ``scale`` maps the working-frame boxes onto it.
+    ``skip(d)`` true leaves that ruler bare -- a FieldPrism marker, whose app labels are its scale.
     """
     cm_px = max(1, int(round(cf_px_per_cm)))
     inch_px = max(1, int(round(cf_px_per_cm * _CM_PER_INCH)))
@@ -192,6 +243,8 @@ def _draw_ruler_cf_bars(
 
     for d in detections:
         if str(d.get("source", "")) != "archival" or str(d.get("cls_name", "")) != _RULER_CLS:
+            continue
+        if skip is not None and skip(d):
             continue
         xyxy = d.get("xyxy")
         if not xyxy:
@@ -218,8 +271,11 @@ def _draw_ruler_cf_bars(
         _draw_raft(out, rx, ry, horizontal, thick, brim, cm_px, inch_px, cfs)
 
 
-def _draw_corner_cf_raft(out: np.ndarray, cf_px_per_cm: float, cfs: CFScalebarStyle, top: int = 0) -> None:
-    """Lay ONE 1 cm + 1 inch raft in the top-left corner, for a CF predicted from megapixels.
+def _draw_corner_cf_raft(
+    out: np.ndarray, cf_px_per_cm: float, cfs: CFScalebarStyle, top: int = 0,
+) -> tuple[int, int]:
+    """Lay ONE 1 cm + 1 inch raft in the top-left corner, for a CF predicted from megapixels (or on a
+    FieldPrism sheet, whose markers carry no raft); return its far ``(right, bottom)`` (exclusive).
 
     The predicted CF came from no ruler on the sheet, so it must not be drawn over one -- a raft
     sitting on a detected ruler reads as "this ruler was measured". It goes flush left at ``top``
@@ -232,6 +288,7 @@ def _draw_corner_cf_raft(out: np.ndarray, cf_px_per_cm: float, cfs: CFScalebarSt
     brim = max(0, int(cfs.brim))
     thick = max(1, _scaled_lw(cfs.bar_thickness, _res_ratio(out)))
     _draw_raft(out, 0, max(0, int(top)), True, thick, brim, cm_px, inch_px, cfs)
+    return max(cm_px, inch_px) + 2 * brim, max(0, int(top)) + 2 * thick + 3 * brim
 
 
 def _draw_raft(
@@ -838,10 +895,27 @@ def _draw_cf_banner(out: np.ndarray, cf_px_per_cm: float, style: OverlayStyle,
                     cf_source: Optional[str] = None, note: Optional[str] = None) -> int:
     """Print the conversion factor in a banner at the top-left of the sheet; return its bottom y.
 
-    Line 1 names the CF's source -- "(measured from ruler)" or "(predicted from megapixels)" --
-    so the number is never read as a measurement it isn't. ``note`` (why the prediction was used)
-    becomes a second line in the same font; the banner grows to fit both."""
+    Line 1 names the CF's source -- "(measured from ruler)", "(measured from FieldPrism)" or
+    "(predicted from megapixels)" -- so the number is never read as a measurement it isn't.
+    ``note`` (why the prediction was used) becomes a second line in the same font; the banner grows
+    to fit both."""
+    right, bottom, lines, sizes, font_scale, thickness, pad, line_h = _cf_banner_layout(
+        cf_px_per_cm, style, cf_source, note)
+    cv2.rectangle(out, (0, 0), (right - 1, bottom), _bgr(style.cf_banner_color), -1)
+    for k, ((_tw, th), _base) in enumerate(sizes):
+        cv2.putText(
+            out, lines[k], (pad, pad + k * (line_h + pad) + th), _FONT, font_scale,
+            (0, 0, 0), thickness, cv2.LINE_AA,
+        )
+    return bottom + 1          # cv2.rectangle is inclusive of its far corner
+
+
+def _cf_banner_layout(cf_px_per_cm: float, style: OverlayStyle, cf_source: Optional[str] = None,
+                      note: Optional[str] = None):
+    """The banner's text and geometry: ``(right, bottom, lines, sizes, font_scale, thickness, pad,
+    line_h)``, ``right`` exclusive, ``bottom`` inclusive (as ``cv2.rectangle`` paints it)."""
     label = {CF_SOURCE_RULER: " (measured from ruler)",
+             CF_SOURCE_FP: " (measured from FieldPrism)",
              CF_SOURCE_MP: " (predicted from megapixels)"}.get(cf_source, "")
     lines = [f"CF: {cf_px_per_cm:.2f} px/cm{label}"] + ([note] if note else [])
     font_scale = _BASE_FONT_SCALE * 1.4 * max(0.1, style.font_scale)
@@ -851,13 +925,7 @@ def _draw_cf_banner(out: np.ndarray, cf_px_per_cm: float, style: OverlayStyle,
     line_h = max(th + base for (_tw, th), base in sizes)
     width = max(tw for (tw, _th), _base in sizes)
     bottom = len(lines) * line_h + (len(lines) - 1) * pad + 2 * pad
-    cv2.rectangle(out, (0, 0), (width + 2 * pad, bottom), _bgr(style.cf_banner_color), -1)
-    for k, ((_tw, th), _base) in enumerate(sizes):
-        cv2.putText(
-            out, lines[k], (pad, pad + k * (line_h + pad) + th), _FONT, font_scale,
-            (0, 0, 0), thickness, cv2.LINE_AA,
-        )
-    return bottom + 1          # cv2.rectangle is inclusive of its far corner
+    return width + 2 * pad + 1, bottom, lines, sizes, font_scale, thickness, pad, line_h
 
 
 # -- specimen segmentation overlay -------------------------------------------------

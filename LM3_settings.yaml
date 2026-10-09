@@ -1,6 +1,6 @@
 version: 3
 project:
-  run_name: for_readme3
+  run_name: my_first_project
   input:
     dirs: [examples/images]
     recursive: true
@@ -78,7 +78,12 @@ modules:
     ensemble_members: [yolo26x_cls_224, yolo26n_cls_224, dinov2_frozen_mlp]
     min_conf: 0.35
     squarify: {sz: 720, method: tile_four}
-  ruler_cf: {enabled: true, anchor_tol: 0.25, min_frame_cm: null, use_CF_predicted_by_MP: false}
+  ruler_cf:
+    enabled: true
+    anchor_tol: 0.25
+    min_frame_cm: null
+    use_CF_predicted_by_MP: false
+    fieldprism: {enabled: true, peer_tol: 0.03, anchor_tol: 0.03, allow_single_marker: true}
   leaf_segmenter:
     enabled: true
     model: {key: yolo26x_seg_1024, path: models/leaf_segmenter/model.onnx, format: onnx}
@@ -124,6 +129,7 @@ report:
     draw_cf_banner: true
     insert_cf_in_rulers: true
     insert_cf_exterior: true
+    draw_fieldprism: true
     cf_scalebar:
       cm_color: [0, 255, 255]
       inch_color: [0, 255, 0]
@@ -253,6 +259,7 @@ report:
     outline: true
     display_max_dim: 2048
   overlay_ruler_lattice: {enabled: true}
+  overlay_fieldprism: {enabled: true}
   masks:
     classes: [Leaf]
     background: black
@@ -284,4 +291,5 @@ report:
     na_rep: ''
     float_precision: 6
     files: {leaf_measurements: true, specimen_summary: true, phenology: true, detections: true, landmarks: true,
-      ruler_conversion_factor: true, ruler_crops: true, run_stages: true, stage_errors: true, data_dictionary: true}
+      ruler_conversion_factor: true, ruler_crops: true, fieldprism_markers: true, fieldprism_sheets: true, run_stages: true,
+      stage_errors: true, data_dictionary: true}

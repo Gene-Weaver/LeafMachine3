@@ -492,7 +492,7 @@ def reconcile_units(pxcm_seed, levels, declared_units=(), n_iter=4,
 #   ratio           for `transition`, the known coarse/fine period ratio.
 #   skip            set -> no CF is attempted, with the reason recorded.
 #
-# layouts: nested | transition | stagger | block | grid | stacked | none
+# layouts: nested | transition | stagger | block | grid | stacked | fieldprism | none
 CLASS_SPEC: dict[str, dict] = {
     # ---- GT-app minimum_unit names (what groundtruth.db stores) -------------
     "metric__2_MM": dict(systems=("metric",), units=["metric__2_MM"], layout="nested"),
@@ -542,9 +542,10 @@ CLASS_SPEC: dict[str, dict] = {
                            units=["metric__MM", "std__16_IN"], layout="stacked"),
 
     # ---- non-CF classes ----------------------------------------------------
-    # FP is a SPECIAL ruler kind, not a false positive -- deferred, not discarded.
-    "FP": dict(systems=(), units=[], layout="none",
-               skip="special ruler kind (FP) -- deferred, not yet handled"),
+    # FP is a FieldPrism photogrammetric marker (a 3x3 grid of 1 cm cells), not a tick ruler.
+    # It has no `skip`: the engine routes it to the FieldPrism path (fieldprism.py) BEFORE the
+    # tick lattice, and is_skipped() still keeps it out of the lattice `analyse` (see below).
+    "FP": dict(systems=(), units=[], layout="fieldprism"),
     # messy = unreadable, or genuinely not a ruler. No CF is possible.
     "messy": dict(systems=(), units=[], layout="none",
                   skip="unreadable or not a ruler"),
@@ -575,9 +576,21 @@ def class_systems(unit_class: str) -> tuple[str, ...]:
     return tuple(spec_of(unit_class).get("systems") or ())
 
 
+def is_fieldprism(unit_class: str) -> bool:
+    """True for a FieldPrism marker class, measured by fieldprism.py, never by the tick lattice."""
+    return spec_of(unit_class).get("layout") == "fieldprism"
+
+
 def is_skipped(unit_class: str):
-    """Reason this class yields no CF, or None."""
-    return spec_of(unit_class).get("skip")
+    """Reason the TICK LATTICE yields no CF for this class, or None.
+
+    A FieldPrism class carries no `skip` (it is measured, just not here), but it must never reach
+    the lattice `analyse`, so it still answers with a reason. The engine checks is_fieldprism()
+    first and never asks this question of an FP crop."""
+    sp = spec_of(unit_class)
+    if sp.get("layout") == "fieldprism":
+        return "FieldPrism marker (FP) -- measured by the FieldPrism path, not the tick lattice"
+    return sp.get("skip")
 
 
 def admissible_units(unit_class: str) -> list[str]:

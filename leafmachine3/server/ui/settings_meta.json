@@ -115,13 +115,34 @@
     {
       "id": "ruler_cf",
       "label": "Ruler Conversion Factor",
-      "blurb": "Measures pixels per centimeter from the ruler's tick lattice.",
+      "blurb": "Measures pixels per centimeter from the ruler's tick lattice and from FieldPrism sheet markers.",
       "keys": [
-        "modules.ruler_cf"
+        "modules.ruler_cf",
+        "report.overlay_fieldprism",
+        "report.overlay.draw_fieldprism"
       ],
       "stage": "ruler_cf",
       "phase": "scale",
-      "order": 7
+      "order": 7,
+      "subsections": [
+        {
+          "label": "Ruler lattice",
+          "paths": [
+            "modules.ruler_cf"
+          ],
+          "own": true,
+          "blurb": "Tick-ruler measurement: the megapixel anchor and its tolerance, and the fallback for sheets with no usable ruler."
+        },
+        {
+          "label": "FieldPrism",
+          "paths": [
+            "modules.ruler_cf.fieldprism",
+            "report.overlay_fieldprism",
+            "report.overlay"
+          ],
+          "blurb": "FieldPrism sheet markers: measuring them, how closely they must agree, and the overlays that label them. Their CSV files are under Reporter > Data export."
+        }
+      ]
     },
     {
       "id": "leaf_segmenter",
@@ -1319,7 +1340,7 @@
   },
   "modules.ruler_cf.anchor_tol": {
     "label": "Anchor tolerance",
-    "help": "How far a lattice reading may drift from the megapixel-predicted conversion factor before it is rejected, as a fraction.",
+    "help": "How far a lattice reading may drift from the megapixel-predicted conversion factor before it is rejected, as a fraction. Sheets with FieldPrism markers use FieldPrism anchor tolerance instead.",
     "type": "float",
     "min": 0.01,
     "max": 2.0,
@@ -1338,10 +1359,44 @@
   },
   "modules.ruler_cf.use_CF_predicted_by_MP": {
     "label": "Use MP-predicted CF as fallback",
-    "help": "When a sheet has no ruler, or the lattice method does not pass, use the conversion factor predicted from the image's megapixels so the sheet still gets cm measurements. Off by default: those sheets keep empty cm columns. Every output records the source in cf_source (measured_from_ruler or predicted_from_megapixels).",
+    "help": "When a sheet has no ruler, or the lattice method does not pass, use the conversion factor predicted from the image's megapixels so the sheet still gets cm measurements. Off by default: those sheets keep empty cm columns. Never applied to a sheet with FieldPrism markers. Every output records the source in cf_source (measured_from_ruler, measured_from_fieldprism or predicted_from_megapixels).",
     "type": "bool",
     "important": true,
     "group": "Ruler CF"
+  },
+  "modules.ruler_cf.fieldprism.enabled": {
+    "label": "Measure FieldPrism markers",
+    "help": "Measure FieldPrism (FP) markers -- the 3x3 grids of 1 cm squares printed on FieldPrism field sheets -- and identify the sheet size (A5, A4, A3, Letter, Legal or Tabloid) from where they sit. When a sheet has FP markers, their geometry replaces the megapixel prediction as the anchor every ruler is checked against. Assumes the image was already rectified by the FieldPrism app; LM3 does not deskew it. Off: FP rulers are skipped as an unsupported class.",
+    "type": "bool",
+    "important": false,
+    "group": "FieldPrism"
+  },
+  "modules.ruler_cf.fieldprism.peer_tol": {
+    "label": "FieldPrism marker agreement",
+    "help": "How far one FieldPrism marker's pixels-per-centimeter may differ from the median of the sheet's markers, as a fraction, before it is rejected as disagreeing. Clean markers on one sheet already differ by about 1.6%, so keep this at 0.02 or above.",
+    "type": "float",
+    "min": 0.005,
+    "max": 0.5,
+    "step": 0.005,
+    "important": false,
+    "group": "FieldPrism"
+  },
+  "modules.ruler_cf.fieldprism.anchor_tol": {
+    "label": "FieldPrism anchor tolerance",
+    "help": "On a sheet with FieldPrism markers, how far any ruler's reading may drift from the FieldPrism anchor before it is rejected, as a fraction. Replaces Anchor tolerance on those sheets, which is much looser because the megapixel prediction is much less precise.",
+    "type": "float",
+    "min": 0.005,
+    "max": 0.5,
+    "step": 0.005,
+    "important": false,
+    "group": "FieldPrism"
+  },
+  "modules.ruler_cf.fieldprism.allow_single_marker": {
+    "label": "Trust a single FieldPrism marker",
+    "help": "Allow one valid FieldPrism marker, with no other marker to compare it against, to publish a high-confidence conversion factor. Off: a lone marker is capped at medium confidence and the sheet's conversion factor is withheld.",
+    "type": "bool",
+    "important": false,
+    "group": "FieldPrism"
   },
   "modules.leaf_segmenter.enabled": {
     "label": "Enabled",
@@ -1896,6 +1951,13 @@
     "type": "bool",
     "important": false,
     "group": "Summary Overlay"
+  },
+  "report.overlay.draw_fieldprism": {
+    "label": "Draw FieldPrism markers",
+    "help": "On the summary overlay, label each FieldPrism marker's TL, TR, C and BL squares and its missing BR square the way the FieldPrism app does, outline reconstructed markers, and print the identified sheet type next to the scale raft in the top-left corner. Off: FieldPrism markers are drawn like any other ruler box.",
+    "type": "bool",
+    "important": false,
+    "group": "Summary overlay"
   },
   "report.overlay.cf_scalebar.cm_color": {
     "label": "1 cm bar color",
@@ -2686,6 +2748,13 @@
     "important": false,
     "group": "Ruler Overlay"
   },
+  "report.overlay_fieldprism.enabled": {
+    "label": "Write FieldPrism overlays",
+    "help": "For every sheet with FieldPrism markers, save reports/Overlay/Overlay_FieldPrism/<image>__FieldPrism: the working image labeled like the FieldPrism app's overlay, plus reconstructed markers, the page outline and the identified sheet type.",
+    "type": "bool",
+    "important": false,
+    "group": "FieldPrism overlay"
+  },
   "report.masks.classes": {
     "label": "Exported classes",
     "help": "Which segmentation classes get a mask folder written.",
@@ -3004,6 +3073,20 @@
   "report.data.files.ruler_crops": {
     "label": "Ruler crops",
     "help": "ruler_crops.csv: one row per candidate ruler crop, including the ones skipped or unreadable.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.fieldprism_markers": {
+    "label": "FieldPrism markers",
+    "help": "fieldprism_markers.csv: one row per FieldPrism marker crop with its TL, TR, C, BL and predicted BR square centers, pitch, pixels per centimeter, validation checks and verdict.",
+    "type": "bool",
+    "important": false,
+    "group": "Data Export (CSV)"
+  },
+  "report.data.files.fieldprism_sheets": {
+    "label": "FieldPrism sheets",
+    "help": "fieldprism_sheets.csv: one row per sheet with FieldPrism markers -- the identified sheet type, orientation, marker counts (observed, used, inferred), the sheet fit and the FieldPrism conversion factor.",
     "type": "bool",
     "important": false,
     "group": "Data Export (CSV)"

@@ -11,6 +11,8 @@ and can be toggled independently in ``report`` of ``LM3_settings.yaml``. The lay
     Overlay/Overlay_Landmarks/<stem>__LM-leaf__x_y_x_y.<ext>  (one per leaf: keypoints + measures)
     Overlay/Overlay_Petiole/<stem>__PET-leaf__x_y_x_y.<ext>   (one per leaf: petiole width band + panel)
     Overlay/Overlay_Specimen_Segmentation/<stem>__SpecimenSeg.<ext>  (2-panel: annotated sheet | cutout)
+    Overlay/Overlay_FieldPrism/<stem>__FieldPrism.<ext>    (FieldPrism sheets only: the app's FPfit
+        overlay -- TL/TR/C/BL labels, predicted BR cells, inferred markers, page outline, sheet badge)
     Crops/RGB__<friendly>/<stem>__BBOX-<friendly>__x_y_x_y.<ext>   (NON-leaf detector classes)
     Leaf_Original/<product>/<stem>__og-<PREFIX>-<friendly>__x_y_x_y.<ext>  (7 leaf products;
     Leaf_Oriented/<product>/<stem>__or-<PREFIX>-<friendly>__x_y_x_y.<ext>   friendly =
@@ -73,6 +75,11 @@ from leafmachine3.core.naming import crop_label, friendly_name
 from leafmachine3.core.records import CF_SOURCE_MP
 from leafmachine3.core.stage import PipelineStage, WorkItem
 from leafmachine3.reporting.data_export import export_data_csvs
+from leafmachine3.reporting.fieldprism_viz import (
+    build_fieldprism_overlay,
+    fieldprism_from_record,
+    has_fp_markers,
+)
 from leafmachine3.reporting.leaf_products import (
     PRODUCTS,
     PRODUCT_KEYS,
@@ -88,6 +95,7 @@ from leafmachine3.reporting.overlay import (
 )
 from leafmachine3.reporting.palette import (
     CFScalebarStyle,
+    FieldPrismStyle,
     LandmarkStyle,
     OverlayStyle,
     PetioleStyle,
@@ -217,6 +225,10 @@ class Reporter(PipelineStage):
         overlay_cfg = _sub(r, "overlay")
         lm_style = LandmarkStyle.from_config(self.cfg)
         pet_style = PetioleStyle.from_config(self.cfg)
+        # FieldPrism marker rows ride on the lattice record; None for a sheet without FP rulers and
+        # for records written before FieldPrism support, which then render exactly as before.
+        fieldprism = fieldprism_from_record(b.ruler_lattice)
+        fp_style = FieldPrismStyle.from_config(self.cfg)
         if _flag(overlay_cfg, "enabled", True):
           with self._phase("overlay_summary"):
             style = OverlayStyle.from_config(self.cfg)
@@ -228,6 +240,7 @@ class Reporter(PipelineStage):
                 cf_style=CFScalebarStyle.from_config(self.cfg), cf_source=b.cf_source,
                 cf_note=(cf_fallback_reason((b.ruler_lattice or {}).get("image"))
                          if b.cf_source == CF_SOURCE_MP else None),
+                fieldprism=fieldprism, fp_style=fp_style,
             )
             path = reports / "Overlay" / "Overlay_Summary" / f"{stem}__Overlay.{img_ext}"
             save_image(summary, path, quality=quality)
@@ -264,6 +277,13 @@ class Reporter(PipelineStage):
         if _flag(ovrl_cfg, "enabled", True) and b.ruler_lattice:
             with self._phase("overlay_ruler_lattice"):
                 written += self._export_ruler_lattice(b, reports)
+
+        # ---- Overlay_FieldPrism (the FieldPrism app's FPfit overlay; FP sheets only) ----
+        ovfp_cfg = _sub(r, "overlay_fieldprism")
+        if _flag(ovfp_cfg, "enabled", True) and has_fp_markers(fieldprism):
+            with self._phase("overlay_fieldprism"):
+                written += self._export_fieldprism(b, fieldprism, fp_style, reports, stem, img_ext,
+                                                   quality, read)
 
         # ---- mask exports ------------------------------------------------
         masks_cfg = _sub(r, "masks")
@@ -443,6 +463,23 @@ class Reporter(PipelineStage):
         p.parent.mkdir(parents=True, exist_ok=True)
         panel.save(str(p))                                   # render_qc returns a PIL RGB image
         return [(str(p), "Overlay/Overlay_Ruler_Lattice")]
+
+    # ---- FieldPrism overlay (rebuilt from the stored ruler_FP_* rows) ----- #
+    def _export_fieldprism(self, b, fieldprism, fp_style, reports, stem, img_ext, quality, read):
+        """Render ``Overlay/Overlay_FieldPrism/<stem>__FieldPrism.<ext>`` on the working image: a
+        clone of the FieldPrism app's FPfit overlay (square labels, predicted BR cells, per-marker
+        "1 cm =" lines, the "1 cm = %.1f px" legend) plus the markers reconstructed from the sheet
+        geometry, the page outline and the sheet badge. A drawing failure is logged, never raised:
+        it is a QC view, and the report must not fail over one."""
+        try:
+            img = build_fieldprism_overlay(read(b.working_path), fieldprism, fp_style,
+                                           cf_px_per_cm=b.cf_px_per_cm, work_scale=_WORKING)
+        except Exception as exc:
+            log.warning("FieldPrism overlay render failed for specimen %s (%s)", b.specimen_id, exc)
+            return []
+        path = reports / "Overlay" / "Overlay_FieldPrism" / f"{stem}__FieldPrism.{img_ext}"
+        save_image(img, path, quality=quality)
+        return [(str(path), "Overlay/Overlay_FieldPrism")]
 
     # ---- raw RGB crop exports (both detectors) --------------------------- #
     def _export_crops(self, b, crops_cfg, reports, stem, img_ext, quality, read):

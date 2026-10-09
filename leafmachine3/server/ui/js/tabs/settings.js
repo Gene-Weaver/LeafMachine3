@@ -1315,16 +1315,22 @@ export function initSettings(root) {
       node.leaves.push(l);
     }
 
+    // Rebuilt in place rather than delete-then-set: a Map re-insert moves the
+    // fused branch to the END, so `modules.ruler_cf` used to render below the
+    // `report` overlay switches that ride along in its section.
     (function fuse(node) {
-      for (const [k, child] of Array.from(node.children)) {
+      const kept = new Map();
+      for (const [k, child] of node.children) {
         fuse(child);
         if (child.leaves.length === 0 && child.children.size === 1) {
           const [gk, grand] = Array.from(child.children)[0];
-          node.children.delete(k);
           grand.name = `${child.name}.${gk}`;
-          node.children.set(grand.name, grand);
+          kept.set(grand.name, grand);
+        } else {
+          kept.set(k, child);
         }
       }
+      node.children = kept;
     })(root);
 
     return { root, strip };

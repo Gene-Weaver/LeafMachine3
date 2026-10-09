@@ -23,6 +23,15 @@ Ruler crop are also run through the engine (it records them as ``no_ruler``), so
 the fallback CF and an audit row. The full audit trail (including the withheld reading) always
 lands in ``ruler_CF_lattice`` + its per-crop table. The QC panel is NOT drawn here; it is deferred to the Reporter, which rebuilds it from
 the stored record alone (``Overlay/Overlay_Ruler_Lattice``).
+
+FIELDPRISM (FP). Ruler crops classified ``FP`` are FieldPrism photogrammetric markers. With
+``modules.ruler_cf.fieldprism.enabled`` on (the default) the engine measures them from the working
+image (``working_path`` in the payload), identifies the printed sheet, and anchors the WHOLE sheet on
+the FieldPrism CF instead of the megapixel prediction (``fieldprism.peer_tol``,
+``fieldprism.anchor_tol``, ``fieldprism.allow_single_marker``). A published CF backed by FP markers is stamped
+``cf_source = 'measured_from_fieldprism'``. The MP fallback is NEVER applied to such a sheet, even
+with ``use_CF_predicted_by_MP`` on: FieldPrism sheets come in several sizes and the MP model assumes
+one. The per-marker / per-sheet trail lands in ``ruler_FP_marker`` / ``ruler_FP_sheet``.
 """
 from __future__ import annotations
 
@@ -30,7 +39,7 @@ import logging
 from collections import Counter
 from typing import Optional
 
-from leafmachine3.core.records import CF_SOURCE_MP, CF_SOURCE_RULER
+from leafmachine3.core.records import CF_SOURCE_FP, CF_SOURCE_MP, CF_SOURCE_RULER
 from leafmachine3.core.stage import PipelineStage, WorkItem
 
 log = logging.getLogger("leafmachine3.ruler_cf")
@@ -42,7 +51,9 @@ class RulerConversionFactor(PipelineStage):
     key: str = "ruler_cf"
     name: str = "Ruler Conversion Factor"
     depends_on: tuple[str, ...] = ("archival_detector", "ruler_classifier")
-    owns_tables: tuple[str, ...] = ("ruler_CF_lattice_crop", "ruler_CF_lattice")
+    # children before parents: reset_stages deletes in this order
+    owns_tables: tuple[str, ...] = ("ruler_FP_marker", "ruler_FP_sheet",
+                                    "ruler_CF_lattice_crop", "ruler_CF_lattice")
     device_kind: str = "cpu"
     cpu_parallel: str = "process"      # the tick-lattice measurement is GIL-bound; processes scale ~linearly
     est_item_seconds: float = 2.0      # ~per-sheet lattice measurement cost (analyse runs 2x per ruler crop)
@@ -56,12 +67,20 @@ class RulerConversionFactor(PipelineStage):
         sq = self.cfg.stage("ruler_classifier")
         sqg = sq.get if hasattr(sq, "get") else (lambda k, d: d)
         squarify = sqg("squarify", {}) or {}
+        fp = g("fieldprism", None) or {}
+        fpg = fp.get if hasattr(fp, "get") else (lambda k, d: d)
         return {
             "anchor_tol": float(g("anchor_tol", 0.25)),
             "min_frame_cm": (None if g("min_frame_cm", None) is None else float(g("min_frame_cm", None))),
             "squarify_sz": int((squarify.get("sz") if hasattr(squarify, "get") else None) or 720),
             "squarify_method": str((squarify.get("method") if hasattr(squarify, "get") else None) or "tile_four"),
             "use_mp_fallback": bool(g("use_CF_predicted_by_MP", False)),
+            # FieldPrism markers: the modules.ruler_cf.fieldprism block (defaults =
+            # fieldprism.FP_PEER_TOL / FP_ANCHOR_TOL; an absent block means all defaults)
+            "fp_enabled": bool(fpg("enabled", True)),
+            "fp_peer_tol": float(fpg("peer_tol", 0.03)),
+            "fp_anchor_tol": float(fpg("anchor_tol", 0.03)),
+            "fp_allow_single_marker": bool(fpg("allow_single_marker", True)),
         }
 
     def build_model(self, device):
@@ -85,6 +104,9 @@ class RulerConversionFactor(PipelineStage):
             write_rasters=True,      # rot/tick rasters are what the Reporter redraws from
             squarify_sz=s["squarify_sz"], squarify_method=s["squarify_method"],
             anchor_tol=s["anchor_tol"], min_frame_cm=s["min_frame_cm"],
+            fp_enabled=s["fp_enabled"], fp_peer_tol=s["fp_peer_tol"],
+            fp_anchor_tol=s["fp_anchor_tol"],
+            fp_allow_single_marker=s["fp_allow_single_marker"],
         )
 
     # ---- pipeline hooks ----------------------------------------------------
@@ -128,6 +150,9 @@ class RulerConversionFactor(PipelineStage):
                 "anchor_formula": mp_model.formula_text(
                     s["original_mp"] if s is not None else None),
                 "anchor_formula_symbolic": mp_model.formula_symbolic(),
+                # The working copy, read ONCE per sheet by the engine when it has FieldPrism
+                # crops (the square finder needs the full marker region, not the tight crop).
+                "working_path": (s["working_path"] if s is not None else None),
             }
             items.append(WorkItem(sid, (specimen, project.db.ruler_lattice_crops(sid))))
         return items
@@ -159,20 +184,30 @@ class RulerConversionFactor(PipelineStage):
 def _writeback(record: dict, *, use_mp_fallback: bool = False) -> Optional[dict]:
     """The specimen CF write-back for this sheet, or None to leave ``cf_px_per_cm`` NULL.
 
-    A PUBLISHED (high-confidence) sheet writes the lattice CF, source 'measured_from_ruler'.
-    unit_type is the dominant classifier ruler_class among the crops that were actually USED to
-    produce the CF (the reconciliation verdict), so the stored unit-type matches the reading.
+    A PUBLISHED (high-confidence) sheet writes the lattice CF, source 'measured_from_ruler' --
+    or 'measured_from_fieldprism' when FieldPrism markers are among the readings behind it (the
+    engine's own ``cf_source``). unit_type is the dominant classifier ruler_class among the crops
+    that were actually USED to produce the CF (the reconciliation verdict), so the stored
+    unit-type matches the reading -- and always 'FP' for a FieldPrism-sourced CF, whose value is
+    the FieldPrism reading itself.
 
     Any other sheet (withheld / no_reading / no_ruler) writes the WORKING-frame MP anchor, source
     'predicted_from_megapixels', only when ``use_mp_fallback`` is on and an anchor exists. It
-    carries no unit_type: no ruler stands behind it."""
+    carries no unit_type: no ruler stands behind it. A sheet with FieldPrism markers
+    (``fp_detected``) NEVER gets the MP fallback: FieldPrism sheets come in several sizes, so the
+    prediction is known to be the wrong reference there."""
     img = record.get("image") or {}
     if img.get("status") == "published" and img.get("cf_px_per_cm") is not None:
         used = [c.get("ruler_class") for c in record.get("crops", [])
                 if c.get("verdict") == "used" and c.get("ruler_class")]
-        unit = Counter(used).most_common(1)[0][0] if used else None
+        source = CF_SOURCE_FP if img.get("cf_source") == CF_SOURCE_FP else CF_SOURCE_RULER
+        # A FieldPrism-sourced CF IS the FieldPrism reading, whatever witnesses also agreed with it.
+        unit = ("FP" if source == CF_SOURCE_FP
+                else (Counter(used).most_common(1)[0][0] if used else None))
         return {"cf_px_per_cm": float(img["cf_px_per_cm"]), "unit_type": unit,
-                "source": CF_SOURCE_RULER}
+                "source": source}
+    if img.get("fp_detected"):
+        return None
     anchor = img.get("mp_anchor_working")
     if use_mp_fallback and anchor:
         return {"cf_px_per_cm": float(anchor), "unit_type": None, "source": CF_SOURCE_MP}

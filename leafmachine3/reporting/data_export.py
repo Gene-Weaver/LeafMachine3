@@ -10,6 +10,8 @@ them, written straight out of the per-project SQLite so a run is analyzable with
     reports/Data/landmarks.csv                one row per predicted keypoint (31 per leaf)
     reports/Data/ruler_conversion_factor.csv  one row per sheet -- the CF verdict + its audit trail
     reports/Data/ruler_crops.csv              one row per candidate ruler crop
+    reports/Data/fieldprism_markers.csv       one row per FieldPrism (FP) marker crop
+    reports/Data/fieldprism_sheets.csv        one row per sheet with FP markers -- sheet type + FP CF
     reports/Data/run_stages.csv               one row per pipeline stage (the run ledger)
     reports/Data/stage_errors.csv             one row per per-image stage failure
     reports/Data/data_dictionary.csv          every column above: file, units, meaning
@@ -22,7 +24,8 @@ work_scale``. Nothing here is rescaled on the way out.
 
 WHAT ``_cm`` MEANS. MetricGrounding divides by ``specimen.cf_px_per_cm`` (exported as
 ``cf_px_per_cm``), and ``cf_source`` -- stored on the specimen, not derived here -- says which CF
-that is: ``measured_from_ruler`` (the lattice stage published it at high confidence) or
+that is: ``measured_from_ruler`` (the lattice stage published it at high confidence),
+``measured_from_fieldprism`` (published, with FieldPrism markers among the readings behind it) or
 ``predicted_from_megapixels`` (no ruler, or the lattice did not pass, and
 ``modules.ruler_cf.use_CF_predicted_by_MP`` was on). ``none`` means the sheet has no CF and every
 ``_cm`` column is empty -- the default for those sheets, a visible absence rather than a gap
@@ -53,6 +56,59 @@ class Column:
     name: str
     units: str
     desc: str
+
+
+# --------------------------------------------------------------------------- #
+# FieldPrism (FP) sheet roll-up -- carried by BOTH leaf_measurements and specimen_summary
+# --------------------------------------------------------------------------- #
+# Sheet-level, from ruler_FP_sheet (aliased fp_*) and ruler_CF_lattice.anchor_source. Declared once
+# so the two files can never describe the same column differently. The full per-marker and
+# per-sheet audit trail is in fieldprism_markers.csv / fieldprism_sheets.csv.
+_FP_SUMMARY_COLUMNS: tuple[Column, ...] = (
+    Column("ruler_cf_anchor_source", "", "What every ruler reading on this sheet was checked "
+                                         "against: 'fieldprism' (the sheet's FieldPrism markers; "
+                                         "the megapixel prediction is then not used at all), "
+                                         "'megapixels' (the megapixel-predicted CF) or 'none' (no "
+                                         "anchor). Empty when the ruler_cf stage has no row for "
+                                         "this sheet."),
+    Column("fp_sheet_type", "", "FieldPrism sheet size identified from the relative marker "
+                                "positions: A5, A4, A3, Letter, Legal or Tabloid (Legal_legacy "
+                                "for the older Legal layout). Trust it only when fp_sheet_status "
+                                "is 'identified'. Empty when the sheet has no FieldPrism markers."),
+    Column("fp_sheet_status", "", "identified (one sheet size fits) | ambiguous (more than one "
+                                  "size fits the markers seen) | undetermined (fewer than 2 "
+                                  "usable markers) | unrecognized (no FieldPrism sheet fits). "
+                                  "Empty when the sheet has no FieldPrism markers."),
+    Column("fp_orientation_deg", "degrees", "Orientation of the FieldPrism sheet in the image, "
+                                            "from the marker fit snapped to 0, 90, 180 or 270. 0 "
+                                            "is upright (every marker's empty cell at its bottom "
+                                            "right); anything else means the image is rotated."),
+    Column("fp_n_markers_detected", "count", "Ruler boxes the classifier labeled FP (FieldPrism "
+                                             "marker) on this sheet."),
+    Column("fp_n_markers_used", "count", "FieldPrism markers that were measured, passed the "
+                                         "per-marker geometric checks and agreed with each other; "
+                                         "these define fp_cf_px_per_cm."),
+    Column("fp_n_markers_inferred", "count", "Sheet-corner markers absent from the image or not "
+                                             "measured, reconstructed from the identified sheet "
+                                             "layout. Drawn on the overlays, never measured."),
+    Column("fp_cf_px_per_cm", "px/cm", "The FieldPrism anchor CF (working frame): the whole-sheet "
+                                       "layout fit when the sheet type was identified, otherwise "
+                                       "the mean of the used markers. Every ruler on the sheet is "
+                                       "checked against it; the CF actually applied is "
+                                       "cf_px_per_cm (see cf_source)."),
+    Column("fp_confidence", "", "high | medium | low: how far the FieldPrism markers can be "
+                                "trusted (high = at least two markers agree, or one valid marker "
+                                "with modules.ruler_cf.fieldprism.allow_single_marker on). A CF "
+                                "backed by FieldPrism markers publishes only when this is high."),
+)
+
+#: cf_source, as both files describe it.
+_CF_SOURCE_DESC = ("Which CF produced the _cm columns. 'measured_from_ruler' = the published ruler "
+                   "CF; 'measured_from_fieldprism' = the published CF, with FieldPrism markers "
+                   "among the readings behind it; 'predicted_from_megapixels' = the megapixel "
+                   "prediction, used because the sheet had no ruler or the lattice did not pass "
+                   "(use_CF_predicted_by_MP on; never on a sheet with FieldPrism markers); "
+                   "'none' = no CF, so every _cm column is empty.")
 
 
 # --------------------------------------------------------------------------- #
@@ -95,11 +151,7 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
                                   "original-frame pixels. 1.0 when nothing was resized."),
     Column("downsampled", "0/1", "1 iff pixels were discarded capping the long side at ingest.max_working_dim."),
     Column("original_mp", "megapixels", "Original width*height/1e6; the input to the MP->CF regression."),
-    Column("cf_source", "", "Which CF produced this row's _cm columns. 'measured_from_ruler' = the "
-                            "published ruler CF; 'predicted_from_megapixels' = the megapixel "
-                            "prediction, used because the sheet had no ruler or the lattice did not "
-                            "pass (use_CF_predicted_by_MP on); 'none' = no CF, so every _cm column "
-                            "on this row is empty."),
+    Column("cf_source", "", _CF_SOURCE_DESC),
     Column("cf_px_per_cm", "px/cm", "The CF this row's _cm columns were grounded with (working "
                                     "frame). Measured or predicted: see cf_source. Empty when "
                                     "cf_source is 'none'."),
@@ -109,6 +161,7 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
                                                     "'predicted_from_megapixels'."),
     Column("ruler_unit_type", "", "Unit type of the rulers that produced the published CF."),
     Column("ruler_class_type", "", "Per-sheet consensus ruler unit type from the classifier ensemble."),
+    *_FP_SUMMARY_COLUMNS,
     Column("has_leaves", "0/1", "Sheet-level phenology: leaves present."),
     Column("has_flowers", "0/1", "Sheet-level phenology: flowers present."),
     Column("has_fruits", "0/1", "Sheet-level phenology: fruits present."),
@@ -148,8 +201,8 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
     Column("rotated_bbox_length_px", "px", "Rotated bbox side along the tip->base axis. Reserved; "
                                            "empty until the orientation-aware assignment ships."),
     Column("rotated_bbox_width_px", "px", "Rotated bbox side perpendicular to tip->base. Reserved."),
-    Column("circle_cx", "px", "Minimum enclosing circle centre, x."),
-    Column("circle_cy", "px", "Minimum enclosing circle centre, y."),
+    Column("circle_cx", "px", "Minimum enclosing circle center, x."),
+    Column("circle_cy", "px", "Minimum enclosing circle center, y."),
     Column("circle_radius_px", "px", "Minimum enclosing circle radius."),
     Column("oriented_leaf_success", "0/1", "1 if an upright (tip-up) orientation was determined."),
     Column("oriented_leaf_rotation_angle_degreesCW", "degrees",
@@ -168,9 +221,9 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
     Column("lamina_tip_base_length_cm", "cm", "lamina_tip_base_length_px grounded by the sheet CF (see cf_source)."),
     Column("landmark_leaf_width_cm", "cm", "leaf_width_px grounded by the sheet CF (see cf_source)."),
     Column("petiole_trace_length_cm", "cm", "petiole_trace_length_px grounded by the sheet CF (see cf_source)."),
-    Column("apex_angle", "degrees", "Angle at the apex centre landmark."),
+    Column("apex_angle", "degrees", "Angle at the apex center landmark."),
     Column("apex_angle_type", "", "acute (<90), obtuse (>=90), or reflex."),
-    Column("base_angle", "degrees", "Angle at the base centre landmark."),
+    Column("base_angle", "degrees", "Angle at the base center landmark."),
     Column("base_angle_type", "", "acute (<90), obtuse (>=90), or reflex."),
     Column("lamina_curvature", "degrees", "Maximum midvein bend: 0 is straight, larger is more curved."),
     Column("curvature_point", "index", "Midvein point index where that maximum bend occurs."),
@@ -227,8 +280,7 @@ _SPECIMEN_COLUMNS: tuple[Column, ...] = (
     Column("normalized", "0/1", "1 if ingest wrote a converted copy (RGB convert and/or downscale)."),
     Column("downsampled", "0/1", "1 iff pixels were actually discarded. Narrower than normalized."),
     Column("original_mp", "megapixels", "Original width*height/1e6."),
-    Column("cf_source", "", "measured_from_ruler | predicted_from_megapixels (no ruler or the lattice "
-                            "did not pass, and use_CF_predicted_by_MP was on) | none (no CF)."),
+    Column("cf_source", "", _CF_SOURCE_DESC),
     Column("cf_px_per_cm", "px/cm", "The CF this sheet's _cm values use (working frame); see cf_source."),
     Column("cf_px_per_cm_predicted_by_mp", "px/cm", "Megapixel-regression CF estimate (in use only "
                                                     "where cf_source is predicted_from_megapixels)."),
@@ -241,6 +293,7 @@ _SPECIMEN_COLUMNS: tuple[Column, ...] = (
     Column("ruler_class_type", "", "Per-sheet consensus ruler unit type from the classifier ensemble."),
     Column("n_ruler_crops", "count", "Candidate ruler crops considered on this sheet."),
     Column("n_ruler_crops_used", "count", "Ruler crops that contributed to the published CF."),
+    *_FP_SUMMARY_COLUMNS,
     Column("has_leaves", "0/1", "Phenology: leaves present."),
     Column("has_flowers", "0/1", "Phenology: flowers present."),
     Column("has_fruits", "0/1", "Phenology: fruits present."),
@@ -383,6 +436,118 @@ _STAGE_ERROR_COLUMNS: tuple[Column, ...] = (
 
 
 # --------------------------------------------------------------------------- #
+# fieldprism_markers.csv / fieldprism_sheets.csv -- passthrough, but documented
+# --------------------------------------------------------------------------- #
+# The two FieldPrism tables are dumped verbatim like the other ruler audit tables, but their columns
+# carry units a reader cannot guess (px vs mm vs px/cm, a JSON blob vs a number), so the dictionary
+# describes them here. A column the table gains later and this list lacks still exports, and the
+# dictionary falls back to the generic "Verbatim <table>.<column>" line for it.
+_FP_MARKER_DOCS: tuple[Column, ...] = (
+    Column("fp_marker_id", "", "Row id of this marker reading."),
+    Column("specimen_id", "", "Parent sheet row id."),
+    Column("detection_id", "", "archival_detection row id of the Ruler box classified FP."),
+    Column("crop_index", "", "Position of this crop in the sheet's ruler audit panel; joins "
+                             "ruler_crops.csv on (specimen_id, crop_index)."),
+    Column("det_conf", "0-1", "Archival-detector confidence for the marker box."),
+    Column("x1", "px", "Marker box, left edge (working frame)."),
+    Column("y1", "px", "Marker box, top edge (working frame)."),
+    Column("x2", "px", "Marker box, right edge (working frame)."),
+    Column("y2", "px", "Marker box, bottom edge (working frame)."),
+    Column("roi_x0", "px", "Analyzed region (the box plus the FieldPrism app's 20 px pad, clamped "
+                           "to the image), left edge (working frame)."),
+    Column("roi_y0", "px", "Analyzed region, top edge (working frame)."),
+    Column("roi_x1", "px", "Analyzed region, right edge (working frame)."),
+    Column("roi_y1", "px", "Analyzed region, bottom edge (working frame)."),
+    Column("status", "", "measured (four squares found and given roles) | failed | unreadable."),
+    Column("status_reason", "", "Why the marker was not measured, when it was not."),
+    Column("valid", "0/1", "1 = passed every per-marker geometric check (see validation_json)."),
+    Column("validation_json", "JSON", "Each check as {value, limit, ok}: pitch ratio |a/b-1|, "
+                                      "right-angle error (degrees), C-square midpoint and "
+                                      "diagonal errors (fraction of the pitch), peak-area ratio."),
+    Column("verdict", "", "used (defines the FieldPrism CF) | rejected (disagrees with the other "
+                          "markers or the reconciled CF) | skipped (not measured or not valid)."),
+    Column("verdict_note", "", "Human-readable reason behind the verdict."),
+    Column("n_peaks", "count", "Distance-transform peaks found in the marker region; 4 is clean."),
+    Column("holes_filled", "count", "Small interior holes filled before finding the squares."),
+    Column("peak_area_ratio", "ratio", "Smallest / largest plateau area of the four square "
+                                       "peaks; low means one square was barely found."),
+    Column("tl_x", "px", "Center of the marker's top-left (TL) square, x (working frame)."),
+    Column("tl_y", "px", "Center of the TL square, y (working frame)."),
+    Column("tr_x", "px", "Center of the top-right (TR) square, x (working frame)."),
+    Column("tr_y", "px", "Center of the TR square, y (working frame)."),
+    Column("c_x", "px", "Center of the middle (C) square, x (working frame)."),
+    Column("c_y", "px", "Center of the C square, y (working frame)."),
+    Column("bl_x", "px", "Center of the bottom-left (BL) square, x (working frame)."),
+    Column("bl_y", "px", "Center of the BL square, y (working frame)."),
+    Column("br_x", "px", "PREDICTED center of the empty bottom-right (BR) cell, TR + BL - TL, "
+                         "x (working frame). Nothing is printed there."),
+    Column("br_y", "px", "PREDICTED center of the empty BR cell, y (working frame)."),
+    Column("pitch_h_px", "px", "|TR - TL|: the 2 cm center-to-center pitch, horizontal arm."),
+    Column("pitch_v_px", "px", "|BL - TL|: the 2 cm center-to-center pitch, vertical arm."),
+    Column("pxcm", "px/cm", "This marker's CF, (pitch_h_px + pitch_v_px) / 2 / 2.0 -- the "
+                            "FieldPrism app's formula (working frame)."),
+    Column("pxcm_original", "px/cm", "pxcm in the original-image frame (pxcm / work_scale)."),
+    Column("pct_vs_fp", "%", "100 * (pxcm / the sheet's FieldPrism CF - 1)."),
+    Column("orientation_deg", "degrees", "The FieldPrism app's orientation vote for this marker: "
+                                         "0, 90, 180 or 270; 0 is upright."),
+    Column("sheet_corner", "", "Which sheet corner this marker occupies (TL, TR, BL, BR) in the "
+                               "identified layout; empty when the sheet was not identified."),
+)
+
+_FP_SHEET_DOCS: tuple[Column, ...] = (
+    Column("specimen_id", "", "Row id of this sheet."),
+    Column("catalog_version", "", "Version of the FieldPrism sheet catalog "
+                                  "(fieldprism_sheets.json) the sheet was matched against."),
+    Column("n_fp_detected", "count", "Ruler boxes classified FP on this sheet."),
+    Column("n_fp_measured", "count", "Of those, markers whose four squares were found."),
+    Column("n_fp_valid", "count", "Of those, markers that passed the per-marker checks."),
+    Column("n_fp_used", "count", "Valid markers that agreed with each other and define the CF."),
+    Column("n_fp_rejected", "count", "Valid markers rejected for disagreeing with the others."),
+    Column("n_fp_inferred", "count", "Sheet-corner markers reconstructed from the identified "
+                                     "layout because they were missing or unmeasured."),
+    Column("sheet_status", "", "identified | ambiguous | undetermined (fewer than 2 usable "
+                               "markers) | unrecognized (no catalog sheet fits)."),
+    Column("sheet_type", "", "Identified sheet size, a key of the catalog: A5, A4, A3, Letter, "
+                             "Legal, Tabloid or Legal_legacy (the older Legal layout)."),
+    Column("sheet_label", "", "Display name of the sheet type."),
+    Column("corners_ambiguous", "0/1", "1 = the sheet type is certain but which corner each "
+                                       "marker occupies could not be decided."),
+    Column("sheet_candidates_json", "JSON", "The top ranked (sheet type, marker-to-corner) "
+                                            "hypotheses with their fit costs (mm)."),
+    Column("orientation_deg", "degrees", "Sheet orientation from the fit rotation, snapped to 0, "
+                                         "90, 180 or 270; 0 is upright."),
+    Column("fit_rotation_deg", "degrees", "Rotation of the similarity fit from the sheet layout "
+                                          "(mm) to the image (px)."),
+    Column("fit_scale_px_per_mm", "px/mm", "Scale of that fit (working frame)."),
+    Column("fit_tx", "px", "Translation of that fit, x."),
+    Column("fit_ty", "px", "Translation of that fit, y."),
+    Column("fit_rms_mm", "mm", "RMS distance between the observed square centers and the fitted "
+                               "layout, on the sheet."),
+    Column("fit_max_mm", "mm", "Largest such distance."),
+    Column("fit_scale_dev_mm", "mm", "How far the fit's scale disagrees with the markers' own "
+                                     "pitch, as a size-independent ranking penalty: "
+                                     "max(0, |ln(fit/pitch)| - 0.5%) x 250 mm."),
+    Column("fit_cost_mm", "mm", "fit_rms_mm + fit_scale_dev_mm; the score sheet types are ranked by."),
+    Column("cf_px_per_cm_sheet_fit", "px/cm", "CF from the whole-sheet layout fit (working frame)."),
+    Column("cf_px_per_cm_marker_mean", "px/cm", "Mean pxcm of the used markers (working frame)."),
+    Column("cf_px_per_cm_fp", "px/cm", "The FieldPrism anchor CF: the sheet fit when identified, "
+                                       "else the marker mean."),
+    Column("cf_source_detail", "", "sheet_fit | marker_mean: which of the two is cf_px_per_cm_fp."),
+    Column("fp_peer_spread_pct", "%", "Spread of the agreeing markers' pxcm, in percent of "
+                                      "their median; 1-2% is normal on a clean sheet."),
+    Column("fp_confidence", "", "high | medium | low: how far the FieldPrism markers can be "
+                                "trusted; only high lets a FieldPrism-backed CF publish."),
+    Column("fp_reasons_json", "JSON", "Human-readable reasons behind fp_confidence."),
+    Column("corners_json", "JSON", "Per sheet corner (TL, TR, BL, BR): observed or inferred, the "
+                                   "detection_id, and the TL/TR/C/BL/BR square centers (px)."),
+    Column("page_corners_json", "JSON", "The page outline implied by the fit: TL, TR, BR, BL "
+                                        "page corners (px, working frame)."),
+    Column("fpfit_margins_json", "JSON", "Distance (mm) from the outermost square centers to the "
+                                         "left, right, top and bottom image edges."),
+)
+
+
+# --------------------------------------------------------------------------- #
 # The bundle
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
@@ -391,7 +556,9 @@ class ExportFile:
 
     ``columns`` None marks a PASSTHROUGH dump: every column of the source table, in table order.
     Those files (the ruler audit trail, the stage ledger) are valuable for being complete rather than
-    curated, and their columns are documented by the schema that owns them.
+    curated, and their columns are documented by the schema that owns them -- or, when units are
+    not obvious from the name, by ``column_docs``, which only feeds the data dictionary and never
+    decides which columns are written.
     """
     key: str                    # report.data.files toggle
     stem: str                   # filename without extension
@@ -399,6 +566,7 @@ class ExportFile:
     blurb: str                  # one line, for the data dictionary + the results browser
     columns: Optional[tuple[Column, ...]] = None
     source_table: str = ""      # passthrough only
+    column_docs: tuple[Column, ...] = ()    # passthrough only: dictionary units + meaning
 
 
 FILES: tuple[ExportFile, ...] = (
@@ -429,6 +597,16 @@ FILES: tuple[ExportFile, ...] = (
                "One row per candidate ruler crop, including skipped and failed ones. Columns are "
                "the ruler_CF_lattice_crop table.",
                source_table="ruler_CF_lattice_crop"),
+    ExportFile("fieldprism_markers", "fieldprism_markers", True,
+               "One row per FieldPrism (FP) marker crop: its TL, TR, C and BL square centers and "
+               "the predicted center of its empty BR cell (working-frame px), pitch, px/cm, the "
+               "per-marker validation checks and its verdict. Columns are the ruler_FP_marker table.",
+               source_table="ruler_FP_marker", column_docs=_FP_MARKER_DOCS),
+    ExportFile("fieldprism_sheets", "fieldprism_sheets", True,
+               "One row per sheet with FieldPrism markers: the identified sheet type, orientation, "
+               "marker counts, the fit to the sheet layout and the FieldPrism CF. Columns are the "
+               "ruler_FP_sheet table.",
+               source_table="ruler_FP_sheet", column_docs=_FP_SHEET_DOCS),
     ExportFile("run_stages", "run_stages", True,
                "One row per pipeline stage: state, counts and the settings hash that drives "
                "re-runs. Columns are the project_status table.",
@@ -502,6 +680,8 @@ def export_data_csvs(project, cfg) -> list[Path]:
         "landmarks": lambda: (_LANDMARK_COLUMNS, _landmark_rows(db)),
         "ruler_conversion_factor": lambda: (None, [dict(r) for r in db.export_table("ruler_CF_lattice")]),
         "ruler_crops": lambda: (None, [dict(r) for r in db.export_table("ruler_CF_lattice_crop")]),
+        "fieldprism_markers": lambda: (None, [dict(r) for r in db.export_table("ruler_FP_marker")]),
+        "fieldprism_sheets": lambda: (None, [dict(r) for r in db.export_table("ruler_FP_sheet")]),
         "run_stages": lambda: (None, [dict(r) for r in db.export_table("project_status")]),
         "stage_errors": lambda: (_STAGE_ERROR_COLUMNS, [dict(r) for r in db.export_stage_errors()]),
     }
@@ -711,10 +891,14 @@ def _dictionary_rows(wanted: Sequence[ExportFile], passthrough_cols: dict[str, l
                             "description": c.desc})
         else:
             src = spec.source_table
+            docs = {c.name: c for c in spec.column_docs}
             for name in passthrough_cols.get(spec.key, []):
-                out.append({"file": filename, "column": name, "units": "",
-                            "description": f"Verbatim {src}.{name}; see the {src} table definition "
-                                           f"for its units and meaning."})
+                doc = docs.get(name)
+                out.append({"file": filename, "column": name,
+                            "units": doc.units if doc else "",
+                            "description": doc.desc if doc else
+                            f"Verbatim {src}.{name}; see the {src} table definition "
+                            f"for its units and meaning."})
     return out
 
 

@@ -296,13 +296,80 @@ def test_shipped_settings_yaml_exposes_every_export_file_as_a_toggle():
     import pathlib
     import yaml
     root = pathlib.Path(__file__).resolve().parents[1]
-    for name in ("LM3_settings.yaml",):
+    for name in ("LM3_settings.yaml", "presets/default.yaml"):
         cfg = yaml.safe_load((root / name).read_text())
         data = cfg.get("report", {}).get("data")
         assert data is not None, f"{name} has no report.data block, so the CSV bundle is unsettable"
         assert set(data["files"]) == {f.key for f in FILES}, f"{name}: report.data.files is stale"
         for f in FILES:
             assert data["files"][f.key] == f.default, f"{name}: {f.key} disagrees with the code default"
+
+
+# --------------------------------------------------------------------------- #
+# FieldPrism (FP) sheets
+# --------------------------------------------------------------------------- #
+def _add_fieldprism_sheet(project):
+    """sheetA becomes a Letter FieldPrism sheet: 3 markers seen, the 4th reconstructed."""
+    conn = project.db.conn
+    conn.execute("UPDATE specimen SET cf_source = 'measured_from_fieldprism', cf_px_per_cm = 114.7 "
+                 "WHERE specimen_id = 1")
+    conn.execute("INSERT INTO archival_detection (specimen_id, cls_id, cls_name, conf, x1, y1, x2, y2) "
+                 "VALUES (1, 0, 'Ruler', 0.93, 100, 100, 460, 460)")
+    det_id = conn.execute("SELECT max(detection_id) FROM archival_detection").fetchone()[0]
+    conn.execute("INSERT INTO ruler_CF_lattice (specimen_id, engine_version, created_at, status, "
+                 " confidence, anchor_source, anchor_cf_working, fp_detected) "
+                 "VALUES (1, 'test', 'now', 'published', 'high', 'fieldprism', 114.7, 1)")
+    conn.execute("INSERT INTO ruler_FP_sheet (specimen_id, sheet_status, sheet_type, sheet_label, "
+                 " orientation_deg, n_fp_detected, n_fp_used, n_fp_inferred, cf_px_per_cm_fp, "
+                 " fp_confidence) VALUES (1, 'identified', 'letter', 'Letter', 0, 3, 3, 1, 114.7, 'high')")
+    conn.execute("INSERT INTO ruler_FP_marker (specimen_id, detection_id, crop_index, status, valid, "
+                 " verdict, tl_x, tl_y, pxcm) VALUES (1, ?, 0, 'measured', 1, 'used', 157.0, 160.0, 114.1)",
+                 (det_id,))
+
+
+def test_fieldprism_sheet_columns_reach_both_summary_files(project):
+    _add_fieldprism_sheet(project)
+    export_data_csvs(project, _cfg())
+    for name in ("specimen_summary.csv", "leaf_measurements.csv"):
+        rows = {r["image_stem"]: r for r in _read(_data_dir(project) / name)}
+        a, b = rows["sheetA"], rows["sheetB"]
+        assert a["cf_source"] == "measured_from_fieldprism"
+        assert a["ruler_cf_anchor_source"] == "fieldprism"
+        assert (a["fp_sheet_type"], a["fp_sheet_status"], a["fp_orientation_deg"]) == \
+            ("letter", "identified", "0")
+        assert (a["fp_n_markers_detected"], a["fp_n_markers_used"], a["fp_n_markers_inferred"]) == \
+            ("3", "3", "1")
+        assert a["fp_cf_px_per_cm"] == "114.7" and a["fp_confidence"] == "high"
+        # a sheet with no FieldPrism markers is blank, never zero
+        assert all(b[c] == "" for c in ("fp_sheet_type", "fp_n_markers_detected", "fp_cf_px_per_cm",
+                                        "ruler_cf_anchor_source"))
+
+
+def test_fieldprism_files_dump_the_fp_tables(project):
+    _add_fieldprism_sheet(project)
+    written = {p.name for p in export_data_csvs(project, _cfg())}
+    assert {"fieldprism_markers.csv", "fieldprism_sheets.csv"} <= written
+    markers = _read(_data_dir(project) / "fieldprism_markers.csv")
+    sheets = _read(_data_dir(project) / "fieldprism_sheets.csv")
+    assert [(m["specimen_id"], m["verdict"], m["pxcm"]) for m in markers] == [("1", "used", "114.1")]
+    assert [(s["specimen_id"], s["sheet_type"]) for s in sheets] == [("1", "letter")]
+
+    # every column of both tables is documented with its own units, not the generic line
+    dictionary = [r for r in _read(_data_dir(project) / "data_dictionary.csv")
+                  if r["file"] in ("fieldprism_markers.csv", "fieldprism_sheets.csv") and r["column"]]
+    generic = [r["column"] for r in dictionary if r["description"].startswith("Verbatim ")]
+    assert not generic, f"FieldPrism columns with no specific dictionary entry: {generic}"
+    units = {(r["file"], r["column"]): r["units"] for r in dictionary}
+    assert units[("fieldprism_markers.csv", "pxcm")] == "px/cm"
+    assert units[("fieldprism_sheets.csv", "fit_rms_mm")] == "mm"
+
+
+def test_fieldprism_files_can_be_turned_off(project):
+    export_data_csvs(project, _cfg())
+    assert (_data_dir(project) / "fieldprism_sheets.csv").is_file()
+    export_data_csvs(project, _cfg(files={"fieldprism_markers": False, "fieldprism_sheets": False}))
+    assert not (_data_dir(project) / "fieldprism_markers.csv").exists()
+    assert not (_data_dir(project) / "fieldprism_sheets.csv").exists()
 
 
 # --------------------------------------------------------------------------- #

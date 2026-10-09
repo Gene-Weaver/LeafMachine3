@@ -269,7 +269,11 @@ def builtin_defaults() -> dict[str, Any]:
             "ruler_classifier": {"enabled": True},
             # lattice conversion-factor method. use_CF_predicted_by_MP is here (not only in the
             # YAML) so the settings form, which renders leaves of the MERGED tree, always shows it.
-            "ruler_cf": {"enabled": True, "use_CF_predicted_by_MP": False},
+            # The `fieldprism` block drives FieldPrism (FP) marker sheets; its tolerances mirror
+            # inference.ruler_lattice.fieldprism.FP_PEER_TOL / FP_ANCHOR_TOL.
+            "ruler_cf": {"enabled": True, "use_CF_predicted_by_MP": False,
+                         "fieldprism": {"enabled": True, "peer_tol": 0.03, "anchor_tol": 0.03,
+                                        "allow_single_marker": True}},
             "leaf_segmenter": {"enabled": True},
             "morphology": {"enabled": True},
             "landmark_detector": {"enabled": True},
@@ -312,6 +316,8 @@ def builtin_defaults() -> dict[str, Any]:
                     "landmarks": True,
                     "ruler_conversion_factor": True,
                     "ruler_crops": True,
+                    "fieldprism_markers": True,
+                    "fieldprism_sheets": True,
                     "run_stages": True,
                     "stage_errors": True,
                     "data_dictionary": True,

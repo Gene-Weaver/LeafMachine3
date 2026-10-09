@@ -121,6 +121,8 @@ _CATEGORY_BLURB: dict[str, str] = {
     "Overlay/Overlay_Petiole": "One image per leaf: the petiole width band, its samples and a measurement panel.",
     "Overlay/Overlay_Specimen_Segmentation": "Two panels per sheet: the annotated sheet beside the background-removed cutout.",
     "Overlay/Overlay_Ruler_Lattice": "Ruler conversion-factor QC: squarify tile, deskewed strip, tick overlays and per-unit combs.",
+    "Overlay/Overlay_FieldPrism":
+        "FieldPrism sheets: app-style TL/TR/C/BL marker labels, predicted BR squares, inferred markers and the detected sheet size.",
     "Overlay": "Annotated renders drawn over the source imagery.",
     "Specimen_Masks/Binary_Masks_Specimen_Inverse":
         "Inverse of the whole-specimen mask: white everywhere the sheet is not plant.",

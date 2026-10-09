@@ -65,13 +65,17 @@ def _harmonic_of(a: float, b: float):
     return best if abs(r / best - 1.0) <= HARMONIC_TOL and abs(best - 1.0) > 1e-9 else None
 
 
-def reconcile_parent(crops, anchor=None, anchor_tol=0.25, frame_width_px=None):
+def reconcile_parent(crops, anchor=None, anchor_tol=0.25, frame_width_px=None,
+                     anchor_name="MP anchor"):
     """Fuse every ruler crop of one parent image into a single CF.
 
     crops : [{key, cf, weight, ruler_class, skipped, skip_reason}]
             `cf` is that crop's own fused CF in the parent's WORKING frame;
             `weight` is its evidence count (ticks used).
-    anchor: the parent's MP-predicted CF, working frame.
+    anchor: the parent's MP-predicted CF, working frame -- or, on a sheet with FieldPrism
+            markers, the FieldPrism CF (the caller then passes frame_width_px=None, because the
+            frame-width plausibility drop is a guard against the MP model, and
+            anchor_name="FieldPrism anchor" so the reasons name the reference truthfully).
 
     Returns a dict with the parent CF, per-crop verdicts and the reasoning.
     """
@@ -207,17 +211,17 @@ def reconcile_parent(crops, anchor=None, anchor_tol=0.25, frame_width_px=None):
 
     reasons = []
     if by_anchor:
-        reasons.append("CF within half a unit-ladder rung of a plausible MP anchor")
+        reasons.append(f"CF within half a unit-ladder rung of a plausible {anchor_name}")
     elif by_anchor_weak:
-        reasons.append("CF agrees with the MP anchor only loosely (>half a rung)")
+        reasons.append(f"CF agrees with the {anchor_name} only loosely (>half a rung)")
     elif anchor_dropped:
-        reasons.append("MP anchor implied an impossible sheet width and was dropped")
+        reasons.append(f"{anchor_name} implied an impossible sheet width and was dropped")
     elif anchor is None:
-        reasons.append("no MP anchor available")
+        reasons.append(f"no {anchor_name} available")
     else:
-        reasons.append("no crop agreed with the MP anchor")
+        reasons.append(f"no crop agreed with the {anchor_name}")
     if by_long_ruler:
-        reasons.append(f"CF is off the MP anchor but rests on {win_len:.1f} cm of ruler "
+        reasons.append(f"CF is off the {anchor_name} but rests on {win_len:.1f} cm of ruler "
                        f"(>= {MIN_TRUSTED_RULER_CM:g} cm), within one unit-ladder rung")
     if by_peers:
         reasons.append(f"{len(win)} crops of this sheet agree within {PEER_TOL:.0%}")
@@ -281,7 +285,7 @@ def reconcile_parent(crops, anchor=None, anchor_tol=0.25, frame_width_px=None):
         out["reason"] = ("the MP anchor implied an impossible sheet width and was dropped; "
                          "this CF rests on peer agreement alone")
     elif not anchored:
-        out["reason"] = ("no crop agreed with the MP anchor; the crops agree with each "
+        out["reason"] = (f"no crop agreed with the {anchor_name}; the crops agree with each "
                          "OTHER but may share a common harmonic error")
 
     winners = {id(c) for c in win}

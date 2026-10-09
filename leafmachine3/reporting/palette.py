@@ -116,6 +116,8 @@ class OverlayStyle:
     # default OFF so a config written before they existed keeps producing the same overlay.
     insert_cf_in_rulers: bool = False   # 1 cm + 1 inch bars on a white raft over every Ruler
     insert_cf_exterior: bool = False    # 1 cm checkerboard appended OUTSIDE the top + left edges
+    # FieldPrism markers drawn app-style (FieldPrismStyle) + the sheet badge; off = the legacy look
+    draw_fieldprism: bool = True
     alpha: float = 0.45
     line_width_mask: int = 2
     font_scale: float = 1.0
@@ -162,6 +164,7 @@ class OverlayStyle:
             draw_cf_banner=bool(_getk(ov, "draw_cf_banner", True)),
             insert_cf_in_rulers=bool(_getk(ov, "insert_cf_in_rulers", False)),
             insert_cf_exterior=bool(_getk(ov, "insert_cf_exterior", False)),
+            draw_fieldprism=bool(_getk(ov, "draw_fieldprism", True)),
             alpha=float(_getk(ov, "alpha", 0.45)),
             line_width_mask=int(_getk(ov, "line_width_mask", 2)),
             font_scale=float(_getk(ov, "font_scale", 1.0)),
@@ -293,6 +296,58 @@ class CFScalebarStyle:
             exterior_light_predicted=tuple(_getk(s, "exterior_light_predicted", (128, 128, 128))),
             exterior_dark_predicted=tuple(_getk(s, "exterior_dark_predicted", (0, 0, 0))),
         )
+
+
+@dataclass
+class FieldPrismStyle:
+    """Style for the FieldPrism (FP) marker drawing on the Summary overlay and ``Overlay_FieldPrism``.
+
+    The defaults are the FieldPrism app's own overlay colors (Android ``RulerDeskewPrecise.drawFpOverlay``,
+    iOS ``drawFpOverlayContent``): square labels "TL" red, "TR" yellow, "BL" white, "C" cyan, the
+    predicted (empty) BR cell filled green with a black outline, label text ``text_size_frac`` x the
+    marker's px/cm. ``br_rejected`` outlines the BR cell of a marker the CF does not use; ``inferred``
+    is the dashed outline of a marker reconstructed from the sheet geometry and the page outline. The
+    sheet badge is ``badge_text`` on black at ``badge_alpha`` (the app's sheet-label precedent).
+
+    ``badge_font_px`` sizes the Summary overlay's badge at the reference resolution (2592 px long
+    side, scaled with the image); ``Overlay_FieldPrism`` sizes it like the app legend instead.
+    Read from an optional ``report.overlay.fieldprism`` block; colors are ``[R, G, B]``.
+    """
+    tl: RGB = (255, 0, 0)
+    tr: RGB = (255, 255, 0)
+    bl: RGB = (255, 255, 255)
+    c: RGB = (0, 255, 255)
+    br_used: RGB = (0, 255, 0)
+    br_rejected: RGB = (255, 0, 0)
+    inferred: RGB = (255, 0, 255)
+    badge_text: RGB = (255, 0, 255)
+    badge_alpha: float = 0.6
+    text_size_frac: float = 0.70
+    inferred_label_alpha: float = 0.5        # reconstructed markers' TL/TR/C/BL labels, dimmed
+    badge_font_px: int = 30                  # Summary badge glyph size, px at the reference resolution
+
+    @classmethod
+    def from_config(cls, cfg) -> "FieldPrismStyle":
+        f = _get(cfg, "report", "overlay", "fieldprism") or {}
+        d = cls()
+        return cls(
+            tl=tuple(_getk(f, "tl", d.tl)),
+            tr=tuple(_getk(f, "tr", d.tr)),
+            bl=tuple(_getk(f, "bl", d.bl)),
+            c=tuple(_getk(f, "c", d.c)),
+            br_used=tuple(_getk(f, "br_used", d.br_used)),
+            br_rejected=tuple(_getk(f, "br_rejected", d.br_rejected)),
+            inferred=tuple(_getk(f, "inferred", d.inferred)),
+            badge_text=tuple(_getk(f, "badge_text", d.badge_text)),
+            badge_alpha=float(_getk(f, "badge_alpha", d.badge_alpha)),
+            text_size_frac=float(_getk(f, "text_size_frac", d.text_size_frac)),
+            inferred_label_alpha=float(_getk(f, "inferred_label_alpha", d.inferred_label_alpha)),
+            badge_font_px=int(_getk(f, "badge_font_px", d.badge_font_px)),
+        )
+
+    def label_color(self, role: str) -> RGB:
+        """The app color of a square label: ``TL`` / ``TR`` / ``BL`` / ``C``."""
+        return {"TL": self.tl, "TR": self.tr, "BL": self.bl, "C": self.c}[role]
 
 
 @dataclass

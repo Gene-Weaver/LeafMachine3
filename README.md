@@ -38,6 +38,7 @@ reproduces every figure.*
   - [Where results land](#where-results-land)
 - [Workflow](#workflow)
   - [Image resolution](#image-resolution)
+  - [FieldPrism sheets](#fieldprism-sheets)
 - [In-Depth: the processing modules](#in-depth-the-processing-modules)
   1. [MP Conversion Factor](#1-mp-conversion-factor)
   2. [Archival Detector](#2-archival-detector)
@@ -349,6 +350,84 @@ measured. To return to original pixels, divide by `work_scale`, stored on every 
 downsampling happened) next to `original_width` and `original_height`. The ruler conversion
 factor is reported in both frames, and `_cm` values are frame-independent.
 
+### FieldPrism sheets
+
+[FieldPrism](https://fieldprism.org/) ([iOS](https://apps.apple.com/us/app/fieldprism/id6761267750),
+[Android](https://play.google.com/apps/testing/com.leafmachine.fieldprism)) photographs plants on a
+printed field sheet with a photogrammetric marker near each corner, then rectifies the photo so
+the sheet is square to the camera. LeafMachine3 reads those processed images directly. Put the
+app's rectified output (the `FPfit` images) in your input folder; nothing needs configuring.
+
+Each marker is a 3 × 3 grid of 1 cm cells with four filled squares, top-left (TL), top-right (TR),
+center (C) and bottom-left (BL), and an empty bottom-right (BR) cell. The archival detector finds
+the markers as rulers, the ruler classifier labels them `FP`, and the Ruler Conversion Factor
+stage measures them:
+
+- **Rectified images only.** LeafMachine3 does not warp or deskew anything; it assumes the
+  FieldPrism app already did. An angled photo of a field sheet will measure wrong.
+- **Each marker is its own ruler.** The squares are found and labeled TL, TR, C and BL exactly
+  the way the FieldPrism app does it, the empty BR cell is predicted (TR + BL − TL), and the
+  geometry is checked: equal arms, a right angle, C in the middle. A marker's factor is the
+  app's, the mean TL→TR and TL→BL center spacing over 2 cm. The markers on a sheet are compared
+  like several rulers on one sheet, and a marker that disagrees with the others is rejected.
+- **The sheet size is identified from where the markers sit.** FieldPrism prints A5, A4, A3,
+  Letter, Legal and Tabloid sheets, and the exact layout of each, taken from the FieldPrism
+  sheet builder, is stored in `leafmachine3/inference/ruler_lattice/fieldprism_sheets.json`.
+  Two, three or four markers are enough: the missing BR cell gives each marker's orientation,
+  so the sheet's top-left corner is always known, even in a rotated image, and a
+  marker that is missing or unreadable is reconstructed from the layout ("inferred"). A lone pair
+  that two sizes share (a top pair is 146 mm apart on both Letter and Legal) is reported as
+  ambiguous unless the image extent settles it.
+- **The factor comes from the sheet, never from the megapixel prediction.** FieldPrism sheets
+  come in several sizes, so the stage 1 prediction is not used on them at all, not even as a
+  fallback. The published factor is the whole-sheet fit when the size is identified (markers 8
+  to 41 cm apart, far steadier than one marker's 2 cm), otherwise the agreeing markers' mean, with
+  `cf_source` = `measured_from_fieldprism`. Ordinary rulers on the same sheet are still read and
+  count as corroboration when they agree within `fieldprism.anchor_tol` (3%), but they never
+  change the value. Markers that disagree with each other give no FieldPrism factor; the sheet
+  then publishes only if its ordinary rulers agree among themselves.
+
+On the summary overlay, FieldPrism markers are drawn the way the app draws them instead of as
+detector boxes: TL red, TR yellow, C cyan, BL white, the empty BR cell filled green, and each
+marker's own "1 cm = N px". A reconstructed marker is dashed in magenta. The sheet size sits in
+the top-left corner next to the 1 cm / 1 inch raft.
+
+<table>
+  <tr><td align="center"><img src="docs/readme_github/fieldprism/summary_15_1_FPfit.jpg" width="400" alt="Summary overlay of a Letter FieldPrism sheet with all four markers labeled"><br><sub>All four markers read: Letter, 114.72 px/cm</sub></td><td align="center"><img src="docs/readme_github/fieldprism/summary_5_1_FPfit.jpg" width="400" alt="Summary overlay of a Letter FieldPrism sheet whose top-left marker is reconstructed"><br><sub>Top-left marker crossed by twigs, so it is reconstructed: Letter, 91.76 px/cm</sub></td></tr>
+  <tr><td align="center"><img src="docs/readme_github/fieldprism/summary_15_1_FPfit_topleft.jpg" width="400" alt="Top-left corner: CF banner, raft and the badge FieldPrism Letter, 4 markers"></td><td align="center"><img src="docs/readme_github/fieldprism/summary_5_1_FPfit_topleft.jpg" width="400" alt="Top-left corner: the inferred marker and the badge FieldPrism Letter, 3 + 1 inferred"></td></tr>
+</table>
+
+Other outputs:
+
+- **`Overlay/Overlay_FieldPrism/`**: the image labeled exactly like the FieldPrism app's own
+  overlay, with its "1 cm = N px" legend and the sheet size.
+- **`Overlay/Overlay_Ruler_Lattice/`**: one QC panel per marker (the checks and the verdict) and a
+  to-scale schematic of the sheet with the ranked size candidates.
+- **CSV**: `fieldprism_markers.csv` (one row per marker: the TL, TR, C, BL and predicted BR square
+  centers, spacing, px/cm, checks, verdict) and `fieldprism_sheets.csv` (one row per sheet: size,
+  orientation, markers used and inferred, the fit, the factor). `specimen_summary.csv` and
+  `leaf_measurements.csv` add `fp_sheet_type`, `fp_sheet_status`, `fp_orientation_deg`,
+  `fp_n_markers_detected`, `fp_n_markers_used`, `fp_n_markers_inferred`, `fp_cf_px_per_cm`,
+  `fp_confidence` and `ruler_cf_anchor_source`.
+
+![FieldPrism sheet identification QC: three markers read, the fourth inferred, Letter identified](docs/readme_github/fieldprism/qc_sheet_5_1_FPfit.png)
+
+In the Settings tab these live under **Scale › Ruler Conversion Factor › FieldPrism**:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `modules.ruler_cf.fieldprism.enabled` | `true` | measure FieldPrism markers; off treats them as an unsupported ruler |
+| `modules.ruler_cf.fieldprism.peer_tol` | `0.03` | how far one marker may differ from the others' median |
+| `modules.ruler_cf.fieldprism.anchor_tol` | `0.03` | how far an ordinary ruler may differ from the FieldPrism factor |
+| `modules.ruler_cf.fieldprism.allow_single_marker` | `true` | let one valid marker on its own publish a factor |
+| `report.overlay.draw_fieldprism` | `true` | draw the markers and sheet size on the summary overlay |
+| `report.overlay_fieldprism.enabled` | `true` | write `Overlay/Overlay_FieldPrism/` |
+
+The two CSV files are switched with the other CSV files under **Reporter › Data export**.
+FieldPrism is described in Weaver, W. N., and S. A. Smith (2023), FieldPrism: A system for
+creating snapshot vouchers from field images using photogrammetric markers and QR codes,
+*Applications in Plant Sciences* 11(5): e11545, <https://doi.org/10.1002/aps3.11545>.
+
 ---
 
 ## In-Depth: the processing modules
@@ -466,7 +545,8 @@ and scanning for marks, as LeafMachine2 did, it fits a regular lattice to the ti
 unit type the classifier assigned, so hundreds of tick spacings vote on one factor. The factor is
 **published** only when the fit is confident and agrees with the resolution prior from stage 1;
 otherwise the sheet is left unconverted rather than mis-converted. The QC panel shows the crop,
-the lattice fit, and the verdict.
+the lattice fit, and the verdict. FieldPrism markers (`FP`) are measured from their own geometry
+instead; see [FieldPrism sheets](#fieldprism-sheets).
 
 ![Ruler lattice QC panels for the three specimens](docs/readme_github/ruler_cf_lattice.jpg)
 
@@ -477,7 +557,7 @@ the lattice fit, and the verdict.
 With `modules.ruler_cf.use_CF_predicted_by_MP: true` (off by default), a sheet with no ruler, or
 one whose lattice did not pass, gets the stage 1 prediction instead, so it still has cm
 measurements. Every output says which kind it is: `specimen.cf_source` and the `cf_source` CSV
-column read `measured_from_ruler` or `predicted_from_megapixels`. The CF banner on the summary
+column read `measured_from_ruler`, `measured_from_fieldprism` or `predicted_from_megapixels`. The CF banner on the summary
 overlay names the source, and a predicted factor gets a second line saying why. Top to bottom:
 
 - **`missing ruler`**: the archival detector found no ruler on the sheet.
@@ -853,6 +933,11 @@ specimen-segmenter targets are machine-generated.
   Weaver, W. N., & Smith, S. A. (2023). From leaves to labels: Building modular machine learning
   networks for rapid herbarium specimen analysis with LeafMachine2. *Applications in Plant
   Sciences*, 11(5), e11548. <https://doi.org/10.1002/aps3.11548>
+- **FieldPrism** — [fieldprism.org](https://fieldprism.org/): field images with photogrammetric
+  markers and QR codes; LeafMachine3 measures its rectified sheets (see [FieldPrism sheets](#fieldprism-sheets)).
+  Weaver, W. N., & Smith, S. A. (2023). FieldPrism: A system for creating snapshot vouchers from
+  field images using photogrammetric markers and QR codes. *Applications in Plant Sciences*, 11(5),
+  e11545. <https://doi.org/10.1002/aps3.11545>
 - **VoucherVision** — [github.com/Gene-Weaver/VoucherVision](https://github.com/Gene-Weaver/VoucherVision):
   label transcription with large language models; the Archival Detector's label crops are its input.
 - **leafmachine.org** — <https://leafmachine.org>

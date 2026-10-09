@@ -248,7 +248,10 @@ class ProjectDB:
         # Lattice ruler-CF tables (ruler_CF_lattice + ruler_CF_lattice_crop + view): the engine's
         # SCHEMA_SQL is the single DDL source, so code and tables cannot drift. Lazy-imported to
         # keep core/ free of an inference/ import at module load.
+        # Columns first: SCHEMA_SQL also creates indexes, which would fail on an old table that
+        # lacks an indexed column; then the script creates whatever tables/indexes are missing.
         from leafmachine3.inference.ruler_lattice import SCHEMA_SQL as _LATTICE_SCHEMA_SQL
+        self._migrate_lattice_tables()
         self.conn.executescript(_LATTICE_SCHEMA_SQL)
         for order, key in enumerate(_stage_keys(), start=1):
             self._exec(
@@ -262,6 +265,22 @@ class ProjectDB:
         for edge_id, (a, b, kind) in enumerate(_lm.SKELETON):
             self._exec("INSERT OR IGNORE INTO landmark_skeleton(edge_id, a_index, b_index, kind) "
                        "VALUES (?, ?, ?, ?)", (edge_id, _lm.KPT_INDEX[a], _lm.KPT_INDEX[b], kind))
+
+    def _migrate_lattice_tables(self) -> None:
+        """Add every column the engine's SCHEMA_SQL declares but an older DB's table lacks.
+
+        GENERIC on purpose: the engine DDL is the single source for its tables, so a column added
+        there (e.g. ruler_CF_lattice.anchor_source for FieldPrism) reaches existing DBs with no
+        per-column migration list to keep in step. Constraints are dropped (ALTER cannot add a
+        PRIMARY KEY / UNIQUE / bare NOT NULL column); only the bare type is applied."""
+        from leafmachine3.inference.ruler_lattice import migration_columns, schema_tables
+        for table in schema_tables():
+            have = self._table_columns(table)
+            if not have:                       # not created yet: SCHEMA_SQL creates it whole
+                continue
+            for col, typ in migration_columns(table):
+                if col not in have:
+                    self._exec(f"ALTER TABLE {table} ADD COLUMN {col} {typ}".rstrip())
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -1092,7 +1111,8 @@ class ProjectDB:
     #: Tables the passthrough exporter may dump verbatim. A whitelist, not a parameter: the table
     #: name is interpolated into the SQL, so it must never come from config or user input.
     EXPORT_PASSTHROUGH_TABLES: tuple[str, ...] = (
-        "ruler_CF_lattice", "ruler_CF_lattice_crop", "project_status",
+        "ruler_CF_lattice", "ruler_CF_lattice_crop", "ruler_FP_marker", "ruler_FP_sheet",
+        "project_status",
     )
 
     def export_specimen_rows(self) -> list[sqlite3.Row]:
@@ -1116,11 +1136,21 @@ class ProjectDB:
                    rcf.status     AS ruler_cf_status,
                    rcf.confidence AS ruler_cf_confidence,
                    rcf.cf_px_per_cm_measured,
-                   rcf.n_ruler_crops, rcf.n_used AS n_ruler_crops_used
+                   rcf.n_ruler_crops, rcf.n_used AS n_ruler_crops_used,
+                   rcf.anchor_source AS ruler_cf_anchor_source,
+                   fps.sheet_type      AS fp_sheet_type,
+                   fps.sheet_status    AS fp_sheet_status,
+                   fps.orientation_deg AS fp_orientation_deg,
+                   fps.n_fp_detected   AS fp_n_markers_detected,
+                   fps.n_fp_used       AS fp_n_markers_used,
+                   fps.n_fp_inferred   AS fp_n_markers_inferred,
+                   fps.cf_px_per_cm_fp AS fp_cf_px_per_cm,
+                   fps.fp_confidence   AS fp_confidence
               FROM specimen s
               LEFT JOIN phenology        ph  ON ph.specimen_id  = s.specimen_id
               LEFT JOIN specimen_mask    sm  ON sm.specimen_id  = s.specimen_id
               LEFT JOIN ruler_CF_lattice rcf ON rcf.specimen_id = s.specimen_id
+              LEFT JOIN ruler_FP_sheet   fps ON fps.specimen_id = s.specimen_id
              ORDER BY s.specimen_id
             """
         )
@@ -1150,6 +1180,15 @@ class ProjectDB:
                    s.cf_source    AS cf_source,
                    s.cf_px_per_cm_predicted_by_mp,
                    s.ruler_unit_type, s.ruler_class_type,
+                   rcf.anchor_source AS ruler_cf_anchor_source,
+                   fps.sheet_type      AS fp_sheet_type,
+                   fps.sheet_status    AS fp_sheet_status,
+                   fps.orientation_deg AS fp_orientation_deg,
+                   fps.n_fp_detected   AS fp_n_markers_detected,
+                   fps.n_fp_used       AS fp_n_markers_used,
+                   fps.n_fp_inferred   AS fp_n_markers_inferred,
+                   fps.cf_px_per_cm_fp AS fp_cf_px_per_cm,
+                   fps.fp_confidence   AS fp_confidence,
                    s.has_leaves, s.has_flowers, s.has_fruits,
 
                    pd.detection_id,
@@ -1210,6 +1249,8 @@ class ProjectDB:
               FROM leaf_segmentation ls
               JOIN specimen        s  ON s.specimen_id   = ls.specimen_id
               JOIN plant_detection pd ON pd.detection_id = ls.detection_id
+              LEFT JOIN ruler_CF_lattice rcf ON rcf.specimen_id = ls.specimen_id
+              LEFT JOIN ruler_FP_sheet   fps ON fps.specimen_id = ls.specimen_id
               LEFT JOIN leaf_morphology   m ON m.leaf_id = ls.leaf_id
               LEFT JOIN leaf_petiole      p ON p.leaf_id = ls.leaf_id
               LEFT JOIN bilateral_symmetry b ON b.leaf_id = ls.leaf_id
@@ -1278,6 +1319,8 @@ class ProjectDB:
                              f"{self.EXPORT_PASSTHROUGH_TABLES}")
         order = {"ruler_CF_lattice": "ORDER BY specimen_id",
                  "ruler_CF_lattice_crop": "ORDER BY specimen_id, crop_index",
+                 "ruler_FP_marker": "ORDER BY specimen_id, crop_index",
+                 "ruler_FP_sheet": "ORDER BY specimen_id",
                  "project_status": "ORDER BY stage_order"}[table]
         return self._query(f"SELECT * FROM {table} {order}")
 
@@ -1307,19 +1350,22 @@ class ProjectDB:
     def overlay_detections(self, specimen_id: int, *, include_suppressed: bool = False) -> list[dict]:
         """Union of KEPT archival + plant boxes for the Reporter overlay.
 
-        Returns dicts with ``cls_name``, ``conf``, ``xyxy=(x1,y1,x2,y2)``, ``source``. Suppressed
-        (same-class duplicate) boxes are excluded by default.
+        Returns dicts with ``detection_id``, ``cls_name``, ``conf``, ``xyxy=(x1,y1,x2,y2)``,
+        ``source``. ``detection_id`` is unique only WITHIN a source (the two tables number
+        independently); the Reporter uses it to match archival Ruler boxes to ruler_FP_marker rows.
+        Suppressed (same-class duplicate) boxes are excluded by default.
         """
         keep = "" if include_suppressed else "AND suppressed = 0"
         out: list[dict] = []
         for table, source in (("archival_detection", "archival"), ("plant_detection", "plant")):
             for r in self._query(
-                f"SELECT cls_name, conf, x1, y1, x2, y2 FROM {table} "
+                f"SELECT detection_id, cls_name, conf, x1, y1, x2, y2 FROM {table} "
                 f"WHERE specimen_id = ? {keep} ORDER BY detection_id",
                 (specimen_id,),
             ):
                 out.append(
                     {
+                        "detection_id": int(r["detection_id"]),
                         "cls_name": str(r["cls_name"]),
                         "conf": float(r["conf"]),
                         "xyxy": (float(r["x1"]), float(r["y1"]), float(r["x2"]), float(r["y2"])),
@@ -1494,6 +1540,9 @@ class ProjectDB:
     )
     _OWNED_ARTIFACT_COLS: dict[str, tuple[str, ...]] = {
         "ruler_CF_lattice_crop": ("rot_path", "tick_mask_path"),
+        # The FieldPrism tables store no files (marker geometry and sheet fit only).
+        "ruler_FP_marker": (),
+        "ruler_FP_sheet": (),
     }
 
     def _unlink_table_artifacts(self, table: str) -> None:

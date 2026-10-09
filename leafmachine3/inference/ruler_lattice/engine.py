@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import math
 import os
@@ -55,11 +56,12 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from leafmachine3.core.records import CF_SOURCE_MP, CF_SOURCE_RULER
+from leafmachine3.core.records import CF_SOURCE_FP, CF_SOURCE_MP, CF_SOURCE_RULER
 
+from . import fieldprism as FP
 from .analysis import analyse, build_masks, summarise
-from .sheet_cf import reconcile_parent
-from .units import is_skipped, spec_of, system_of
+from .sheet_cf import _harmonic_of, reconcile_parent
+from .units import is_fieldprism, is_skipped, spec_of, system_of
 from . import qc as QC
 from .qc import mask_overlay, comb_overlay, ruler_bars
 
@@ -67,9 +69,15 @@ HERE = Path(__file__).resolve().parent
 
 # Bump when a change alters numeric output, so a DB row always says which engine
 # produced it and a mixed-version project is detectable with one GROUP BY.
-ENGINE_VERSION = "lattice-2026.07.30"
+ENGINE_VERSION = "lattice-2026.10.09-fp"
 
 CM_PER_INCH = 2.54
+
+# Reconciliation weight of one FieldPrism marker. A lattice crop's weight is its kept-tick count;
+# a marker has no ticks, so it gets a fixed, well-supported weight: far above
+# DISTANCE_WEIGHT_FLOOR / DISAGREEMENT_FLOOR (6), so a marker always counts as real evidence, and
+# comparable to a good 4-10 cm lattice read, so neither kind silently swamps the other.
+FP_RECONCILE_WEIGHT = 40
 
 
 # --------------------------------------------------------------------- schema --
@@ -151,7 +159,15 @@ CREATE TABLE IF NOT EXISTS ruler_CF_lattice (
     n_used                INTEGER,
     n_rejected            INTEGER,
 
-    qc_image_path         TEXT                -- stacked QC panel for the whole sheet
+    qc_image_path         TEXT,               -- stacked QC panel for the whole sheet
+
+    -- Which reference every reading on this sheet was checked against. 'megapixels' = the MP
+    -- prediction (mp_anchor_working); 'fieldprism' = the sheet's FieldPrism markers (the MP
+    -- prediction is then recorded in mp_anchor_* for audit only and never used, not even as a
+    -- fallback, because FieldPrism sheets come in several sizes); 'none' = no anchor at all.
+    anchor_source         TEXT,               -- megapixels | fieldprism | none
+    anchor_cf_working     REAL,               -- the anchor actually used, working frame
+    fp_detected           INTEGER             -- 1 = the sheet has FP crops and the FieldPrism path ran
 );
 CREATE INDEX IF NOT EXISTS ix_rcfl_status ON ruler_CF_lattice (status, confidence);
 
@@ -283,6 +299,78 @@ CREATE TABLE IF NOT EXISTS ruler_CF_lattice_crop (
 );
 CREATE INDEX IF NOT EXISTS ix_rcfl_crop_spec ON ruler_CF_lattice_crop (specimen_id, crop_index);
 
+-- ruler_FP_marker : ONE row per FieldPrism (FP) ruler crop -- the app-style square finder's
+-- verdict on that marker. Square centers (TL/TR/C/BL, and the PREDICTED center of the empty BR
+-- cell) are WORKING-frame px, so the Reporter can label them exactly like the FieldPrism app.
+-- Stores no files: crop_path stays in archival_detection / ruler_CF_lattice_crop.
+CREATE TABLE IF NOT EXISTS ruler_FP_marker (
+    fp_marker_id     INTEGER PRIMARY KEY,
+    specimen_id      INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    detection_id     INTEGER NOT NULL REFERENCES archival_detection(detection_id) ON DELETE CASCADE,
+    crop_index       INTEGER,                 -- same index as the ruler_CF_lattice_crop row
+    det_conf         REAL,
+    x1 REAL, y1 REAL, x2 REAL, y2 REAL,
+    roi_x0 INTEGER, roi_y0 INTEGER, roi_x1 INTEGER, roi_y1 INTEGER,
+    status           TEXT NOT NULL,           -- measured | failed | unreadable
+    status_reason    TEXT,
+    valid            INTEGER,                 -- 1 = passed the per-marker geometric checks
+    validation_json  TEXT,
+    verdict          TEXT,                    -- used | rejected | skipped
+    verdict_note     TEXT,
+    n_peaks          INTEGER,
+    holes_filled     INTEGER,
+    peak_area_ratio  REAL,
+    tl_x REAL, tl_y REAL, tr_x REAL, tr_y REAL, c_x REAL, c_y REAL, bl_x REAL, bl_y REAL,
+    br_x REAL, br_y REAL,                     -- PREDICTED center of the empty BR cell = TR + BL - TL
+    pitch_h_px       REAL,
+    pitch_v_px       REAL,
+    pxcm             REAL,
+    pxcm_original    REAL,
+    pct_vs_fp        REAL,
+    orientation_deg  INTEGER,                 -- app vote 0|90|180|270
+    sheet_corner     TEXT,                    -- TL|TR|BL|BR or NULL
+    UNIQUE (detection_id)
+);
+CREATE INDEX IF NOT EXISTS ix_rfpm_spec ON ruler_FP_marker (specimen_id, crop_index);
+
+-- ruler_FP_sheet : ONE row per sheet that has FP crops -- which printed FieldPrism sheet the
+-- markers belong to (catalog in fieldprism_sheets.json), the similarity fit, the reconstructed
+-- (inferred) markers and the FieldPrism anchor CF. The *_json columns are JSON text.
+CREATE TABLE IF NOT EXISTS ruler_FP_sheet (
+    specimen_id      INTEGER PRIMARY KEY REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    catalog_version  TEXT,
+    n_fp_detected    INTEGER,
+    n_fp_measured    INTEGER,
+    n_fp_valid       INTEGER,
+    n_fp_used        INTEGER,
+    n_fp_rejected    INTEGER,
+    n_fp_inferred    INTEGER,
+    sheet_status     TEXT NOT NULL,           -- identified | ambiguous | undetermined | unrecognized
+    sheet_type       TEXT,
+    sheet_label      TEXT,
+    corners_ambiguous INTEGER,
+    sheet_candidates_json TEXT,
+    orientation_deg  INTEGER,
+    fit_rotation_deg REAL,
+    fit_scale_px_per_mm REAL,
+    fit_tx           REAL,
+    fit_ty           REAL,
+    fit_rms_mm       REAL,
+    fit_max_mm       REAL,
+    fit_scale_dev_mm REAL,
+    fit_cost_mm      REAL,
+    cf_px_per_cm_sheet_fit REAL,
+    cf_px_per_cm_marker_mean REAL,
+    cf_px_per_cm_fp  REAL,
+    cf_source_detail TEXT,                    -- sheet_fit | marker_mean
+    fp_peer_spread_pct REAL,
+    fp_confidence    TEXT,
+    fp_reasons_json  TEXT,
+    corners_json     TEXT,
+    page_corners_json TEXT,
+    fpfit_margins_json TEXT
+);
+
 -- The flat image+crops view the audit trail is meant to be read through.
 CREATE VIEW IF NOT EXISTS v_ruler_CF_lattice AS
 SELECT p.*,
@@ -296,12 +384,14 @@ LEFT JOIN ruler_CF_lattice_crop c USING (specimen_id);
 
 _IMAGE_COLS = None      # filled lazily from SCHEMA_SQL so code and DDL cannot drift
 _CROP_COLS = None
+_FP_MARKER_COLS = None
+_FP_SHEET_COLS = None
 
 
-def _cols(table: str) -> list[str]:
-    """Column names parsed out of SCHEMA_SQL -- the DDL is the single source."""
+def _col_decls(table: str) -> list[tuple[str, str]]:
+    """(name, declaration) of every column parsed out of SCHEMA_SQL -- the DDL is the single source."""
     body = SCHEMA_SQL.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1]
-    depth, out = 1, []
+    out = []
     for line in body.splitlines():
         s = line.strip()
         if s.startswith(")"):
@@ -315,7 +405,32 @@ def _cols(table: str) -> list[str]:
         for decl in s.split(","):
             decl = decl.strip()
             if decl:
-                out.append(decl.split()[0])
+                out.append((decl.split()[0], decl))
+    return out
+
+
+def _cols(table: str) -> list[str]:
+    """Column names parsed out of SCHEMA_SQL -- the DDL is the single source."""
+    return [name for name, _ in _col_decls(table)]
+
+
+def schema_tables() -> list[str]:
+    """Every table SCHEMA_SQL declares, in declaration order."""
+    return [part.split("(", 1)[0].strip()
+            for part in SCHEMA_SQL.split("CREATE TABLE IF NOT EXISTS ")[1:]]
+
+
+def migration_columns(table: str) -> list[tuple[str, str]]:
+    """(name, ALTER-safe type) for every column of `table`, for adding missing ones to an old DB.
+
+    `ALTER TABLE ... ADD COLUMN` cannot add a PRIMARY KEY or UNIQUE column, nor a NOT NULL one
+    without a default, so only the bare type survives; the constraints are the table's business
+    when it is created fresh, and every column here is written by the engine on every row."""
+    out = []
+    for name, decl in _col_decls(table):
+        parts = decl.split()
+        typ = parts[1] if len(parts) > 1 and parts[1].isalpha() else ""
+        out.append((name, typ.upper()))
     return out
 
 
@@ -331,6 +446,20 @@ def crop_columns() -> list[str]:
     if _CROP_COLS is None:
         _CROP_COLS = [c for c in _cols("ruler_CF_lattice_crop") if c != "crop_row_id"]
     return _CROP_COLS
+
+
+def fp_marker_columns() -> list[str]:
+    global _FP_MARKER_COLS
+    if _FP_MARKER_COLS is None:
+        _FP_MARKER_COLS = [c for c in _cols("ruler_FP_marker") if c != "fp_marker_id"]
+    return _FP_MARKER_COLS
+
+
+def fp_sheet_columns() -> list[str]:
+    global _FP_SHEET_COLS
+    if _FP_SHEET_COLS is None:
+        _FP_SHEET_COLS = _cols("ruler_FP_sheet")
+    return _FP_SHEET_COLS
 
 
 # ---------------------------------------------------------------- small utils --
@@ -388,7 +517,9 @@ class RulerCFLattice:
     def __init__(self, artifact_dir, *, write_qc=True, write_rasters=True,
                  squarify_sz=720, squarify_method="tile_four",
                  min_frame_cm=None, anchor_tol=0.25, qc_dir=None,
-                 tile_format="jpg", tile_quality=80, tile_store_px=512):
+                 tile_format="jpg", tile_quality=80, tile_store_px=512,
+                 fp_enabled=True, fp_peer_tol=FP.FP_PEER_TOL,
+                 fp_anchor_tol=FP.FP_ANCHOR_TOL, fp_allow_single_marker=True):
         self.artifact_dir = Path(artifact_dir)
         self.qc_dir = Path(qc_dir) if qc_dir else self.artifact_dir / "qc"
         self.write_qc = bool(write_qc)
@@ -397,6 +528,15 @@ class RulerCFLattice:
         self.squarify_method = str(squarify_method)
         self.anchor_tol = float(anchor_tol)
         self.min_frame_cm = min_frame_cm          # None = ruler_sheet_cf's own default
+        # FieldPrism (FP) markers. When enabled, a sheet with FP crops is anchored on the FieldPrism
+        # geometry instead of the MP prediction: fp_peer_tol is how closely the markers must agree
+        # with each other, fp_anchor_tol how closely every reading (FP or tick ruler) must agree
+        # with that anchor in the sheet reconciliation, and fp_allow_single_marker whether one
+        # valid marker alone may carry a published CF.
+        self.fp_enabled = bool(fp_enabled)
+        self.fp_peer_tol = float(fp_peer_tol)
+        self.fp_anchor_tol = float(fp_anchor_tol)
+        self.fp_allow_single_marker = bool(fp_allow_single_marker)
         # WHAT IS STORED IS A QC THUMBNAIL, NOT THE CLASSIFIER'S INPUT.
         # RulerClassifier receives the full-resolution tile_four collage (1440x1440
         # at sz=720) and that is unchanged. What lands on disk here is a 512x512
@@ -433,6 +573,12 @@ class RulerCFLattice:
             fund_ratio=getattr(_l, "FUND_RATIO", None),
             band_topk=_a.BAND_TOPK, band_min_periodicity=_a.BAND_MIN_PERIODICITY,
             band_peer_tol=_a.BAND_PEER_TOL, unsharp=_a.UNSHARP,
+            fieldprism=dict(
+                enabled=self.fp_enabled, peer_tol=self.fp_peer_tol,
+                anchor_tol=self.fp_anchor_tol,
+                allow_single_marker=self.fp_allow_single_marker,
+                reconcile_weight=FP_RECONCILE_WEIGHT,
+                catalog_version=_fp_catalog_version()),
         )
 
     # ---- schema ------------------------------------------------------------
@@ -444,12 +590,21 @@ class RulerCFLattice:
         """Measure every ruler crop of ONE parent image and fuse them into one CF.
 
         specimen : {specimen_id, image_name, work_scale, working_width,
-                    working_height, cf_px_per_cm_predicted_by_mp}
+                    working_height, cf_px_per_cm_predicted_by_mp, working_path}
         crops    : [{detection_id, crop_path, ruler_class, cls_conf, det_conf,
                      x1, y1, x2, y2}]  -- every Ruler box on the sheet, in any order
 
-        Returns {"image": {...}, "crops": [{...}], "qc_image": PIL.Image|None}.
-        The two dict sections use exactly the column names in SCHEMA_SQL.
+        Returns {"schema_version", "image": {...}, "crops": [{...}],
+                 "fp_sheet": {...}|None, "fp_markers": [{...}], "qc_image": PIL.Image|None}.
+        The dict sections use exactly the column names in SCHEMA_SQL.
+
+        FIELDPRISM. When FP is enabled and any crop is classified FP, the working image
+        (``working_path``) is read ONCE and every FP crop is measured by fieldprism.py FIRST. The
+        FieldPrism CF (the sheet fit, or the agreeing markers' mean) then replaces the MP
+        prediction as the anchor for EVERYTHING on the sheet -- the tick-lattice reads of any
+        non-FP rulers and the reconciliation -- because FieldPrism sheets come in several sizes
+        and the MP model assumes one. The MP value is still recorded in mp_anchor_* for audit.
+        A sheet without FP crops (or with FP disabled) runs exactly as before.
         """
         t0 = time.time()
         spec_id = specimen.get("specimen_id")
@@ -477,21 +632,56 @@ class RulerCFLattice:
         # runs regardless of what order the caller happened to hand us the boxes
         ordered = sorted(crops, key=lambda c: (int(c.get("detection_id") or 0)))
 
+        # ---- FieldPrism FIRST: its geometry becomes the sheet's anchor -------
+        # On a sheet with FP crops the MP prediction is never an anchor (FieldPrism sheets come in
+        # several sizes, so a resolution-based guess is meaningless there). The anchor is the
+        # FieldPrism CF when the markers form an agreeing cluster (confidence high or medium);
+        # markers that disagree with each other (low) or that all failed give NO anchor at all.
+        fp_idx = ([i for i, c in enumerate(ordered) if is_fieldprism(_cls_of(c))]
+                  if self.fp_enabled else [])
+        fp = None
+        fp_authoritative = False
+        if fp_idx:
+            fp = self._analyze_fieldprism(specimen, [ordered[i] for i in fp_idx])
+            fp_authoritative = bool(fp["anchor_cf"]) and fp["confidence"] in ("high", "medium")
+            anchor_used = fp["anchor_cf"] if fp_authoritative else None
+            anchor_source = "fieldprism" if anchor_used else "none"
+        else:
+            anchor_used = anchor_work
+            anchor_source = "megapixels" if anchor_work else "none"
+        fp_by_det = {m["detection_id"]: m for m in (fp["markers"] if fp else [])}
+
         crop_rows, live = [], []
         for i, c in enumerate(ordered):
-            row, live_entry = self._measure_crop(i, c, specimen, anchor_work)
+            row, live_entry = self._measure_crop(i, c, specimen, anchor_used,
+                                                 fp_marker=fp_by_det.get(c.get("detection_id")))
             crop_rows.append(row)
             live.append(live_entry)
 
         # ---- fuse the sheet's crops into ONE CF ----------------------------
-        kw = dict(anchor=anchor_work, anchor_tol=self.anchor_tol,
-                  frame_width_px=frame_w)
-        pr = reconcile_parent(
-            [dict(key=f"det{r['detection_id']}", cf=r["pxcm"], weight=r["n_kept"] or 0,
-                  ruler_class=r["ruler_class"],
-                  implied_len_cm=r.get("implied_len_cm"),
-                  skipped=(r["status"] != "measured"),
-                  skip_reason=r["status_reason"]) for r in crop_rows], **kw)
+        extra_reasons = []
+        if fp_authoritative:
+            # FieldPrism DECIDES. Its own peer step already judged the markers against each other
+            # (the median-based cluster); feeding them through reconcile's greedy 3% clustering a
+            # second time could split an agreeing cluster or absorb a marker FieldPrism rejected.
+            # Every other ruler is judged against the FieldPrism CF, which is also the value.
+            pr = self._fieldprism_decision(crop_rows, fp, float(anchor_used))
+        else:
+            if fp is not None:
+                # No usable FieldPrism anchor: plain peer reconciliation with no anchor at all. The
+                # MIN_FRAME_CM drop is an MP-model guard and does not apply (frame_width_px=None).
+                kw = dict(anchor=None, anchor_tol=self.fp_anchor_tol,
+                          frame_width_px=None, anchor_name="FieldPrism anchor")
+            else:
+                kw = dict(anchor=anchor_work, anchor_tol=self.anchor_tol,
+                          frame_width_px=frame_w)
+            pr = reconcile_parent(
+                [dict(key=f"det{r['detection_id']}", cf=r["pxcm"],
+                      weight=(FP_RECONCILE_WEIGHT if _is_fp_row(r) else (r["n_kept"] or 0)),
+                      ruler_class=r["ruler_class"],
+                      implied_len_cm=(None if _is_fp_row(r) else r.get("implied_len_cm")),
+                      skipped=(r["status"] != "measured"),
+                      skip_reason=r["status_reason"]) for r in crop_rows], **kw)
 
         by_key = {c.get("key"): c for c in pr.get("per_crop", [])}
         for r in crop_rows:
@@ -500,6 +690,23 @@ class RulerCFLattice:
             r["verdict_note"] = v.get("note")
             r["pct_vs_parent"] = _num(v.get("pct_vs_parent"))
 
+        fp_used = any(_is_fp_row(r) and r["verdict"] == "used" for r in crop_rows)
+        if fp is not None:
+            extra_reasons = [f"FieldPrism: {x}" for x in fp["sheet"].get("fp_reasons") or []]
+            fp_conf = fp["confidence"]
+            # Without an anchor, reconcile can still certify FP markers by their mutual agreement
+            # alone -- but FieldPrism already found those markers disagree, so a CF they carry is
+            # withheld.
+            if (not fp_authoritative and fp_used and fp_conf != "high"
+                    and pr.get("confidence") == "high"):
+                pr = dict(pr, confidence="medium", cf_px_per_cm=None, ok=False)
+                extra_reasons.append(
+                    f"confidence capped at medium: the FieldPrism markers are only "
+                    f"{fp_conf or 'not'} confidence, so the CF they carry is withheld")
+
+        if extra_reasons:       # the live QC panel must read exactly what the DB row will say
+            pr = dict(pr, confidence_reasons=list(pr.get("confidence_reasons") or [])
+                      + extra_reasons)
         cf = pr.get("cf_px_per_cm")
         meas = pr.get("cf_px_per_cm_measured")
         n_meas = sum(1 for r in crop_rows if r["status"] == "measured")
@@ -511,6 +718,16 @@ class RulerCFLattice:
             status = "withheld"
         else:
             status = "no_reading"
+        if cf is None:
+            cf_source = None                                    # the stage stamps CF_SOURCE_MP
+        else:
+            cf_source = CF_SOURCE_FP if fp_used else CF_SOURCE_RULER
+        if cf is not None:
+            fallback = ""
+        elif fp is not None:
+            fallback = "none"          # the MP prediction is never a fallback on a FieldPrism sheet
+        else:
+            fallback = "mp_anchor" if anchor_work else "none"
 
         image_row = dict(
             specimen_id=spec_id, image_name=image_name,
@@ -526,9 +743,8 @@ class RulerCFLattice:
             cf_px_per_inch=_num(None if cf is None else cf * CM_PER_INCH),
             cf_px_per_cm_original=_num(None if cf is None else cf / (work_scale or 1.0)),
             cf_px_per_cm_measured=_num(meas),
-            cf_source=(CF_SOURCE_RULER if cf is not None else None),   # the stage stamps CF_SOURCE_MP
-            fallback=("" if cf is not None else
-                      ("mp_anchor" if anchor_work else "none")),
+            cf_source=cf_source,
+            fallback=fallback,
             confidence=pr.get("confidence") or "low",
             confidence_reasons_json=_json(pr.get("confidence_reasons") or []),
             anchor_supported=_num(pr.get("anchor_supported")),
@@ -557,10 +773,35 @@ class RulerCFLattice:
             n_used=sum(1 for r in crop_rows if r["verdict"] == "used"),
             n_rejected=sum(1 for r in crop_rows if r["verdict"] == "rejected"),
             qc_image_path=None,
+            anchor_source=anchor_source,
+            anchor_cf_working=_num(anchor_used),
+            fp_detected=int(fp is not None),
         )
 
+        fp_sheet, fp_markers = None, []
+        if fp is not None:
+            fp_sheet = FP.sheet_row(fp, spec_id, _fp_catalog_version())
+            idx_of = {r["detection_id"]: r["crop_index"] for r in crop_rows}
+            row_of = {r["detection_id"]: r for r in crop_rows}
+            for m in fp["markers"]:
+                mr = FP.marker_row(m, spec_id, idx_of.get(m["detection_id"]), work_scale)
+                # When FieldPrism decided the sheet, the crop verdicts ARE its verdicts. Otherwise
+                # (markers that disagree, no anchor) the sheet reconciliation has the last word on
+                # a marker FieldPrism used; an FP-level rejection or skip is final either way.
+                cr = row_of.get(m["detection_id"]) or {}
+                if mr["verdict"] == "used" and cr.get("verdict"):
+                    mr["verdict"] = cr["verdict"]
+                    if cr["verdict"] != "used":
+                        mr["verdict_note"] = cr.get("verdict_note")
+                fp_markers.append(mr)
+            fp_markers.sort(key=lambda r: (r["crop_index"] is None, r["crop_index"] or 0))
+            # The sheet row's counters must agree with the marker rows they summarize.
+            fp_sheet["n_fp_used"] = sum(1 for r in fp_markers if r["verdict"] == "used")
+            fp_sheet["n_fp_rejected"] = sum(1 for r in fp_markers if r["verdict"] == "rejected")
+
         record = dict(schema_version=self.ENGINE_VERSION,
-                      image=image_row, crops=crop_rows)
+                      image=image_row, crops=crop_rows,
+                      fp_sheet=fp_sheet, fp_markers=fp_markers)
 
         # Render from the RECORD, never from the live engine output. If this
         # succeeds the DB provably holds enough to redraw the panel later.
@@ -576,11 +817,130 @@ class RulerCFLattice:
         record["qc_image"] = qc
         return record
 
+    # ---- FieldPrism ----------------------------------------------------------
+    def _fieldprism_decision(self, crop_rows, fp, anchor):
+        """The sheet decision when FieldPrism markers form an agreeing cluster.
+
+        Returns a dict shaped like `reconcile_parent`'s, so the image row and the QC panels read
+        it the same way. The VALUE is the FieldPrism CF (the sheet fit when the sheet type is
+        identified -- 146-249 mm baselines, the scale the app rectified the image to -- else the
+        agreeing markers' mean). FP markers keep the FieldPrism step's verdicts; every other ruler
+        is a witness, used if it reads within ``fp_anchor_tol`` of that CF and rejected otherwise.
+        Only FieldPrism confidence "high" publishes.
+        """
+        tol = self.fp_anchor_tol
+        detail = fp["sheet"].get("cf_source_detail") or "marker_mean"
+        fp_by_det = {m["detection_id"]: m for m in fp["markers"]}
+        per_crop, used_vals, witnesses, dissent = [], [], [], []
+        for r in crop_rows:
+            key = f"det{r['detection_id']}"
+            px = r.get("pxcm")
+            pct = None if not px else 100.0 * (float(px) / anchor - 1.0)
+            if _is_fp_row(r):
+                m = fp_by_det.get(r["detection_id"]) or {}
+                verdict = m.get("verdict") or "skipped"
+                if r["status"] != "measured" and verdict == "used":
+                    verdict = "skipped"
+                note = m.get("verdict_note") or (r["status_reason"] if verdict == "skipped"
+                                                 else None)
+                if verdict == "rejected":
+                    dissent.append(key)
+            elif r["status"] != "measured" or not px:
+                verdict, note = "skipped", r["status_reason"]
+            elif abs(float(px) / anchor - 1.0) <= tol:
+                verdict, note = "used", None
+                witnesses.append(key)
+            else:
+                h = _harmonic_of(float(px), anchor)
+                verdict = "rejected"
+                note = (f"{h:g}x the FieldPrism CF -- wrong harmonic" if h
+                        else f"disagrees with the FieldPrism CF ({pct:+.1f}%)")
+                dissent.append(key)
+            if verdict == "used":
+                used_vals.append(float(px))
+            per_crop.append(dict(key=key, cf=px, ruler_class=r.get("ruler_class"),
+                                 weight=(FP_RECONCILE_WEIGHT if _is_fp_row(r) else r.get("n_kept")),
+                                 verdict=verdict, note=note,
+                                 pct_vs_parent=(pct if verdict != "skipped" else None),
+                                 pct_vs_anchor=(pct if verdict != "skipped" else None)))
+        spread = ((max(used_vals) - min(used_vals)) / (sum(used_vals) / len(used_vals))
+                  if len(used_vals) > 1 else None)
+        confidence = fp["confidence"]
+        reasons = [f"CF = FieldPrism {detail.replace('_', ' ')} {anchor:.2f} px/cm (the "
+                   f"FieldPrism geometry is authoritative on this sheet)"]
+        if witnesses:
+            reasons.append(f"{len(witnesses)} other ruler(s) corroborate the FieldPrism CF within "
+                           f"+/-{tol:.0%} ({', '.join(witnesses)})")
+        if dissent:
+            reasons.append(f"{len(dissent)} reading(s) disagree and were rejected "
+                           f"({', '.join(dissent)})")
+        if confidence != "high":
+            reasons.append(f"CF withheld: the FieldPrism markers are only {confidence} confidence")
+        publish = confidence == "high"
+        return dict(n_crops=len(crop_rows), n_live=len(used_vals), anchor=anchor,
+                    anchor_dropped=False,
+                    cf_px_per_cm=(anchor if publish else None), cf_px_per_cm_measured=anchor,
+                    ok=publish, confidence=confidence, confidence_reasons=reasons,
+                    anchor_supported=True, anchor_log_dist=0.0, length_backed=False,
+                    win_ruler_len_cm=None,
+                    corroborated_by_peers=bool(len(used_vals) >= 2),
+                    n_dissenting=len(dissent), method=f"fieldprism_{detail}",
+                    spread=spread, agree=(spread is not None and spread <= 2 * tol),
+                    n_clusters=1, pct_vs_anchor=0.0, per_crop=per_crop, reason=None)
+
+    def _analyze_fieldprism(self, specimen, fp_crops):
+        """analyze_fieldprism over the sheet's FP crops, reading the working image ONCE.
+
+        An unreadable working image is a recorded outcome, not a crash: every marker comes back
+        'unreadable' and the sheet 'undetermined', with the reason, and there is no anchor."""
+        boxes = [dict(detection_id=c.get("detection_id"), det_conf=c.get("det_conf"),
+                      x1=float(c["x1"]), y1=float(c["y1"]),
+                      x2=float(c["x2"]), y2=float(c["y2"])) for c in fp_crops]
+        wp = specimen.get("working_path")
+        img = cv2.imread(str(wp), cv2.IMREAD_COLOR) if wp and os.path.exists(str(wp)) else None
+        if img is None:
+            return _unreadable_fieldprism(boxes, f"working image could not be read: {wp}")
+        return FP.analyze_fieldprism(
+            img, boxes, image_wh=(int(img.shape[1]), int(img.shape[0])),
+            peer_tol=self.fp_peer_tol, allow_single_marker=self.fp_allow_single_marker)
+
+    def _fp_crop_row(self, row, c, specimen, m, anchor_work):
+        """Fill a ruler_CF_lattice_crop row for one FieldPrism marker (no pixels are read here).
+
+        A marker the FieldPrism step used, or rejected for disagreeing with the other markers,
+        is 'measured' and goes to the sheet reconciliation (a peer-rejected one is rejected
+        there too). A failed / invalid / duplicate marker is 'failed' (or 'unreadable')."""
+        work_scale = float(specimen.get("work_scale") or 1.0)
+        W, H = specimen.get("working_width"), specimen.get("working_height")
+        bx1, by1 = max(0, int(round(c["x1"]))), max(0, int(round(c["y1"])))
+        bx2 = int(round(c["x2"])) if not W else min(int(W), int(round(c["x2"])))
+        by2 = int(round(c["y2"])) if not H else min(int(H), int(round(c["y2"])))
+        row.update(crop_w=max(0, bx2 - bx1), crop_h=max(0, by2 - by1),
+                   layout="fieldprism", n_kept=None,
+                   tile_four_path=c.get("tile_four_path"))
+        if m["status"] == "measured" and m.get("verdict") in ("used", "rejected"):
+            pxcm = float(m["pxcm"])
+            row.update(status="measured", status_reason=None,
+                       pxcm=_num(pxcm), pxcm_original=_num(pxcm / (work_scale or 1.0)),
+                       pct_vs_anchor=_num(_pct(pxcm, anchor_work)),
+                       rotation_deg=_num(m.get("orientation_deg")))
+        else:
+            # failed -> why the squares were not found; measured but invalid / duplicate -> the
+            # FieldPrism verdict note ("failed validation: ...", "duplicate detection ...")
+            why = (m.get("verdict_note") if m["status"] == "measured" else m.get("status_reason"))
+            why = why or "FieldPrism marker not usable"
+            row.update(status=("unreadable" if m["status"] == "unreadable" else "failed"),
+                       status_reason=why)
+        return row
+
     # ---- one crop ----------------------------------------------------------
-    def _measure_crop(self, index, c, specimen, anchor_work):
-        """-> (crop_row, live) where `live` carries only in-memory rasters."""
+    def _measure_crop(self, index, c, specimen, anchor_work, fp_marker=None):
+        """-> (crop_row, live) where `live` carries only in-memory rasters.
+
+        `fp_marker` is this crop's analyze_fieldprism marker when the FieldPrism path ran; an FP
+        crop is then filled from it and never reaches the tick lattice."""
         det = c.get("detection_id")
-        cls = c.get("ruler_class") or "METRIC_MM"
+        cls = _cls_of(c)
         cp = c.get("crop_path")
         work_scale = float(specimen.get("work_scale") or 1.0)
         sp = spec_of(cls)
@@ -600,7 +960,18 @@ class RulerCFLattice:
         live = dict(detection_id=det, rot=None, lab=None, tile=None,
                     res=None, s=None, groups=None)
 
-        # A class the registry marks unsupported (FP / messy) is recorded and
+        # FieldPrism markers never reach the tick lattice: measured by fieldprism.py (already done
+        # in process_specimen), or, with FP disabled, recorded as skipped.
+        if is_fieldprism(cls):
+            if fp_marker is not None:
+                return self._fp_crop_row(row, c, specimen, fp_marker, anchor_work), live
+            row.update(status="skipped_class",
+                       status_reason="FieldPrism marker (FP) -- FieldPrism measurement is "
+                                     "disabled (modules.ruler_cf.fieldprism.enabled)",
+                       tile_four_path=c.get("tile_four_path"))
+            return row, live
+
+        # A class the registry marks unsupported (messy / unknown) is recorded and
         # skipped BEFORE any pixels are touched -- no CF is meaningful for it.
         sk = is_skipped(cls)
         if sk:
@@ -743,10 +1114,28 @@ class RulerCFLattice:
             return None
         by_det = {l["detection_id"]: l for l in (live or [])}
         pr = reconcile or self._reconcile_from_record(record)
+        fp_sheet = record.get("fp_sheet")
+        fp_markers = list(record.get("fp_markers") or [])
+        fp_by_det = {m.get("detection_id"): m for m in fp_markers}
+        # A sheet the FieldPrism path ran on is anchored on the FieldPrism CF (possibly none), so
+        # every section names THAT anchor; any other sheet renders exactly as before.
+        fp_sheet_run = bool(img.get("fp_detected")) or img.get("anchor_source") == "fieldprism"
+        anchor_qc = (img.get("anchor_cf_working") if fp_sheet_run
+                     else img.get("mp_anchor_working"))
 
         panels, entries = [], []
+        n_fp_panel = 0
         for r in crops:
             lv = by_det.get(r["detection_id"]) or {}
+            fpm = fp_by_det.get(r["detection_id"])
+            if fpm is not None and hasattr(QC, "fp_marker_section"):
+                n_fp_panel += 1
+                panels.append(QC.fp_marker_section(
+                    fpm, r.get("crop_path"), (r.get("x1"), r.get("y1"), r.get("x2"), r.get("y2")),
+                    title_index=n_fp_panel))
+                entries.append(dict(key=f"det{r['detection_id']}", rot=None,
+                                    verdict=r.get("verdict")))
+                continue
             # Always the STORED thumbnail, never the in-memory full-res tile: the
             # live panel and the panel rebuilt from the DB must be the same image.
             tile = _load_rgb(r.get("tile_four_path"))
@@ -755,7 +1144,8 @@ class RulerCFLattice:
                         det_conf=float(r.get("det_conf") or 0.0),
                         cls_conf=r.get("cls_conf"),
                         work_scale=img.get("work_scale"),
-                        anchor=img.get("mp_anchor_working"),
+                        anchor=anchor_qc,
+                        anchor_source=("fieldprism" if fp_sheet_run else "megapixels"),
                         anchor_original=img.get("mp_anchor_original"),
                         anchor_frame=img.get("anchor_frame"),
                         anchor_formula=img.get("anchor_formula"),
@@ -763,10 +1153,13 @@ class RulerCFLattice:
                         ruler_class=r.get("ruler_class"))
             cls = r["ruler_class"]
 
-            if r["status"] != "measured":
+            if r["status"] != "measured" or fpm is not None:
                 why = (f"NOT A SUPPORTED CLASS -- no conversion factor is attempted.\n"
                        f"{r['status_reason']}" if r["status"] == "skipped_class"
-                       else f"CF DETERMINATION FAILED -- {r['status_reason']}")
+                       else f"CF DETERMINATION FAILED -- {r['status_reason']}"
+                       if r["status"] != "measured"
+                       else f"FieldPrism marker: {r.get('pxcm') or 0:.2f} px/cm "
+                            f"(verdict {r.get('verdict') or '-'})")
                 panels.append(QC.class_section(qrow, cls, r.get("crop_path"),
                                                failure=why, tile_img=tile))
                 entries.append(dict(key=f"det{r['detection_id']}", rot=None,
@@ -815,6 +1208,9 @@ class RulerCFLattice:
                                 x0=r.get("first_tick_x") or 0, pxcm=pxcm, band=band,
                                 cf=pxcm, ruler_class=cls, verdict=r.get("verdict")))
 
+        if fp_sheet is not None and hasattr(QC, "fp_sheet_section"):
+            panels.append(QC.fp_sheet_section(fp_sheet, fp_markers))
+
         if not panels:
             return None
         # Emitted whenever the sheet has more than one ruler panel, even if none of
@@ -826,20 +1222,26 @@ class RulerCFLattice:
         # shows the predicted scale against the ruler.
         recon = None
         drawable = [e for e in entries if e.get("rot") is not None]
-        withheld = pr.get("cf_px_per_cm") is None and img.get("mp_anchor_working")
+        withheld = pr.get("cf_px_per_cm") is None and anchor_qc
         # Whether the stage actually SUBSTITUTED the MP anchor (use_CF_predicted_by_MP on) or left
         # the sheet without a CF. Read from the record, so a panel rebuilt later says the same.
         applied = img.get("cf_source") == CF_SOURCE_MP
+        # The FieldPrism keywords are passed ONLY for a FieldPrism sheet (and only to a QC module
+        # that takes them), so every other sheet makes exactly the calls it always made.
+        recon_kw = ({"anchor_source": "fieldprism"} if fp_sheet_run and
+                    _accepts(QC.build_recon_section, "anchor_source") else {})
         if drawable and (len(panels) > 1 or withheld):
             recon = QC.build_recon_section(img.get("image_name"), drawable, pr,
-                                           img.get("mp_anchor_working"),
+                                           anchor_qc,
                                            anchor_formula=img.get("anchor_formula"),
-                                           fallback_applied=applied)
+                                           fallback_applied=applied, **recon_kw)
         # The CF summary is unconditional: every panel ends with the two numbers, whether the
         # sheet published a measured CF or fell back to the prediction.
+        sum_kw = ({"anchor_source": "fieldprism", "fp_sheet": fp_sheet} if fp_sheet_run and
+                  _accepts(QC.build_cf_summary_section, "fp_sheet") else {})
         cf_summary = QC.build_cf_summary_section(
-            pr.get("cf_px_per_cm"), img.get("mp_anchor_working"),
-            img.get("anchor_formula_symbolic"), fallback_applied=applied)
+            pr.get("cf_px_per_cm"), anchor_qc,
+            img.get("anchor_formula_symbolic"), fallback_applied=applied, **sum_kw)
         return QC.stack_parent(panels, recon, cf_summary=cf_summary)
 
     def _reconcile_from_record(self, record):
@@ -876,6 +1278,10 @@ class RulerCFLattice:
         """
         img, crops = record["image"], record["crops"]
         sid = img["specimen_id"]
+        # children before parents; the FieldPrism tables are replaced wholesale too, so a sheet
+        # re-run without FP crops (or with FP disabled) leaves no stale marker/sheet rows behind
+        con.execute("DELETE FROM ruler_FP_marker WHERE specimen_id=?", (sid,))
+        con.execute("DELETE FROM ruler_FP_sheet WHERE specimen_id=?", (sid,))
         con.execute("DELETE FROM ruler_CF_lattice_crop WHERE specimen_id=?", (sid,))
         con.execute("DELETE FROM ruler_CF_lattice WHERE specimen_id=?", (sid,))
         icols = [c for c in image_columns() if c in img]
@@ -887,6 +1293,19 @@ class RulerCFLattice:
             f"INSERT INTO ruler_CF_lattice_crop ({','.join(ccols)}) "
             f"VALUES ({','.join('?' * len(ccols))})",
             [[_num(r.get(c)) for c in ccols] for r in crops])
+        sheet = record.get("fp_sheet")
+        if sheet:
+            scols = [c for c in fp_sheet_columns() if c in sheet]
+            con.execute(f"INSERT INTO ruler_FP_sheet ({','.join(scols)}) "
+                        f"VALUES ({','.join('?' * len(scols))})",
+                        [_num(sheet[c]) for c in scols])
+        markers = record.get("fp_markers") or []
+        if markers:
+            mcols = fp_marker_columns()
+            con.executemany(
+                f"INSERT INTO ruler_FP_marker ({','.join(mcols)}) "
+                f"VALUES ({','.join('?' * len(mcols))})",
+                [[_num(m.get(c)) for c in mcols] for m in markers])
 
     @staticmethod
     def read_record(con: sqlite3.Connection, specimen_id: int) -> dict | None:
@@ -898,7 +1317,16 @@ class RulerCFLattice:
             return None
         cs = con.execute("SELECT * FROM ruler_CF_lattice_crop WHERE specimen_id=? "
                          "ORDER BY crop_index", (specimen_id,)).fetchall()
-        return dict(image=dict(i), crops=[dict(c) for c in cs])
+        try:
+            fs = con.execute("SELECT * FROM ruler_FP_sheet WHERE specimen_id=?",
+                             (specimen_id,)).fetchone()
+            fm = con.execute("SELECT * FROM ruler_FP_marker WHERE specimen_id=? "
+                             "ORDER BY crop_index, detection_id", (specimen_id,)).fetchall()
+        except sqlite3.OperationalError:     # a DB from before FieldPrism, opened read-only
+            fs, fm = None, []
+        return dict(image=dict(i), crops=[dict(c) for c in cs],
+                    fp_sheet=(None if fs is None else dict(fs)),
+                    fp_markers=[dict(m) for m in fm])
 
     # ---- rasters -----------------------------------------------------------
     def _dir(self, sub):
@@ -914,6 +1342,46 @@ class RulerCFLattice:
         return str(p)
 
 
+# --------------------------------------------------------- FieldPrism helpers --
+def _cls_of(c):
+    """The crop's classifier class; a NULL classification defaults to METRIC_MM (as before)."""
+    return c.get("ruler_class") or "METRIC_MM"
+
+
+def _is_fp_row(r):
+    """A ruler_CF_lattice_crop row that the FieldPrism path filled (not a skipped FP crop)."""
+    return r.get("class_layout") == "fieldprism" and r.get("status") != "skipped_class"
+
+
+def _fp_catalog_version():
+    try:
+        return FP.load_sheet_catalog().get("catalog_version")
+    except (OSError, ValueError):            # a missing catalog is recorded, never fatal here
+        return None
+
+
+def _unreadable_fieldprism(boxes, reason):
+    """analyze_fieldprism's output shape for a sheet whose working image cannot be read."""
+    markers = []
+    for b in boxes:
+        markers.append(dict(
+            status="unreadable", status_reason=reason, roi=None, n_peaks=0, holes_filled=0,
+            peak_area_ratio=None, peak_areas=[], roles=None, br=None, pitch_h_px=None,
+            pitch_v_px=None, pxcm=None, orientation_deg=None, valid=False, validation={},
+            validation_reasons=[], detection_id=b["detection_id"],
+            det_conf=_num(b.get("det_conf")), x1=b["x1"], y1=b["y1"], x2=b["x2"], y2=b["y2"],
+            verdict="skipped", verdict_note=reason, sheet_corner=None, pct_vs_fp=None))
+    sheet = dict(
+        status="undetermined", sheet_type=None, label=None, corners_ambiguous=None,
+        candidates=[], assignment={}, fit=None, cf_px_per_cm_sheet_fit=None,
+        orientation_deg=None, corners={}, page_corners_px=None, fpfit_margins_mm=None,
+        n_fp_detected=len(markers), n_fp_measured=0, n_fp_valid=0, n_fp_used=0,
+        n_fp_rejected=0, n_fp_inferred=0, cf_px_per_cm_marker_mean=None,
+        cf_px_per_cm_fp=None, cf_source_detail=None, fp_peer_spread_pct=None,
+        fp_confidence=None, fp_reasons=[reason])
+    return dict(markers=markers, sheet=sheet, anchor_cf=None, confidence=None)
+
+
 # ------------------------------------------------------- record -> QC helpers --
 def _admissible(cls):
     from .units import admissible_units
@@ -921,6 +1389,14 @@ def _admissible(cls):
         return admissible_units(cls)
     except Exception:
         return []
+
+
+def _accepts(fn, name):
+    """True when `fn` takes the keyword `name` (a QC module that predates FieldPrism does not)."""
+    try:
+        return name in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _load_gray(p):

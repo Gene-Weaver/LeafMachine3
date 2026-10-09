@@ -13,6 +13,9 @@ XYXY = tuple[float, float, float, float]
 # ``specimen.cf_source`` -- which conversion factor ``specimen.cf_px_per_cm`` holds. NULL = none.
 CF_SOURCE_RULER = "measured_from_ruler"            # the lattice published it (high confidence)
 CF_SOURCE_MP = "predicted_from_megapixels"         # MP fallback (modules.ruler_cf.use_CF_predicted_by_MP)
+# Published, and FieldPrism markers are among the readings behind it (the FieldPrism geometry was
+# the anchor; the MP prediction is never used on such a sheet, not even as a fallback).
+CF_SOURCE_FP = "measured_from_fieldprism"
 
 
 @dataclass(frozen=True)
@@ -266,5 +269,5 @@ class ReportBundle:
     petioles: list[Any] = field(default_factory=list)     # leaf_petiole rows (width + sample segments)
     bilateral: list[Any] = field(default_factory=list)    # bilateral_symmetry rows (metrics + QC frame)
     specimen_mask: Any = None          # specimen_mask row (final/removed PNG paths + sample centers), or None
-    ruler_lattice: Any = None          # lattice ruler-CF record {image, crops} for the Overlay_Ruler_Lattice QC panel, or None
-    cf_source: Optional[str] = None    # specimen.cf_source: CF_SOURCE_RULER | CF_SOURCE_MP | None (no CF)
+    ruler_lattice: Any = None          # lattice ruler-CF record {image, crops, fp_sheet, fp_markers} for the Overlay_Ruler_Lattice QC panel, or None
+    cf_source: Optional[str] = None    # specimen.cf_source: CF_SOURCE_RULER | CF_SOURCE_FP | CF_SOURCE_MP | None (no CF)

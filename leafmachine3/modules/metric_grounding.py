@@ -13,9 +13,11 @@ Both the CF and the pixel measurements live in the working frame, so ``area_px /
 frame-consistent with no rescaling.
 
 The CF comes from ``specimen.cf_px_per_cm``, written by the ruler-CF stage: the lattice CF for a
-high-confidence sheet (``cf_source = 'measured_from_ruler'``), or -- only when
+high-confidence sheet (``cf_source = 'measured_from_ruler'``, or ``'measured_from_fieldprism'`` when
+FieldPrism markers are among the readings behind it), or -- only when
 ``modules.ruler_cf.use_CF_predicted_by_MP`` is on -- the megapixel prediction for a sheet with no
-ruler or a lattice that did not pass (``cf_source = 'predicted_from_megapixels'``). This stage
+ruler or a lattice that did not pass (``cf_source = 'predicted_from_megapixels'``; never on a sheet
+with FieldPrism markers, whose CF stays NULL when the markers cannot carry one). This stage
 grounds against whichever is there; a specimen with no CF is simply skipped (its ``*_cm`` columns
 stay NULL). ``specimen.cf_source`` is what tells a consumer which kind of cm value it holds.
 """
