@@ -29,6 +29,10 @@ Usage
     python examples/ECT_color_options/ect_color_options.py \
         examples/ECT_color_options/ECT_color_options_masks/*.png
 
+    # the not-recommended extras shown at the bottom of the README grid
+    python examples/ECT_color_options/ect_color_options.py \
+        examples/ECT_color_options/ECT_color_options_masks/*.png --extras --dirs 360
+
     # somewhere else, and only the two direction counts you care about
     python examples/ECT_color_options/ect_color_options.py mask.png -o /tmp/out --dirs 720
 """
@@ -56,6 +60,21 @@ from leafmachine3.reporting.ect_viz import (                   # noqa: E402
 PALETTES: tuple[str, ...] = (
     "bone", "gray", "pink", "magma", "viridis", "cividis", "winter", "cool", "summer", "spring",
     "YlGn", "Blues", "Greens", "Purples", "Greys", "Oranges", "Reds", "cubehelix",
+)
+#: Every other built-in Matplotlib colormap, in the order of Matplotlib's "Choosing Colormaps" guide
+#: (sequential, diverging, cyclic, qualitative, miscellaneous). NOT recommended for the ECT -- the
+#: README shows them for fun. Render with ``--extras`` (360 directions is enough for the README).
+EXTRA_PALETTES: tuple[str, ...] = (
+    "plasma", "inferno",
+    "YlOrBr", "YlOrRd", "OrRd", "PuRd", "RdPu", "BuPu", "GnBu", "PuBu", "YlGnBu", "PuBuGn", "BuGn",
+    "autumn", "Wistia", "hot", "afmhot", "gist_heat", "copper",
+    "PiYG", "PRGn", "BrBG", "PuOr", "RdGy", "RdBu", "RdYlBu", "RdYlGn", "Spectral", "coolwarm",
+    "bwr", "seismic", "berlin", "managua", "vanimo",
+    "twilight", "twilight_shifted", "hsv",
+    "Pastel1", "Pastel2", "Paired", "Accent", "okabe_ito", "Dark2", "Set1", "Set2", "Set3",
+    "tab10", "tab20", "tab20b", "tab20c",
+    "flag", "prism", "ocean", "gist_earth", "terrain", "gist_stern", "gnuplot", "gnuplot2",
+    "CMRmap", "brg", "gist_rainbow", "rainbow", "jet", "turbo", "nipy_spectral", "gist_ncar",
 )
 DIRS: tuple[int, ...] = (360, 720)
 SCALES: tuple[str, ...] = ("linear", "log")
@@ -106,10 +125,14 @@ def main(argv=None) -> int:
                     help=f"direction counts to render (default: {' '.join(map(str, DIRS))})")
     ap.add_argument("--palettes", nargs="+", default=list(PALETTES),
                     help="Matplotlib colormap names, CASE-SENSITIVE (default: all 18)")
+    ap.add_argument("--extras", action="store_true",
+                    help=f"render the {len(EXTRA_PALETTES)} EXTRA_PALETTES instead of --palettes")
     ap.add_argument("--scales", nargs="+", choices=SCALES, default=list(SCALES),
                     help="linear and/or log (default: both)")
     args = ap.parse_args(argv)
 
+    if args.extras:
+        args.palettes = list(EXTRA_PALETTES)
     root = args.out if args.out is not None else Path(__file__).resolve().parent
     total = 0
     for mask_path in args.masks:
