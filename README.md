@@ -434,6 +434,14 @@ consensus goes to the next stage.
 
 ![Ruler crops from the three specimens](docs/readme_github/ruler_classifier_crops.jpg)
 
+The 18 classes, one squarified four-tile example each (the classifier's actual input):
+
+<table>
+  <tr><td align="center"><img src="docs/readme_github/ruler_classes/FP.jpg" width="130" alt="FP"><br><sub><code>FP</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/GRID_CM.jpg" width="130" alt="GRID_CM"><br><sub><code>GRID_CM</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_CM.jpg" width="130" alt="METRIC_CM"><br><sub><code>METRIC_CM</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_CM2.jpg" width="130" alt="METRIC_CM2"><br><sub><code>METRIC_CM2</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_CM4.jpg" width="130" alt="METRIC_CM4"><br><sub><code>METRIC_CM4</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_CM_BLOCK.jpg" width="130" alt="METRIC_CM_BLOCK"><br><sub><code>METRIC_CM_BLOCK</code></sub></td></tr>
+  <tr><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_CM_STAGGER.jpg" width="130" alt="METRIC_CM_STAGGER"><br><sub><code>METRIC_CM_STAGGER</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_MM.jpg" width="130" alt="METRIC_MM"><br><sub><code>METRIC_MM</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_MM2.jpg" width="130" alt="METRIC_MM2"><br><sub><code>METRIC_MM2</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_MM_CM.jpg" width="130" alt="METRIC_MM_CM"><br><sub><code>METRIC_MM_CM</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_MM_CM_BLOCK.jpg" width="130" alt="METRIC_MM_CM_BLOCK"><br><sub><code>METRIC_MM_CM_BLOCK</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/METRIC_MM_IN16.jpg" width="130" alt="METRIC_MM_IN16"><br><sub><code>METRIC_MM_IN16</code></sub></td></tr>
+  <tr><td align="center"><img src="docs/readme_github/ruler_classes/STD_IN16.jpg" width="130" alt="STD_IN16"><br><sub><code>STD_IN16</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/STD_IN16_IN8_IN2.jpg" width="130" alt="STD_IN16_IN8_IN2"><br><sub><code>STD_IN16_IN8_IN2</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/STD_IN32_IN16.jpg" width="130" alt="STD_IN32_IN16"><br><sub><code>STD_IN32_IN16</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/STD_IN8.jpg" width="130" alt="STD_IN8"><br><sub><code>STD_IN8</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/STD_IN8_CM.jpg" width="130" alt="STD_IN8_CM"><br><sub><code>STD_IN8_CM</code></sub></td><td align="center"><img src="docs/readme_github/ruler_classes/messy.jpg" width="130" alt="messy"><br><sub><code>messy</code></sub></td></tr>
+</table>
+
 | Model | ensemble: [`yolo26x_cls_224`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224) + [`yolo26n_cls_224`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224) + [`dinov2_frozen_mlp`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp) |
 |---|---|
 | Architecture | YOLO26x and YOLO26n classifiers, and a frozen DINOv2-base with an MLP head; majority vote, YOLO26x breaks ties |
@@ -452,20 +460,34 @@ unit type the classifier assigned, so hundreds of tick spacings vote on one fact
 otherwise the sheet is left unconverted rather than mis-converted. The QC panel shows the crop,
 the lattice fit, and the verdict.
 
-With `modules.ruler_cf.use_CF_predicted_by_MP: true` (off by default), a sheet with no ruler, or
-one whose lattice did not pass, gets the stage 1 prediction instead, so it still has cm
-measurements. Every output says which kind it is: `specimen.cf_source` and the `cf_source` CSV
-column read `measured_from_ruler` or `predicted_from_megapixels`. On the summary overlay, the CF
-banner names the source ("measured from ruler" or "predicted from megapixels"), and a predicted
-factor gets a second line saying why: `missing ruler`, `unsupported ruler`, `unreadable ruler`,
-`unusable ruler`, or `ruler failed validation (94.82 px)` with the rejected reading. Its 1 cm /
-1 inch raft sits in the top-left corner instead of on a ruler, and the exterior 1 cm checkerboard
-is black and 50% gray instead of black and white.
-
 ![Ruler lattice QC panels for the three specimens](docs/readme_github/ruler_cf_lattice.jpg)
 
 No model; CPU. *Output:* `ruler_CF_lattice` tables; `specimen.cf_px_per_cm` + `cf_source`;
 `Overlay/Overlay_Ruler_Lattice/` and `Data/ruler_conversion_factor.csv` (the verdict and why).
+
+#### When the ruler conversion factor fails
+
+![CF banners on the summary overlay: three fallbacks and one measured factor](docs/readme_github/banners.jpg)
+
+With `modules.ruler_cf.use_CF_predicted_by_MP: true` (off by default), a sheet with no ruler, or
+one whose lattice did not pass, gets the stage 1 prediction instead, so it still has cm
+measurements. Every output says which kind it is: `specimen.cf_source` and the `cf_source` CSV
+column read `measured_from_ruler` or `predicted_from_megapixels`. The CF banner on the summary
+overlay names the source, and a predicted factor gets a second line saying why. Top to bottom:
+
+- **`missing ruler`**: the archival detector found no ruler on the sheet.
+- **`unsupported ruler`**: every ruler was a unit type the lattice does not measure yet.
+  Rulers that were attempted but could not be read say `unreadable ruler`; a mix of the two
+  says `unusable ruler`.
+- **`ruler failed validation (94.82 px)`**: the lattice produced a reading, but it was not
+  confident or disagreed with the megapixel prior, so it was withheld. The rejected reading is
+  shown for audit.
+- **`measured from ruler`**: success. The lattice factor passed and is published, with no
+  second line.
+
+A predicted factor's 1 cm / 1 inch raft sits in the top-left corner instead of on a ruler, and
+the exterior 1 cm checkerboard is black and 50% gray instead of black and white (compare the
+first three examples with the last).
 
 ### 8. Leaf Segmenter
 
