@@ -15,6 +15,8 @@ models/ruler_classifier
 # Collage project: 342 GB, of which output_LM3_for_collage/ is 337 GB of generated LM3 run
 # output. Excluded entirely at Will's direction (2026-08-28).
 global_leaf_margin_collage/
+# README-banner logo collage experiments (code + renders), local only.
+global_leaf_margin_collage_LM3_LOGO/
 hardware_settings.yaml
 /runs/
 /output/
