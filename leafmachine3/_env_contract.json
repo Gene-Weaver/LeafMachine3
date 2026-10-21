@@ -1,11 +1,11 @@
 {
  "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
- "lm3_version": "3.0.1040",
+ "lm3_version": "3.0.1041",
  "locks": {
   "uv_lock_sha256": "a9dfcbba18068380be51d0145b7e15baaf7c9d2cfd1c1831b8bc6d27bf58f565",
-  "models_lock_sha256": "a96464e169e8f40f950a3bb6a710d2d6c879f7760c58711dd9060465aca216f6",
-  "models_lock_version": "3.0.1040",
-  "models_lock_generated_at": "2026-10-21T17:28:53+00:00",
+  "models_lock_sha256": "994e4a9781dafe8a4ef4baf2c44d319fac0681ac3699970b2279f40c9de2baeb",
+  "models_lock_version": "3.0.1041",
+  "models_lock_generated_at": "2026-10-21T17:44:53+00:00",
   "hub_revisions": {
    "phyloforfun/lm3_archival_detector__yolo26n_det_640": "cb621ab07b3d99a7a457853ef2ce1417db5d47b0",
    "phyloforfun/lm3_archival_detector__yolo26x_det_1280": "519b73c6c5bf60ec83bcc5ac4d44ed2d478408bb",
@@ -28,8 +28,8 @@
   "node": "24.19.0",
   "electron": "43.4.1",
   "electron_builder": "26.15.3",
-  "package_lock_sha256": "b65015b93d766c2c2ec89e3e1f6ff5d0dc9e600acf4533fd408d220f133d16e4",
-  "package_json_sha256": "64998be6e8d671d2ced426dd5df24ee93dacdd6780991d04e0cad8754aaf78f1"
+  "package_lock_sha256": "66a355d6e1657f69a33dadd1ce7183a5d486084e99d9cdc884b73a545c038263",
+  "package_json_sha256": "a56cfea2b6ada0beeaedb118852aa418aeaf3c5b867ad5c92b7542bb7c2a3e15"
  },
  "cuda_min_driver": {
   "linux": "525.60.13",

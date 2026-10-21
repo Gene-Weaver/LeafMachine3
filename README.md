@@ -6,7 +6,7 @@ archival components of a digitized specimen: every leaf is segmented, landmarked
 measured; every ruler is read for a pixel-to-metric conversion factor; every label, barcode, and
 color card is cropped for downstream work. Each run produces annotated overlays, per-leaf cutouts, and a CSV with one row per leaf.
 
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
 [![Models on Hugging Face](https://img.shields.io/badge/models-Hugging%20Face-yellow.svg)](https://huggingface.co/phyloforfun)
 [![Website](https://img.shields.io/badge/web-leafmachine.org-green.svg)](https://leafmachine.org)
@@ -1043,10 +1043,10 @@ specimen-segmenter targets are machine-generated.
 
 ## License
 
-LeafMachine3 is free software under the **GNU General Public License v3.0**; see
+LeafMachine3 is free software under the **GNU Affero General Public License v3.0**; see
 [LICENSE](LICENSE). As an additional term under section 7(b) of that license, copies and
 derivative works must keep the author attribution in [NOTICE](NOTICE).
 
-`leafmachine3/inference/ultra_replacements.py` ports code from Ultralytics and remains under the
+`leafmachine3/inference/ultra_replacements.py` ports code from Ultralytics, also under the
 AGPL-3.0 (see NOTICE). Model weights are not in this repository; each published model's license
 is on its Hugging Face model card.
