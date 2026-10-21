@@ -1036,7 +1036,7 @@ only), so the `leaf_segmenter` stage does not run them; their model cards show h
 | Specimen Detector | [yolo26n_det_640](https://huggingface.co/phyloforfun/lm3_specimen_detector__yolo26n_det_640) | Places bboxes around discrete plant parts. Used for pre-training specimen segmenter models. | AGPL-3.0 |
 
 Training images and annotations are not distributed. The detector, segmenter, and landmark data
-sets were annotated in Labelbox, extending the 494,766-annotation LeafMachine2 effort; the
+sets were annotated in Labelbox, extending the LeafMachine2 effort to 1.3 million annotations; the
 specimen-segmenter targets are machine-generated.
 
 ---

@@ -1,11 +1,11 @@
 {
  "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
- "lm3_version": "3.0.1039",
+ "lm3_version": "3.0.1040",
  "locks": {
   "uv_lock_sha256": "a9dfcbba18068380be51d0145b7e15baaf7c9d2cfd1c1831b8bc6d27bf58f565",
-  "models_lock_sha256": "8b0139ab8af10edf859c5fdd154b34449d8fbd5ebafa24a83a1643fca21aea18",
-  "models_lock_version": "3.0.1039",
-  "models_lock_generated_at": "2026-10-21T13:50:27+00:00",
+  "models_lock_sha256": "a96464e169e8f40f950a3bb6a710d2d6c879f7760c58711dd9060465aca216f6",
+  "models_lock_version": "3.0.1040",
+  "models_lock_generated_at": "2026-10-21T17:28:53+00:00",
   "hub_revisions": {
    "phyloforfun/lm3_archival_detector__yolo26n_det_640": "cb621ab07b3d99a7a457853ef2ce1417db5d47b0",
    "phyloforfun/lm3_archival_detector__yolo26x_det_1280": "519b73c6c5bf60ec83bcc5ac4d44ed2d478408bb",
