@@ -1,0 +1,157 @@
+{
+ "what": "Specimen detector boxes (cyan, solid, confidence) vs hand-drawn Specimen boxes (white, dashed) on test-split sheets of datasets/LM3_Plant_Specimen, rendered by tools/release/model_card_assets/specimen_detector.py.",
+ "model": "yolo26n_det_640 last.pt (epoch 300), exported ONNX",
+ "conf": 0.35,
+ "seed": 7,
+ "rendered": "2026-10-21",
+ "examples": [
+  {
+   "file": "overlay_01_K_1020044253_Euphorbiaceae_Macaranga_lumiensis.jpg",
+   "image": "3d2xfs6m__K_1020044253_Euphorbiaceae_Macaranga_lumiensis",
+   "split": "test",
+   "institution": "K",
+   "accession": "K_1020044253",
+   "species": "Macaranga lumiensis",
+   "hand_drawn_boxes": 2,
+   "predicted_boxes": 2,
+   "confidences": [
+    0.945,
+    0.762
+   ],
+   "bytes": 294471
+  },
+  {
+   "file": "overlay_02_DES_1846522786_Rosaceae_Prunus_virginiana.jpg",
+   "image": "47zy9nmp__DES_1846522786_Rosaceae_Prunus_virginiana",
+   "split": "test",
+   "institution": "DES",
+   "accession": "DES_1846522786",
+   "species": "Prunus virginiana",
+   "hand_drawn_boxes": 2,
+   "predicted_boxes": 2,
+   "confidences": [
+    0.962,
+    0.96
+   ],
+   "bytes": 297458
+  },
+  {
+   "file": "overlay_03_ASC_3091190300_Asteraceae_Bidens_cernua.jpg",
+   "image": "gouda8g4__ASC_3091190300_Asteraceae_Bidens_cernua",
+   "split": "test",
+   "institution": "ASC",
+   "accession": "ASC_3091190300",
+   "species": "Bidens cernua",
+   "hand_drawn_boxes": 1,
+   "predicted_boxes": 2,
+   "confidences": [
+    0.943,
+    0.937
+   ],
+   "bytes": 225969
+  },
+  {
+   "file": "overlay_04_SMF_3046124053_Ranunculaceae_Ranunculus_auricomus.jpg",
+   "image": "gouda8g4__SMF_3046124053_Ranunculaceae_Ranunculus_auricomus",
+   "split": "test",
+   "institution": "SMF",
+   "accession": "SMF_3046124053",
+   "species": "Ranunculus auricomus",
+   "hand_drawn_boxes": 1,
+   "predicted_boxes": 6,
+   "confidences": [
+    0.913,
+    0.88,
+    0.821,
+    0.73,
+    0.527,
+    0.49
+   ],
+   "bytes": 333771
+  },
+  {
+   "file": "overlay_05_MIN_2265446230_Fagaceae_Quercus_macrocarpa.jpg",
+   "image": "3n7w6q3b__MIN_2265446230_Fagaceae_Quercus_macrocarpa",
+   "split": "test",
+   "institution": "MIN",
+   "accession": "MIN_2265446230",
+   "species": "Quercus macrocarpa",
+   "hand_drawn_boxes": 1,
+   "predicted_boxes": 1,
+   "confidences": [
+    0.967
+   ],
+   "bytes": 303117
+  },
+  {
+   "file": "overlay_06_L_2514272258_Euphorbiaceae_Macaranga_polyadenia.jpg",
+   "image": "3d2xfs6m__L_2514272258_Euphorbiaceae_Macaranga_polyadenia",
+   "split": "test",
+   "institution": "L",
+   "accession": "L_2514272258",
+   "species": "Macaranga polyadenia",
+   "hand_drawn_boxes": 1,
+   "predicted_boxes": 1,
+   "confidences": [
+    0.971
+   ],
+   "bytes": 181586
+  },
+  {
+   "file": "overlay_07_NY_1927812774_Fabaceae_Psorothamnus_spinosus.jpg",
+   "image": "0b8m7oz6__NY_1927812774_Fabaceae_Psorothamnus_spinosus",
+   "split": "test",
+   "institution": "NY",
+   "accession": "NY_1927812774",
+   "species": "Psorothamnus spinosus",
+   "hand_drawn_boxes": 1,
+   "predicted_boxes": 1,
+   "confidences": [
+    0.966
+   ],
+   "bytes": 276091
+  },
+  {
+   "file": "overlay_08_WCUH_2273371442_Rutaceae_Ptelea_trifoliata.jpg",
+   "image": "gouda8g4__WCUH_2273371442_Rutaceae_Ptelea_trifoliata",
+   "split": "test",
+   "institution": "WCUH",
+   "accession": "WCUH_2273371442",
+   "species": "Ptelea trifoliata",
+   "hand_drawn_boxes": 1,
+   "predicted_boxes": 1,
+   "confidences": [
+    0.961
+   ],
+   "bytes": 252318
+  },
+  {
+   "file": "overlay_09_MNHN_730937534_Fagaceae_Quercus_edithae.jpg",
+   "image": "dnmogprz__MNHN_730937534_Fagaceae_Quercus_edithae",
+   "split": "test",
+   "institution": "MNHN",
+   "accession": "MNHN_730937534",
+   "species": "Quercus edithae",
+   "hand_drawn_boxes": 1,
+   "predicted_boxes": 1,
+   "confidences": [
+    0.965
+   ],
+   "bytes": 285116
+  },
+  {
+   "file": "overlay_10_US_1456419778_Urticaceae_Cecropia_peltata.jpg",
+   "image": "0b8m7oz6__US_1456419778_Urticaceae_Cecropia_peltata",
+   "split": "test",
+   "institution": "US",
+   "accession": "US_1456419778",
+   "species": "Cecropia peltata",
+   "hand_drawn_boxes": 1,
+   "predicted_boxes": 1,
+   "confidences": [
+    0.96
+   ],
+   "bytes": 409228
+  }
+ ]
+}

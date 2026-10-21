@@ -1,0 +1,135 @@
+{
+ "what": "BiRefNet leaf models on plant_detector Leaf_WHOLE crops: input | lamina + petiole model | lamina-only model | combined (petiole = bulk of the difference), rendered by tools/release/model_card_assets/birefnet_leaf.py.",
+ "model": "birefnet_hr_swinl_1024_leaf + _leaf_no_petiole, iteration 2 (epoch 170), fp32 ONNX",
+ "rendered": "2026-10-21",
+ "examples": [
+  {
+   "specimen": "NY_1927952050_Fagaceae_Quercus_bicolor",
+   "detection_id": 86,
+   "source_run": "LM3/examples_out/_cfsum",
+   "plant_detector_conf": 0.754,
+   "file": "panel_01_NY_1927952050_Fagaceae_Quercus_bicolor.jpg",
+   "crop_size_px": [
+    769,
+    621
+   ],
+   "pixels": {
+    "lamina_plus_petiole": 210469,
+    "lamina": 208683,
+    "petiole_bulk": 836
+   }
+  },
+  {
+   "specimen": "CM_2859108687_Cannabaceae_Celtis_occidentalis",
+   "detection_id": 122,
+   "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+   "plant_detector_conf": 0.866,
+   "file": "panel_02_CM_2859108687_Cannabaceae_Celtis_occidentalis.jpg",
+   "crop_size_px": [
+    676,
+    453
+   ],
+   "pixels": {
+    "lamina_plus_petiole": 159175,
+    "lamina": 158268,
+    "petiole_bulk": 339
+   }
+  },
+  {
+   "specimen": "CM_2859104604_Fagaceae_Castanea_dentata",
+   "detection_id": 102,
+   "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+   "plant_detector_conf": 0.827,
+   "file": "panel_03_CM_2859104604_Fagaceae_Castanea_dentata.jpg",
+   "crop_size_px": [
+    470,
+    517
+   ],
+   "pixels": {
+    "lamina_plus_petiole": 98177,
+    "lamina": 97405,
+    "petiole_bulk": 0
+   }
+  },
+  {
+   "specimen": "USCH_1849094340_Theaceae_Stewartia_ovata",
+   "detection_id": 30737,
+   "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+   "plant_detector_conf": 0.878,
+   "file": "panel_04_USCH_1849094340_Theaceae_Stewartia_ovata.jpg",
+   "crop_size_px": [
+    369,
+    347
+   ],
+   "pixels": {
+    "lamina_plus_petiole": 76994,
+    "lamina": 76714,
+    "petiole_bulk": 288
+   }
+  },
+  {
+   "specimen": "VT_2573061663_Ulmaceae_Ulmus_americana",
+   "detection_id": 652,
+   "source_run": "LM3/examples_out/_cfsum",
+   "plant_detector_conf": 0.886,
+   "file": "panel_05_VT_2573061663_Ulmaceae_Ulmus_americana.jpg",
+   "crop_size_px": [
+    959,
+    757
+   ],
+   "pixels": {
+    "lamina_plus_petiole": 387399,
+    "lamina": 385887,
+    "petiole_bulk": 0
+   }
+  },
+  {
+   "specimen": "CM_2859339684_Salicaceae_Populus_grandidentata",
+   "detection_id": 254,
+   "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+   "plant_detector_conf": 0.881,
+   "file": "panel_06_CM_2859339684_Salicaceae_Populus_grandidentata.jpg",
+   "crop_size_px": [
+    779,
+    718
+   ],
+   "pixels": {
+    "lamina_plus_petiole": 217799,
+    "lamina": 213395,
+    "petiole_bulk": 1827
+   }
+  },
+  {
+   "specimen": "NY_1928597599_Rosaceae_Crataegus_douglasii",
+   "detection_id": 12862,
+   "source_run": "LM3/examples_out/collage_test_broadsampletrees",
+   "plant_detector_conf": 0.871,
+   "file": "panel_07_NY_1928597599_Rosaceae_Crataegus_douglasii.jpg",
+   "crop_size_px": [
+    405,
+    631
+   ],
+   "pixels": {
+    "lamina_plus_petiole": 110286,
+    "lamina": 109439,
+    "petiole_bulk": 0
+   }
+  },
+  {
+   "specimen": "MNHN_731826796_Fagaceae_Quercus_rosacea",
+   "detection_id": 697,
+   "source_run": "LM3/examples_out/_cfsum",
+   "plant_detector_conf": 0.786,
+   "file": "panel_08_MNHN_731826796_Fagaceae_Quercus_rosacea.jpg",
+   "crop_size_px": [
+    563,
+    807
+   ],
+   "pixels": {
+    "lamina_plus_petiole": 194807,
+    "lamina": 193188,
+    "petiole_bulk": 402
+   }
+  }
+ ]
+}

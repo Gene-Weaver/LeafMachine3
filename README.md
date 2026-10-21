@@ -31,6 +31,7 @@ reproduces every figure.*
   - [Troubleshooting](#troubleshooting)
   - [Docker](#docker)
   - [Updating](#updating)
+- [Related Projects and Citation](#related-projects-and-citation)
 - [Quick Start](#quick-start)
   - [Run from the GUI](#run-from-the-gui)
   - [Electron desktop app](#electron-desktop-app)
@@ -62,7 +63,6 @@ reproduces every figure.*
 - [Outputs](#outputs)
 - [Postprocessing Tools](#postprocessing-tools)
 - [Models](#models)
-- [Related Projects and Citation](#related-projects-and-citation)
 - [License](#license)
 
 ---
@@ -187,6 +187,32 @@ git pull --ff-only
 uv sync --frozen --extra gpu        # or cpu / macos
 uv run --frozen --no-sync lm3 models install --yes     # picks up any model updates in the lock
 ```
+
+---
+
+## Related Projects and Citation
+
+- **LeafMachine2** — [github.com/Gene-Weaver/LeafMachine2](https://github.com/Gene-Weaver/LeafMachine2).
+
+  > Weaver, W. N., & Smith, S. A. (2023). From leaves to labels: Building modular machine learning
+  > networks for rapid herbarium specimen analysis with LeafMachine2. *Applications in Plant
+  > Sciences*, 11(5), e11548. <https://doi.org/10.1002/aps3.11548>
+
+- **FieldPrism** — [fieldprism.org](https://fieldprism.org/): field images with photogrammetric
+  markers and QR codes; LeafMachine3 measures its rectified sheets (see [FieldPrism sheets](#fieldprism-sheets)).
+
+  > Weaver, W. N., & Smith, S. A. (2023). FieldPrism: A system for creating snapshot vouchers from
+  > field images using photogrammetric markers and QR codes. *Applications in Plant Sciences*, 11(5),
+  > e11545. <https://doi.org/10.1002/aps3.11545>
+
+- **VoucherVision** — [github.com/Gene-Weaver/VoucherVision](https://github.com/Gene-Weaver/VoucherVision):
+  label transcription with large language models; the Archival Detector's label crops are its input.
+- **leafmachine.org** — <https://leafmachine.org>
+
+A LeafMachine3 paper is in preparation. Until it is published, please cite the LeafMachine2 paper
+above and link this repository:
+
+> Weaver, W. N. (2026). LeafMachine3. <https://github.com/Gene-Weaver/LeafMachine3>
 
 ---
 
@@ -996,39 +1022,22 @@ uv run --frozen --no-sync lm3 models verify
 | Plant Detector | [yolo26x_det_1280](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26x_det_1280) | [yolo26n_det_640](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26n_det_640) | AGPL-3.0 |
 | Specimen Segmenter | [unetpp_effb7_1024](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024) | [birefnet_hr_swinl_1024](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024), [yolo26x_seg_1280](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280) | Apache-2.0 (MIT, AGPL-3.0) |
 | Ruler Classifier | ensemble: [yolo26x_cls_224](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224), [yolo26n_cls_224](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224), [dinov2_frozen_mlp](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp) | | AGPL-3.0 / Apache-2.0 |
-| Leaf Segmenter | [yolo26x_seg_1024](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024) | | AGPL-3.0 |
+| Leaf Segmenter | [yolo26x_seg_1024](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024) | [birefnet_hr_swinl_1024_leaf](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__birefnet_hr_swinl_1024_leaf), [birefnet_hr_swinl_1024_leaf_no_petiole](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__birefnet_hr_swinl_1024_leaf_no_petiole) | AGPL-3.0 (MIT) |
 | Landmark Detector | [yolo26x_pose_640](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640) | | AGPL-3.0 |
 | MP Conversion Factor | [sqrt_fit](https://huggingface.co/phyloforfun/lm3_mp_conversion_factor__sqrt_fit) | | MIT |
+
+The BiRefNet leaf alternates output semantic masks (lamina + petiole as one mask, or the lamina
+only), so the `leaf_segmenter` stage does not run them; their model cards show how to use them.
+
+### Other models that we share but are not used in LM3 directly
+
+| Module | Model | What it does | License |
+|---|---|---|---|
+| Specimen Detector | [yolo26n_det_640](https://huggingface.co/phyloforfun/lm3_specimen_detector__yolo26n_det_640) | Places bboxes around discrete plant parts. Used for pre-training specimen segmenter models. | AGPL-3.0 |
 
 Training images and annotations are not distributed. The detector, segmenter, and landmark data
 sets were annotated in Labelbox, extending the 494,766-annotation LeafMachine2 effort; the
 specimen-segmenter targets are machine-generated.
-
----
-
-## Related Projects and Citation
-
-- **LeafMachine2** — [github.com/Gene-Weaver/LeafMachine2](https://github.com/Gene-Weaver/LeafMachine2).
-
-  > Weaver, W. N., & Smith, S. A. (2023). From leaves to labels: Building modular machine learning
-  > networks for rapid herbarium specimen analysis with LeafMachine2. *Applications in Plant
-  > Sciences*, 11(5), e11548. <https://doi.org/10.1002/aps3.11548>
-
-- **FieldPrism** — [fieldprism.org](https://fieldprism.org/): field images with photogrammetric
-  markers and QR codes; LeafMachine3 measures its rectified sheets (see [FieldPrism sheets](#fieldprism-sheets)).
-
-  > Weaver, W. N., & Smith, S. A. (2023). FieldPrism: A system for creating snapshot vouchers from
-  > field images using photogrammetric markers and QR codes. *Applications in Plant Sciences*, 11(5),
-  > e11545. <https://doi.org/10.1002/aps3.11545>
-
-- **VoucherVision** — [github.com/Gene-Weaver/VoucherVision](https://github.com/Gene-Weaver/VoucherVision):
-  label transcription with large language models; the Archival Detector's label crops are its input.
-- **leafmachine.org** — <https://leafmachine.org>
-
-A LeafMachine3 paper is in preparation. Until it is published, please cite the LeafMachine2 paper
-above and link this repository:
-
-> Weaver, W. N. (2026). LeafMachine3. <https://github.com/Gene-Weaver/LeafMachine3>
 
 ---
 

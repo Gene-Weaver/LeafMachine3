@@ -1,11 +1,11 @@
 {
  "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
- "lm3_version": "3.0.1038",
+ "lm3_version": "3.0.1039",
  "locks": {
   "uv_lock_sha256": "a9dfcbba18068380be51d0145b7e15baaf7c9d2cfd1c1831b8bc6d27bf58f565",
-  "models_lock_sha256": "c305f71f25861f7e1dc6d4e7d29d234e3651169ed710e11c4124fff2951c9b60",
-  "models_lock_version": "3.0.1038",
-  "models_lock_generated_at": "2026-10-12T16:34:32+00:00",
+  "models_lock_sha256": "8b0139ab8af10edf859c5fdd154b34449d8fbd5ebafa24a83a1643fca21aea18",
+  "models_lock_version": "3.0.1039",
+  "models_lock_generated_at": "2026-10-21T13:50:27+00:00",
   "hub_revisions": {
    "phyloforfun/lm3_archival_detector__yolo26n_det_640": "cb621ab07b3d99a7a457853ef2ce1417db5d47b0",
    "phyloforfun/lm3_archival_detector__yolo26x_det_1280": "519b73c6c5bf60ec83bcc5ac4d44ed2d478408bb",
@@ -13,7 +13,7 @@
    "phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024": "ad4631f79c4d7675abed37bd076f3095ed6a0ad8",
    "phyloforfun/lm3_mp_conversion_factor__sqrt_fit": "3b03c05c6c140f724e65561d825970264c14f97d",
    "phyloforfun/lm3_plant_detector__yolo26n_det_640": "f1028f24869daa742693046fb5eca957e547929c",
-   "phyloforfun/lm3_plant_detector__yolo26x_det_1280": "2f36f0e890e1eac5e57fe374acf7c9a3a8b3257d",
+   "phyloforfun/lm3_plant_detector__yolo26x_det_1280": "26bb616c7d62f5d05d4a6be4d18f08ab276c57fb",
    "phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp": "3609c406cba16613974689d4188415796ef126e9",
    "phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224": "c55574ec29ee3b2ecc487947eee185f4bb283d49",
    "phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224": "4581cc1b6dfe38bef3c22401802fb83828e7e41a",

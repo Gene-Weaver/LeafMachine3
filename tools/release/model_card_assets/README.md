@@ -9,6 +9,9 @@ model repos copy them into their own `docs/`. Re-run a script after retraining a
 | `leaf_segmenter.py` | `docs/hf_docs/leaf_segmenter/`: the input/output crop pairs (`io_*`) and the whole-specimen mask overlays (`overlay_*`) | LM3 runtime env |
 | `landmark_detector.py` | `docs/hf_docs/landmark_detector/overlay_*`: Reporter Overlay_Landmarks renders for the pose model | LM3 runtime env |
 | `landmark_detect_points.py` | `docs/hf_docs/landmark_detector/yolo26n_det_640/`: evaluation (box mAP + point metric sweep) and the predicted-point overlays + legend for the landmark-as-class detector | training env (ultralytics) |
+| `plant_detector.py` | `docs/hf_docs/plant_detector/overlay_*`: the detector example grid, detected with the stage's own loader, settings and duplicate suppression, drawn with `build_summary_image` (boxes + labels) | LM3 runtime env |
+| `birefnet_leaf.py` | `docs/hf_docs/leaf_segmenter/birefnet/panel_*`: the two BiRefNet leaf alternates (lamina + petiole, lamina only) and their combination on `Leaf_WHOLE` crops; the leaf_segmenter card's crops plus four more | LM3 runtime env (onnxruntime) |
+| `specimen_detector.py` | `docs/hf_docs/specimen_detector/overlay_*`: Specimen boxes vs the hand-drawn ones on test sheets (not an LM3 stage, so its own drawing) | training env (ultralytics) |
 | `_common.py` | shared helpers: settings with the model path overridden, device pinning, read-only copies of the example runs' databases, "published only" selection | |
 
 `leaf_segmenter.py` and `landmark_detector.py` reproduce the pipeline itself, so the images look like
@@ -28,10 +31,11 @@ NV=$(ls -d .venv_LM3/lib/python3*/site-packages/nvidia); export LD_LIBRARY_PATH=
 
 Not here (they render from other runs or were made by hand):
 - README images: `tools/release/build_readme_images.py`.
-- Detector card grids (archival / plant: detector-only box overlays) and the ruler-classifier squarify
+- The archival detector card grid (detector-only box overlays) and the ruler-classifier squarify
   before/after examples: their provenance JSONs in `docs/hf_docs/<action>/` record the sources.
 
 Publishing: stage a repo folder (weights + exports hardlinked, card, `training_metadata.json`,
 `manifest.json` with per-file sha256 and export-hash verification), then
 `tools/release/hf_upload_verify.py <staged dir> phyloforfun/<repo> "<message>"`.
-The iteration-2 staging scripts are in the training workspace (`it2_training/stage_it2_four.py`).
+The iteration-2 staging scripts are in the training workspace (`it2_training/stage_it2_four.py`; the non-default
+workflow models, BiRefNet leaf x2 and the Specimen detector: `it2_training/stage_workflow_models.py`).
