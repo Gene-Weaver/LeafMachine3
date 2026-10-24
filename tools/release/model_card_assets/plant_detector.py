@@ -10,7 +10,7 @@ since iteration 1 (axis-aligned boxes with class + confidence labels; masks, lan
 shown at 1600 px. The example run is read from a COPY of its SQLite file, so it is never touched. The
 provenance file is updated with the new box counts and the model that rendered them.
 
-    .venv_LM3/bin/python tools/release/model_card_assets/plant_detector.py \
+    .venv/bin/python tools/release/model_card_assets/plant_detector.py \
         --model /path/to/model.onnx --label "yolo26x_det_1280 iteration 2" [--device cuda:0|cpu]
 """
 from __future__ import annotations

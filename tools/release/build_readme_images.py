@@ -15,6 +15,9 @@ Usage::
                       gui_results.png, gui_models.png, gui_postprocess.png>] \
         [--out docs/readme_github]
 
+``--only specimen_segmenter`` (any Builder method names) rebuilds just those composites, e.g. from a small fresh
+run of the three sheets after one module's default model changed (3.0.1043: ``runs/for_readme_specimen``).
+
 ``--gui-shots`` is optional: the GUI screenshots are captured separately (headless Chrome over the
 DevTools protocol against ``lm3 serve``) and are only re-encoded here. When the folder is absent
 the committed GUI images are left untouched.
@@ -338,12 +341,21 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("docs/readme_github"))
     ap.add_argument("--gui-shots", type=Path, default=None,
                     help="folder of GUI PNG screenshots to re-encode (optional)")
+    ap.add_argument("--only", nargs="+", default=None, metavar="FIGURE",
+                    help="build only these composites (Builder method names, e.g. specimen_segmenter); "
+                         "used when one module's model changes and only its figure needs a fresh run")
     a = ap.parse_args()
 
     b = Builder(a.run, a.originals, a.out)
-    for step in (b.hero, b.archival_detector, b.plant_detector, b.specimen_segmenter, b.ruler_classifier,
-                 b.ruler_cf, b.leaf_segmenter, b.morphology, b.landmarks, b.leaf_orientation,
-                 b.petiole_width, b.bilateral_symmetry, b.ect, b.reporter):
+    steps = (b.hero, b.archival_detector, b.plant_detector, b.specimen_segmenter, b.ruler_classifier,
+             b.ruler_cf, b.leaf_segmenter, b.morphology, b.landmarks, b.leaf_orientation,
+             b.petiole_width, b.bilateral_symmetry, b.ect, b.reporter)
+    if a.only:
+        unknown = set(a.only) - {f.__name__ for f in steps}
+        if unknown:
+            raise SystemExit(f"--only: unknown figure(s) {sorted(unknown)}; known: {[f.__name__ for f in steps]}")
+        steps = tuple(f for f in steps if f.__name__ in a.only)
+    for step in steps:
         step()
     if a.gui_shots and a.gui_shots.is_dir():
         b.gui(a.gui_shots)

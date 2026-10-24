@@ -131,14 +131,20 @@ def load_specimen_segmenter(cfg: Any, device: Any):
     spec, warnings = resolve_specimen_model(stage_cfg)
     for w in warnings:
         log.warning(w)
+    from leafmachine3.core.paper_removal import paperclean_method_from_cfg
+
     yolo = _get(stage_cfg, "yolo", None)
+    # `paperclean` switches the pass on/off; `LLR_Hyst_KeepBlobs` (default on) picks the Lab
+    # LLR-hysteresis method over the original HSV range (see core/paper_removal.py).
+    method = paperclean_method_from_cfg(bool(_get(stage_cfg, "paperclean", True)),
+                                        bool(_get(stage_cfg, "LLR_Hyst_KeepBlobs", True)))
     return build_specimen_segmenter(
         spec,
         _model_path(cfg, stage_cfg),
         providers=device.ort_providers(),
         conf=float(_get(stage_cfg, "conf", 0.5)),
         yolo={k: _get(yolo, k) for k in ("conf", "iou", "max_det") if _get(yolo, k) is not None},
-        paperclean=bool(_get(stage_cfg, "paperclean", True)),
+        paperclean=method,
     )
 
 

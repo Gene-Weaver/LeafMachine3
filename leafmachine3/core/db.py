@@ -174,6 +174,12 @@ class ProjectDB:
     _RULER_CLASS_MIGRATIONS: tuple[tuple[str, str], ...] = (
         ("squarify_path", "TEXT"),
     )
+    # Column added to specimen_mask: which core.paper_removal method produced mask_path/refined_path
+    # ("none" when the pass was off). Rows from before the column are NULL = unknown (they predate the
+    # LLR method, so they were the HSV one or off; the refined mask tells which).
+    _SPECIMEN_MASK_MIGRATIONS: tuple[tuple[str, str], ...] = (
+        ("paperclean_method", "TEXT"),
+    )
     # Columns added to leaf_petiole (cm-grounded petiole length; width_cm shipped with the table).
     _PETIOLE_MIGRATIONS: tuple[tuple[str, str], ...] = (
         ("length_cm", "REAL"),
@@ -225,6 +231,10 @@ class ProjectDB:
         for col, decl in self._RULER_CLASS_MIGRATIONS:
             if col not in rc_cols:
                 self._exec(f"ALTER TABLE ruler_classification ADD COLUMN {col} {decl}")
+        sm_cols = self._table_columns("specimen_mask")
+        for col, decl in self._SPECIMEN_MASK_MIGRATIONS:
+            if col not in sm_cols:
+                self._exec(f"ALTER TABLE specimen_mask ADD COLUMN {col} {decl}")
         pet_cols = self._table_columns("leaf_petiole")
         for col, decl in self._PETIOLE_MIGRATIONS:
             if col not in pet_cols:
@@ -975,8 +985,8 @@ class ProjectDB:
             """
             INSERT INTO specimen_mask
                 (specimen_id, mask_format, mask_path, refined_path, sample_centers_json,
-                 frame_width, frame_height, area_frac, model_name)
-            VALUES (?, 'png_path', ?, ?, ?, ?, ?, ?, ?)
+                 frame_width, frame_height, area_frac, model_name, paperclean_method)
+            VALUES (?, 'png_path', ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(specimen_id) DO UPDATE SET
                 mask_path           = excluded.mask_path,
                 refined_path        = excluded.refined_path,
@@ -984,11 +994,13 @@ class ProjectDB:
                 frame_width         = excluded.frame_width,
                 frame_height        = excluded.frame_height,
                 area_frac           = excluded.area_frac,
-                model_name          = excluded.model_name
+                model_name          = excluded.model_name,
+                paperclean_method   = excluded.paperclean_method
             """,
             (specimen_id, str(final_path), str(refined_path), centers_json,
              int(result.frame_width), int(result.frame_height),
-             float(result.area_frac), str(result.model_name)),
+             float(result.area_frac), str(result.model_name),
+             str(getattr(result, "paperclean_method", "none") or "none")),
         )
 
     def specimen_mask(self, specimen_id: int) -> Optional[sqlite3.Row]:
@@ -1160,6 +1172,7 @@ class ProjectDB:
                    ph.n_fruits AS n_fruit_boxes,
                    sm.area_frac  AS specimen_mask_area_frac,
                    sm.model_name AS specimen_mask_model,
+                   sm.paperclean_method AS specimen_paperclean_method,
                    rcf.status     AS ruler_cf_status,
                    rcf.confidence AS ruler_cf_confidence,
                    rcf.cf_px_per_cm_measured,

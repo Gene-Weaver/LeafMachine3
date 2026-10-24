@@ -321,7 +321,7 @@ runs/<run_name>/
     Leaf_Original/           7 per-leaf products, as mounted
     Leaf_Oriented/           the same 7 products, rotated tip-up
     Crops/                   RGB crops of every non-leaf detection (rulers, labels, fruits, ...)
-    Specimen_Masks/          whole-sheet and per-leaf binary masks and RGB cutouts
+    Specimen_Masks/          whole-sheet masks and RGB cutouts, raw and paper-cleaned (each with its inverse), plus per-leaf masks
     Leaf_Data/               bilateral symmetry panels, ECT images and coordinates
     Leaf_Momocs/             every leaf as a Momocs-ready image, plus outlines for the R packages Momocs and Momocs2
     Data/                    the numbers: leaf_measurements.csv is the one to open first
@@ -523,22 +523,55 @@ segmented or landmarked, so the detector is tuned for recall on whole leaves.
 
 ### 4. Specimen Segmenter
 
-A whole-sheet plant-versus-background mask, independent of the plant boxes. It removes the paper,
-labels, and mounting materials from the sheet to leave only plant material, with an optional
-paper-cleanup pass. Used for background removal and for the whole-specimen mask products.
+One plant-versus-background mask per sheet, made by [UNet++ v8](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus) and
+independent of the plant boxes: the plant stays; paper, labels, tape and mounting are removed. A
+paper-cleanup pass then takes out paper the network kept, for example between stems.
 
-![Specimen segmentation: annotated sheet and the plant-only cutout, three specimens](docs/readme_github/specimen_segmenter.jpg)
+![Specimen segmentation with the default settings: annotated sheet and the plant-only cutout, three specimens](docs/readme_github/specimen_segmenter.jpg)
 
-| Model | [`lm3_specimen_segmenter__unetpp_effb7_1024`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024) (default) · [`birefnet_hr_swinl_1024`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024) · [`yolo26x_seg_1280`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280) |
+| Model | [`lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus) (UNet++ v8) |
 |---|---|
-| Architecture | UNet++ with an EfficientNet-B7 encoder, 1024 px; alternates are BiRefNet (Swin-L) and YOLO26x-seg |
+| Architecture | UNet++ with an EfficientNet-B7 encoder, 1024 px |
 | Classes | 1: plant |
-| Trained on | 18,904 sheets from 75 annotation projects (machine-generated targets, SAM 3 → self-training) |
-| Accuracy | test Dice 0.948 (median 0.977), IoU 0.916 against the machine-generated masks |
+| Trained on | 27,772 sheets with machine-generated masks (details on the model card) |
+| Accuracy | on 12 hard sheets with hand-placed points: 90.5% of plant points inside the mask, 98.1% of background points outside it (99.0% after the default paper cleanup) |
 
-BiRefNet scores slightly higher at the median and is markedly slower on CPU; YOLO26x-seg keeps
-more of the paper enclosed by stems. Faint, dried-brown material on similarly colored paper is
-the known weak case for all three.
+**Paper cleanup.** `paperclean: true` (the default) runs a second pass after the network. Two methods:
+
+- `LLR_Hyst_KeepBlobs: true` (the default): compares every candidate region with color models of the
+  sheet's own paper and of the plant, and removes it only when a solid part of it is clearly paper. A
+  separate piece of plant is never dropped for being small.
+- `LLR_Hyst_KeepBlobs: false`: the original method, which removes everything inside the paper's color
+  range. It also removes brown or pale plant on paper of a similar color.
+
+`paperclean: false` skips the pass.
+
+```yaml
+specimen_segmenter:
+  paperclean: true           # false: keep the network's mask as is
+  LLR_Hyst_KeepBlobs: true   # false: the original HSV method
+```
+
+Each panel: the paper cleanup off, `LLR_Hyst_KeepBlobs` (default), and the original HSV method. Top: LeafMachine3's specimen overlay (green = kept, red = removed by the cleanup, blue = where the paper was sampled); bottom: the cutout.
+
+<table>
+  <tr><td align="center" width="50%"><img src="docs/readme_github/specimen_paperclean/01_Quercus_helvetica_Z_2575336428.jpg" width="430" alt="Quercus helvetica: no cleanup, LLR and HSV paper cleanup"><br><sub><i>Quercus helvetica</i>: brown leaves on brown paper. HSV deletes the whole plant because plant and paper share a color range; LLR removes nothing.</sub></td>
+      <td align="center" width="50%"><img src="docs/readme_github/specimen_paperclean/02_Catalpa_erubescens_PH_3865012217.jpg" width="430" alt="Catalpa erubescens: no cleanup, LLR and HSV paper cleanup"><br><sub><i>Catalpa erubescens</i>: the model keeps the white mounting tape across the leaves; both methods remove it and agree.</sub></td></tr>
+  <tr><td align="center" width="50%"><img src="docs/readme_github/specimen_paperclean/03_Quercus_anceps_LYN_4134274989.jpg" width="430" alt="Quercus anceps: no cleanup, LLR and HSV paper cleanup"><br><sub><i>Quercus anceps</i> (CC0): the model fills the white paper between the leaves. LLR removes it cleanly; HSV removes less and leaves a white rim around each leaf.</sub></td>
+      <td align="center" width="50%"><img src="docs/readme_github/specimen_paperclean/04_Quercus_hypoleuca_L_2515539380.jpg" width="430" alt="Quercus hypoleuca: no cleanup, LLR and HSV paper cleanup"><br><sub><i>Quercus hypoleuca</i> (CC0): tan leaves on tan paper. HSV deletes 82% of the plant; LLR removes only the paper between leaves, plus part of one pale leaf.</sub></td></tr>
+</table>
+
+**What you get.** Both masks are saved by default: `reports/Specimen_Masks/*_Specimen/` holds the
+network's mask and `*_Specimen_PaperCleaned/` the mask after the cleanup, each as a binary mask
+(`Binary_Masks_…`), an RGB cutout (`RGB_Masks_…`) and their inverses (`…_Inverse`).
+`Overlay/Overlay_Specimen_Segmentation/` shows the cleaned mask with the removed paper in red. Every
+folder has its own switch under `report.masks`.
+
+<sub>Other specimen segmenters stay installable as alternates (`lm3 models install --list-alternates`):
+[UNet++ v2](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048),
+[UNet++ v1](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024),
+[BiRefNet](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024),
+[YOLO26x-seg](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280).</sub>
 
 ### 5. Phenology Detector
 
@@ -913,7 +946,7 @@ CPU code.
 | 1. [MP Conversion Factor](#1-mp-conversion-factor) | [`phyloforfun/lm3_mp_conversion_factor__sqrt_fit`](https://huggingface.co/phyloforfun/lm3_mp_conversion_factor__sqrt_fit) (CPU; runs before any image is decoded) | `specimen.cf_px_per_cm_predicted_by_mp` |
 | 2. [Archival Detector](#2-archival-detector) | [`phyloforfun/lm3_archival_detector__yolo26x_det_1280`](https://huggingface.co/phyloforfun/lm3_archival_detector__yolo26x_det_1280) (default)<br>[`phyloforfun/lm3_archival_detector__yolo26n_det_640`](https://huggingface.co/phyloforfun/lm3_archival_detector__yolo26n_det_640) | `archival_detection` table; `Crops/RGB__<class>/` and `detections.csv` |
 | 3. [Plant Detector](#3-plant-detector) | [`phyloforfun/lm3_plant_detector__yolo26x_det_1280`](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26x_det_1280) (default)<br>[`phyloforfun/lm3_plant_detector__yolo26n_det_640`](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26n_det_640) | `plant_detection` table; `Leaf_Original/Leaf_BBox/` for leaves, `Crops/RGB__<class>/` for everything else |
-| 4. [Specimen Segmenter](#4-specimen-segmenter) | [`phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024) (default)<br>[`phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024)<br>[`phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280) | `specimen_mask` table; `Specimen_Masks/*_Specimen/` and `Overlay/Overlay_Specimen_Segmentation/` |
+| 4. [Specimen Segmenter](#4-specimen-segmenter) | [`phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus`](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus) (UNet++ v8)<br><sub>alternates: [v2](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048), [v1](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024), [BiRefNet](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024), [YOLO26x-seg](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280)</sub> | `specimen_mask` table; `Specimen_Masks/*_Specimen/` (network mask), `Specimen_Masks/*_Specimen_PaperCleaned/` and `Overlay/Overlay_Specimen_Segmentation/` |
 | 5. [Phenology Detector](#5-phenology-detector) | none (CPU) | `phenology` table; `has_leaves` / `has_flowers` / `has_fruits` on the specimen; `Data/phenology.csv` |
 | 6. [Ruler Classifier](#6-ruler-classifier) | ensemble of all three:<br>[`phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224)<br>[`phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224)<br>[`phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp`](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp) | `ruler_classification` table; `specimen.ruler_class_type` |
 | 7. [Ruler Conversion Factor](#7-ruler-conversion-factor) | none (CPU) | `ruler_CF_lattice` tables; `specimen.cf_px_per_cm` + `cf_source`; `Overlay/Overlay_Ruler_Lattice/` and `Data/ruler_conversion_factor.csv` (the verdict and why) |
@@ -946,7 +979,9 @@ reports/
   Leaf_Original/                   7 products per leaf, as mounted  (og-)
   Leaf_Oriented/                   the same 7, rotated tip-up       (or-)
   Crops/RGB__<class>/              every non-leaf detection
-  Specimen_Masks/                  whole-sheet and per-leaf masks, binary and RGB
+  Specimen_Masks/                  whole-sheet masks, binary and RGB: *_Specimen/ (the network's mask),
+                                   *_Specimen_PaperCleaned/ (after paper cleanup), each with an _Inverse twin;
+                                   plus the per-leaf *__Leaf/ masks
   Leaf_Data/                       Bilateral_Symmetry/, Oriented_Leaf_ECT/, ..., Coordinates/
   Leaf_Momocs/                     <stem>__or-MOMOCS-lamina__x_y_x_y.jpg per leaf, momocs_fac.csv,
                                    momocs_outlines.json, Momit_JSON/<stem>.json per sheet
@@ -1020,7 +1055,7 @@ uv run --frozen --no-sync lm3 models verify
 |---|---|---|---|
 | Archival Detector | [yolo26x_det_1280](https://huggingface.co/phyloforfun/lm3_archival_detector__yolo26x_det_1280) | [yolo26n_det_640](https://huggingface.co/phyloforfun/lm3_archival_detector__yolo26n_det_640) | AGPL-3.0 |
 | Plant Detector | [yolo26x_det_1280](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26x_det_1280) | [yolo26n_det_640](https://huggingface.co/phyloforfun/lm3_plant_detector__yolo26n_det_640) | AGPL-3.0 |
-| Specimen Segmenter | [unetpp_effb7_1024](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024) | [birefnet_hr_swinl_1024](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024), [yolo26x_seg_1280](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280) | Apache-2.0 (MIT, AGPL-3.0) |
+| Specimen Segmenter | [unetpp_effb7_1024_dinov3_vith16plus_2048_consensus](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus) (UNet++ v8) | <sub>[unetpp_effb7_1024_dinov3_vith16plus_2048](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048), [unetpp_effb7_1024](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024), [birefnet_hr_swinl_1024](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024), [yolo26x_seg_1280](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280)</sub> | AGPL-3.0 (Apache-2.0, MIT, AGPL-3.0) |
 | Ruler Classifier | ensemble: [yolo26x_cls_224](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26x_cls_224), [yolo26n_cls_224](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__yolo26n_cls_224), [dinov2_frozen_mlp](https://huggingface.co/phyloforfun/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp) | | AGPL-3.0 / Apache-2.0 |
 | Leaf Segmenter | [yolo26x_seg_1024](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024) | [birefnet_hr_swinl_1024_leaf](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__birefnet_hr_swinl_1024_leaf), [birefnet_hr_swinl_1024_leaf_no_petiole](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__birefnet_hr_swinl_1024_leaf_no_petiole) | AGPL-3.0 (MIT) |
 | Landmark Detector | [yolo26x_pose_640](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640) | | AGPL-3.0 |

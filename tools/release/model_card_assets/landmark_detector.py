@@ -14,7 +14,7 @@ the way the pipeline draws Overlay_Landmarks:
 The example runs are read from copies of their databases (never modified). The provenance file records
 the model that rendered the images.
 
-    .venv_LM3/bin/python tools/release/model_card_assets/landmark_detector.py \
+    .venv/bin/python tools/release/model_card_assets/landmark_detector.py \
         --model /path/to/model.onnx --label "yolo26x_pose_640 iteration 2" [--device cuda:1|cpu]
 """
 from __future__ import annotations

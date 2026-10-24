@@ -14,7 +14,7 @@ resized back to the crop, threshold 0.5. Small crops are drawn at native size an
 Writes docs/hf_docs/leaf_segmenter/birefnet/panel_NN_<specimen>.jpg + panel_provenance.json; a later run
 re-renders the crops listed in that provenance file.
 
-    .venv_LM3/bin/python tools/release/model_card_assets/birefnet_leaf.py \
+    .venv/bin/python tools/release/model_card_assets/birefnet_leaf.py \
         --leaf-model <lamina+petiole model.onnx> --lamina-model <lamina-only model.onnx> --label "<models, iteration>" [--device cpu]
 """
 from __future__ import annotations

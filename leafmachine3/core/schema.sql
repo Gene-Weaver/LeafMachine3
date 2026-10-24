@@ -306,6 +306,7 @@ CREATE INDEX IF NOT EXISTS ix_bsym_spec ON bilateral_symmetry (specimen_id);
 -- specimen_mask : one whole-sheet plant-vs-background mask per specimen (SpecimenSegmenter stage).
 -- Masks are PNG files on disk (working frame), referenced by path so the raster stays lossless.
 -- mask_path = final (post-paperclean) mask; refined_path = pixels paperclean removed (red overlay);
+-- the network's raw mask is their union, so it is not stored a third time.
 -- sample_centers_json = paper-sampling box centers [[x,y],...] in working coords (blue overlay).
 CREATE TABLE IF NOT EXISTS specimen_mask (
     specimen_id  INTEGER PRIMARY KEY REFERENCES specimen(specimen_id) ON DELETE CASCADE,
@@ -316,6 +317,7 @@ CREATE TABLE IF NOT EXISTS specimen_mask (
     frame_width  INTEGER NOT NULL, frame_height INTEGER NOT NULL,   -- coord frame = working dims
     area_frac    REAL,                                  -- foreground fraction of the final mask (QC)
     model_name   TEXT,                                  -- which export produced it (provenance)
+    paperclean_method TEXT,                             -- core.paper_removal method: LLR_Hyst_KeepBlobs | hsv | none
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

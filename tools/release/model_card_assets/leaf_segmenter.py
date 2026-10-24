@@ -16,7 +16,7 @@ the model path overridden), the stage's polygon re-basing, and ``build_summary_i
 their SQLite files, so the runs themselves are never touched. The provenance files are updated with
 the new instance counts and the model that rendered them.
 
-    .venv_LM3/bin/python tools/release/model_card_assets/leaf_segmenter.py \
+    .venv/bin/python tools/release/model_card_assets/leaf_segmenter.py \
         --model /path/to/model.onnx --label "yolo26x_seg_1024 iteration 2" [--device cuda:1|cpu]
 """
 from __future__ import annotations

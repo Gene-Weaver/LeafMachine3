@@ -263,9 +263,12 @@ def builtin_defaults() -> dict[str, Any]:
             "mp_conversion_factor": {"enabled": True},
             "archival_detector": {"enabled": True},
             "plant_detector": {"enabled": True},
-            # The model is chosen by NAME; the default names the UNet++ (see inference/specimen_models.py).
-            "specimen_segmenter": {"enabled": True, "model": {"key": "unetpp_effb7_1024"},
-                                   "yolo": {"conf": 0.25, "iou": 0.5, "max_det": 300}},
+            # The model is chosen by NAME; the default names the DINOv3-trained UNet++ (see inference/specimen_models.py).
+            # paperclean = run the paper-removal pass; LLR_Hyst_KeepBlobs = that pass is the Lab LLR
+            # hysteresis method (core/paper_removal.py), false = the original HSV range.
+            "specimen_segmenter": {"enabled": True, "model": {"key": "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus"},
+                                   "yolo": {"conf": 0.25, "iou": 0.5, "max_det": 300},
+                                   "paperclean": True, "LLR_Hyst_KeepBlobs": True},
             "phenology_detector": {"enabled": True},
             "ruler_classifier": {"enabled": True},
             # lattice conversion-factor method. use_CF_predicted_by_MP is here (not only in the

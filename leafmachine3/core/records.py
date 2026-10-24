@@ -122,6 +122,7 @@ class SpecimenMaskResult:
     centers: list = field(default_factory=list)   # [(x, y), ...] paper-sample box centers, working coords
     area_frac: float = 0.0             # foreground fraction of the final mask (QC)
     model_name: str = ""               # which export produced it (provenance)
+    paperclean_method: str = "none"    # core.paper_removal method that produced final/removed ("none" = off)
 
 
 @dataclass

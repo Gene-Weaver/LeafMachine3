@@ -32,7 +32,8 @@ naming:
   friendly_names: {Ruler: ruler, Barcode: barcode, Colorcard: colorcard, Label: label, Map: map, Envelope: envelope,
     Photo: photo, Attached_Item: attachedItem, Weights: weights, Leaf_WHOLE: leaf, Leaf_PARTIAL: leafReject,
     Leaflet: leaflet, Seed_Fruit_ONE: fruit, Seed_Fruit_MANY: fruitMany, Flower_ONE: flower, Flower_MANY: flowerMany,
-    Bud: bud, Specimen: specimen, Specimen_Inverse: specimenInverse, Roots: roots, Wood: wood, Leaf: leaf,
+    Bud: bud, Specimen: specimen, Specimen_Inverse: specimenInverse, Specimen_PaperCleaned: specimenPaperCleaned,
+    Specimen_PaperCleaned_Inverse: specimenPaperCleanedInverse, Roots: roots, Wood: wood, Leaf: leaf,
     Petiole: petiole, Hole: hole}
 modules:
   mp_conversion_factor:
@@ -61,11 +62,12 @@ modules:
     imgsz: 1280
   specimen_segmenter:
     enabled: true
-    model: {key: unetpp_effb7_1024, path: models/specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx,
-      format: onnx}
+    model: {key: unetpp_effb7_1024_dinov3_vith16plus_2048_consensus,
+      path: models/specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_consensus/model.onnx, format: onnx}
     conf: 0.5
     yolo: {conf: 0.25, iou: 0.5, max_det: 300}
     paperclean: true
+    LLR_Hyst_KeepBlobs: true
   phenology_detector:
     enabled: true
     targets:
@@ -272,6 +274,10 @@ report:
     RGB_Masks__Specimen: true
     Binary_Masks__Specimen_Inverse: true
     RGB_Masks__Specimen_Inverse: true
+    Binary_Masks__Specimen_PaperCleaned: true
+    RGB_Masks__Specimen_PaperCleaned: true
+    Binary_Masks__Specimen_PaperCleaned_Inverse: true
+    RGB_Masks__Specimen_PaperCleaned_Inverse: true
     inverse_fill: white
     Binary_Masks: false
     RGB_Masks: false
@@ -293,5 +299,5 @@ report:
     na_rep: ''
     float_precision: 6
     files: {leaf_measurements: true, specimen_summary: true, phenology: true, detections: true, landmarks: true,
-      ruler_conversion_factor: true, ruler_crops: true, fieldprism_markers: true, fieldprism_sheets: true, run_stages: true,
-      stage_errors: true, data_dictionary: true}
+      ruler_conversion_factor: true, ruler_crops: true, fieldprism_markers: true, fieldprism_sheets: true,
+      run_stages: true, stage_errors: true, data_dictionary: true}

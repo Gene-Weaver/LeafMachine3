@@ -9,7 +9,10 @@ import numpy as np
 import pytest
 
 from leafmachine3.core.db import ProjectDB
-from leafmachine3.core.paper_removal import paperclean, remove_paper
+from leafmachine3.core.paper_removal import (
+    METHOD_HSV, METHOD_LLR_HYST_KEEPBLOBS, METHOD_NONE, MIN_KEEP_FRAC, paperclean,
+    paperclean_llr_hyst_keepblobs, paperclean_method_from_cfg, remove_paper, run_paperclean,
+)
 from leafmachine3.core.records import SpecimenMaskResult, SpecimenRecord
 from leafmachine3.inference.mock import MockSpecimenSegmenter
 from leafmachine3.reporting.overlay import build_specimen_overlay
@@ -49,6 +52,80 @@ def test_paperclean_full_frame_mask_is_noop() -> None:
     final, removed, centers = paperclean(sheet, mask)
     assert np.array_equal(final, mask)
     assert int(removed.sum()) == 0 and centers == []
+    final2, removed2, centers2 = paperclean_llr_hyst_keepblobs(sheet, mask)
+    assert np.array_equal(final2, mask) and int(removed2.sum()) == 0 and centers2 == []
+
+
+def test_llr_hyst_keepblobs_trims_paper_same_contract() -> None:
+    """The LLR method removes the paper the mask spilled onto, keeps the plant, and returns the
+    same (final, removed, centers) contract as the HSV method -- same sampling boxes included."""
+    sheet, mask = _sheet_with_overshooting_mask()
+    final, removed, centers = paperclean_llr_hyst_keepblobs(sheet, mask)
+    assert final.shape == mask.shape and final.dtype == np.uint8 and set(np.unique(final)) <= {0, 1}
+    assert int(final.sum()) < int(mask.sum())              # paper trimmed away
+    assert not np.any((removed > 0) & (final > 0))
+    assert np.array_equal(removed > 0, (mask > 0) & (final == 0))
+    # the green blob itself survives (every pixel of a slightly eroded blob is still plant)
+    blob = np.zeros_like(mask)
+    cv2.circle(blob, (100, 100), 50, 1, -1)
+    assert np.all(final[blob > 0] == 1)
+    # the spill ring is paper and goes
+    ring = (mask > 0) & ~(cv2.circle(np.zeros_like(mask), (100, 100), 60, 1, -1) > 0)
+    assert (final[ring] == 0).mean() > 0.9
+    # same sampler, same boxes
+    _, _, centers_hsv = paperclean(sheet, mask)
+    assert centers == centers_hsv and len(centers) >= 3
+
+
+def test_llr_hyst_keepblobs_keeps_isolated_blob_hsv_drops() -> None:
+    """A small isolated plant piece (under MIN_KEEP_FRAC of the sheet) is dropped by the HSV method's
+    size-only finish and kept by the LLR method: that was the isolated-leaf-tip bug."""
+    sheet, mask = _sheet_with_overshooting_mask()
+    r = int(np.sqrt(MIN_KEEP_FRAC * sheet.shape[0] * sheet.shape[1] / np.pi) * 0.7)   # well under the floor
+    assert r >= 1
+    cv2.circle(sheet, (30, 170), r, (40, 120, 40), -1)     # a detached green tip
+    cv2.circle(mask, (30, 170), r, 1, -1)
+    tip = np.zeros_like(mask)
+    cv2.circle(tip, (30, 170), r, 1, -1)
+    hsv_final = paperclean(sheet, mask)[0]
+    llr_final = paperclean_llr_hyst_keepblobs(sheet, mask)[0]
+    assert int(hsv_final[tip > 0].sum()) == 0               # the original deletes it for its size
+    assert np.all(llr_final[tip > 0] == 1)                  # the LLR method keeps it
+
+
+def test_run_paperclean_dispatch_and_method_from_cfg() -> None:
+    sheet, mask = _sheet_with_overshooting_mask()
+    assert np.array_equal(run_paperclean(sheet, mask, METHOD_HSV)[0], paperclean(sheet, mask)[0])
+    assert np.array_equal(run_paperclean(sheet, mask, METHOD_LLR_HYST_KEEPBLOBS)[0],
+                          paperclean_llr_hyst_keepblobs(sheet, mask)[0])
+    with pytest.raises(ValueError):
+        run_paperclean(sheet, mask, "bogus")
+    assert paperclean_method_from_cfg(False, True) == METHOD_NONE
+    assert paperclean_method_from_cfg(True, True) == METHOD_LLR_HYST_KEEPBLOBS
+    assert paperclean_method_from_cfg(True, False) == METHOD_HSV
+
+
+def test_backend_finish_records_method() -> None:
+    """The shared backend tail stamps the method on the result; paperclean=False -> none, raw mask kept."""
+    from leafmachine3.inference.specimen_segmenter import _finish, _resolve_method
+
+    sheet, mask = _sheet_with_overshooting_mask()
+    assert _resolve_method(False, None) == METHOD_NONE
+    assert _resolve_method(True, None) == METHOD_LLR_HYST_KEEPBLOBS
+    assert _resolve_method(True, METHOD_HSV) == METHOD_HSV
+    assert _resolve_method(METHOD_HSV, None) == METHOD_HSV        # the factory passes the method as `paperclean`
+    assert _resolve_method(METHOD_NONE, None) == METHOD_NONE
+    with pytest.raises(ValueError):
+        _resolve_method(True, "bogus")
+    off = _finish(sheet, mask, METHOD_NONE, "m")
+    on = _finish(sheet, mask, METHOD_LLR_HYST_KEEPBLOBS, "m")
+    assert off.paperclean_method == METHOD_NONE and on.paperclean_method == METHOD_LLR_HYST_KEEPBLOBS
+
+    def dec(b):
+        return cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_GRAYSCALE) > 0
+
+    assert np.array_equal(dec(off.final_png), mask > 0) and not dec(off.removed_png).any()
+    assert np.array_equal(dec(on.final_png) | dec(on.removed_png), mask > 0)   # raw = final | removed
 
 
 def test_mock_backend_shape_and_determinism() -> None:
@@ -74,6 +151,7 @@ def test_record_specimen_mask_round_trip(db, tmp_path) -> None:
     assert row is not None
     assert row["frame_width"] == 300 and row["frame_height"] == 400
     assert row["model_name"] == "mock"
+    assert row["paperclean_method"] == "none"              # the mock runs no cleanup; the column records it
     # both PNGs were written to disk and are readable binary masks
     final = cv2.imread(row["mask_path"], cv2.IMREAD_GRAYSCALE)
     assert final is not None and final.shape == (400, 300)

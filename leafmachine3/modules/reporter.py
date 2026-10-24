@@ -19,21 +19,29 @@ and can be toggled independently in ``report`` of ``LM3_settings.yaml``. The lay
         leaf/lamina/laminaPetiole/laminaHoles; holes in laminaHoles RGB = (10,10,10))
     Specimen_Masks/Binary_Masks_Specimen__<Cls>/<stem>__MaskFull-<friendly>.<ext>
     Specimen_Masks/Binary_Masks__<Cls>/<stem>__SEG-<friendly>__x_y_x_y.<ext>
-    Specimen_Masks/Binary_Masks_Specimen/<stem>__MaskFull-specimen.<ext>  (whole-specimen mask)
+    Specimen_Masks/Binary_Masks_Specimen/<stem>__MaskFull-specimen.<ext>  (whole-specimen mask, the
+        network's own prediction before paper cleanup)
     Specimen_Masks/RGB_Masks_Specimen__<Cls>/<stem>__MaskRGBFull-<friendly>.<ext>
     Specimen_Masks/RGB_Masks__<Cls>/<stem>__SEGRGB-<friendly>__x_y_x_y.<ext>
     Specimen_Masks/RGB_Masks_Specimen/<stem>__MaskRGBFull-specimen.<ext>  (whole-specimen cutout)
     Specimen_Masks/Binary_Masks_Specimen_Inverse/<stem>__MaskFull-specimenInverse.<ext>
     Specimen_Masks/RGB_Masks_Specimen_Inverse/<stem>__MaskRGBFull-specimenInverse.<ext>
+    Specimen_Masks/Binary_Masks_Specimen_PaperCleaned/<stem>__MaskFull-specimenPaperCleaned.<ext>
+    Specimen_Masks/RGB_Masks_Specimen_PaperCleaned/<stem>__MaskRGBFull-specimenPaperCleaned.<ext>
+    Specimen_Masks/Binary_Masks_Specimen_PaperCleaned_Inverse/<stem>__MaskFull-specimenPaperCleanedInverse.<ext>
+    Specimen_Masks/RGB_Masks_Specimen_PaperCleaned_Inverse/<stem>__MaskRGBFull-specimenPaperCleanedInverse.<ext>
     Data/*.csv                                             (the numbers behind all of the above)
 
 ``Data/`` is the LAST thing the Reporter writes and the only output that is not per-specimen: one
 pass over the whole database emitting ``leaf_measurements.csv`` (one row per leaf, every
 measurement) and its companions. See ``leafmachine3.reporting.data_export``.
 
-The ``*_Specimen_Inverse`` pair is the complement of the whole-specimen pair: the binary mask of
-everything that is NOT plant, and the sheet with the plant lifted off it and replaced by
-``report.masks.inverse_fill`` (white by default). Both are optional and default OFF.
+The whole-specimen exports come in two families. ``*_Specimen`` is the network's mask exactly as
+predicted (since 3.0.1043; before that the folder held the cleaned mask); ``*_Specimen_PaperCleaned``
+is the same mask after the SpecimenSegmenter's paper-cleanup pass (``modules.specimen_segmenter
+.paperclean`` / ``LLR_Hyst_KeepBlobs``) and is skipped when that pass was off. Each family's
+``_Inverse`` pair is its exact complement: the binary mask of everything that is NOT plant, and the
+sheet with the plant lifted off it and replaced by ``report.masks.inverse_fill`` (white by default).
 
 Every ID token above (the ``__<id>__`` middle part) is unique across the whole tree WITHOUT its
 extension, so a user can flatten an entire run into one directory and lose nothing. That is why
@@ -130,11 +138,14 @@ class _SpecimenExport(NamedTuple):
     rgb: bool         # RGB cutout (True) or {0,255} binary mask (False)
     invert: bool      # the NOT-specimen side of the mask
     default: bool     # inline default, used when the config predates the key
+    cleaned: bool = False   # the paper-cleaned mask (True) or the network's raw prediction (False)
 
 
-# The whole-specimen exports, in settings-file order. The two INVERSE outputs default OFF so a
+# The whole-specimen exports, in settings-file order. The two raw INVERSE outputs default OFF so a
 # config written before they existed keeps producing exactly the files it always produced; the
-# shipped LM3_settings.yaml turns them on.
+# shipped LM3_settings.yaml turns them on. The four PaperCleaned outputs default ON: a config from
+# before they existed used to get the cleaned mask under the un-suffixed names, and this is where
+# that mask lives now.
 _SPECIMEN_EXPORTS: tuple[_SpecimenExport, ...] = (
     _SpecimenExport("Binary_Masks__Specimen", "Binary_Masks_Specimen",
                     "Specimen", rgb=False, invert=False, default=True),
@@ -144,6 +155,14 @@ _SPECIMEN_EXPORTS: tuple[_SpecimenExport, ...] = (
                     "Specimen_Inverse", rgb=False, invert=True, default=False),
     _SpecimenExport("RGB_Masks__Specimen_Inverse", "RGB_Masks_Specimen_Inverse",
                     "Specimen_Inverse", rgb=True, invert=True, default=False),
+    _SpecimenExport("Binary_Masks__Specimen_PaperCleaned", "Binary_Masks_Specimen_PaperCleaned",
+                    "Specimen_PaperCleaned", rgb=False, invert=False, default=True, cleaned=True),
+    _SpecimenExport("RGB_Masks__Specimen_PaperCleaned", "RGB_Masks_Specimen_PaperCleaned",
+                    "Specimen_PaperCleaned", rgb=True, invert=False, default=True, cleaned=True),
+    _SpecimenExport("Binary_Masks__Specimen_PaperCleaned_Inverse", "Binary_Masks_Specimen_PaperCleaned_Inverse",
+                    "Specimen_PaperCleaned_Inverse", rgb=False, invert=True, default=True, cleaned=True),
+    _SpecimenExport("RGB_Masks__Specimen_PaperCleaned_Inverse", "RGB_Masks_Specimen_PaperCleaned_Inverse",
+                    "Specimen_PaperCleaned_Inverse", rgb=True, invert=True, default=True, cleaned=True),
 )
 
 
@@ -394,19 +413,22 @@ class Reporter(PipelineStage):
         """Export the whole-specimen (plant-vs-background) mask on the WORKING frame, one file per
         specimen per entry in ``wanted`` (a subset of :data:`_SPECIMEN_EXPORTS`).
 
-        Four files are possible, and each ``_Inverse`` one is the pixelwise complement of its
-        positive twin -- a binary mask of the sheet minus the plant, and the sheet with the plant
+        Eight files are possible: the network's raw mask and the paper-cleaned mask, each as a
+        binary mask and an RGB cutout, each with an ``_Inverse`` twin that is its pixelwise
+        complement -- a binary mask of the sheet minus the plant, and the sheet with the plant
         lifted off it and replaced by ``masks.inverse_fill``. The complement uses its OWN fill
         rather than ``masks.background`` because the two answer different questions: ``background``
         is what surrounds a cutout (black, so it thresholds away), while the inverse fill marks
         where the plant WAS, and wants to be visible against the sheet -- hence white by default.
 
-        The segmenter already stores this mask at working res, which is now also the output frame, so
-        it is used verbatim -- the old nearest-neighbour upscale to the original is gone, and with it
-        the blocky edges it invented. The complement is still taken after any shape fix-ups, so the
-        two masks partition the sheet exactly. An empty final mask (segmentation found no plant)
-        writes nothing at all: a full-sheet "inverse" would be technically true and completely
-        misleading."""
+        The segmenter stores the cleaned mask and the pixels the cleanup removed; the raw mask is
+        their union, so nothing is stored twice. Both sit at working res, which is also the output
+        frame, so they are used verbatim -- the old nearest-neighbour upscale to the original is
+        gone, and with it the blocky edges it invented. Each complement is taken after any shape
+        fix-ups, so every pair partitions the sheet exactly. An empty raw mask (segmentation found no
+        plant) writes nothing at all: a full-sheet "inverse" would be technically true and completely
+        misleading. The cleaned family is skipped when the cleanup pass was off (``paperclean_method``
+        ``none``): a "PaperCleaned" folder of uncleaned masks would lie."""
         import cv2
 
         loaded = _load_specimen_masks(b.specimen_mask)
@@ -414,20 +436,31 @@ class Reporter(PipelineStage):
             return []
         working = read(b.working_path)
         H, W = working.shape[:2]
-        final = loaded[0] > 0
+        final, removed = loaded[0] > 0, loaded[1] > 0
         if final.shape != (H, W):
             # Defensive only: the segmenter writes this mask at working res. A stale PNG from an
             # older run with a different max_working_dim would otherwise broadcast-error here.
             final = cv2.resize(loaded[0].astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST) > 0
-        if not final.any():
+            removed = cv2.resize(loaded[1].astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST) > 0
+        raw = final | removed
+        if not raw.any():
             return []
+        # NULL (a DB from before the column) means the cleaned mask is there, as it always was.
+        method = _row_get(b.specimen_mask, "paperclean_method", None)
+        cleaned_available = method is None or str(method) != "none"
+        if not cleaned_available and any(e.cleaned for e in wanted) and not getattr(self, "_warned_no_paperclean", False):
+            self._warned_no_paperclean = True
+            log.info("paper cleanup is off (modules.specimen_segmenter.paperclean): the *_PaperCleaned mask exports are skipped")
         bg = 0 if str(_get(masks_cfg, "background", default="black")).lower() == "black" else 255
         # config colors are RGB (like report.overlay's); the images here are OpenCV BGR
         fill_bgr = tuple(reversed(parse_fill_color(_getk(masks_cfg, "inverse_fill", "white"))))
 
         written: list[tuple[str, str]] = []
         for exp in wanted:
-            mask = ~final if exp.invert else final
+            if exp.cleaned and not cleaned_available:
+                continue
+            base = final if exp.cleaned else raw
+            mask = ~base if exp.invert else base
             kind = "mask_rgb_full" if exp.rgb else "mask_full"
             label = crop_label(self.cfg, kind, exp.cls_name)   # Mask[RGB]Full-specimen[Inverse]
             if exp.rgb:

@@ -84,14 +84,16 @@ DEFAULTS: dict[str, dict] = {
                   "torchscript/model.torchscript": ("leaf_segmenter/model.torchscript", "torchscript"),
                   "pytorch/best.pt": ("leaf_segmenter/best.pt", "pytorch"),
                   "training_metadata.json": ("leaf_segmenter/training_metadata.json", "meta")}}]},
-    # Destination keeps the file name LM3_settings.yaml already points at, so no settings change.
+    # Its own folder: the earlier default (now an alternate) left best.pt / training_metadata.json directly in
+    # specimen_segmenter/, and a flat destination would overwrite them in existing installs.
+    # UNet++ v8 since 3.0.1043 (v2, the 3.0.1042 default, is an alternate below).
     "specimen_segmenter": {"units": [{
-        "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__unetpp_effb7_1024",
-        "dir": "specimen_segmenter",
-        "files": {"onnx/model.onnx": ("specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.onnx", "onnx"),
-                  "torchscript/model.torchscript.pt": ("specimen_segmenter/unet_masksFromSam3_paperclean_control_1024.torchscript.pt", "torchscript"),
-                  "pytorch/best.pt": ("specimen_segmenter/best.pt", "pytorch"),
-                  "training_metadata.json": ("specimen_segmenter/training_metadata.json", "meta")}}]},
+        "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
+        "dir": "specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
+        "files": {"onnx/model.onnx": ("specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_consensus/model.onnx", "onnx"),
+                  "torchscript/model.torchscript.pt": ("specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_consensus/model.torchscript.pt", "torchscript"),
+                  "pytorch/best.pt": ("specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_consensus/best.pt", "pytorch"),
+                  "training_metadata.json": ("specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_consensus/training_metadata.json", "meta")}}]},
     # Not a network: a one-parameter fit shipped as json -- the "json" runtime format, one of the
     # defaults, so it is installed alongside the ONNX graphs.
     "mp_conversion_factor": {"units": [{
@@ -129,6 +131,22 @@ DEFAULTS: dict[str, dict] = {
 #: default. ``settings`` = extra lines the CLI prints alongside the path (and key, for keyed stages).
 ALTERNATES: dict[str, dict[str, dict]] = {
     "specimen_segmenter": {
+        # The default in 3.0.1042 (UNet++ v2, DINOv3 pseudo masks); replaced by v8 in 3.0.1043.
+        "unetpp_effb7_1024_dinov3_vith16plus_2048": {"units": [{
+            "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048",
+        "dir": "specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048",
+            "files": {"onnx/model.onnx": ("specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048/model.onnx", "onnx"),
+                      "torchscript/model.torchscript.pt": ("specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048/model.torchscript.pt", "torchscript"),
+                      "pytorch/best.pt": ("specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048/best.pt", "pytorch"),
+                      "training_metadata.json": ("specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048/training_metadata.json", "meta")}}]},
+        # The default until 3.0.1041 (UNet++ v1, trained on the SAM 3-derived masks).
+        "unetpp_effb7_1024": {"units": [{
+            "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__unetpp_effb7_1024",
+        "dir": "specimen_segmenter/unetpp_effb7_1024",
+            "files": {"onnx/model.onnx": ("specimen_segmenter/unetpp_effb7_1024/model.onnx", "onnx"),
+                      "torchscript/model.torchscript.pt": ("specimen_segmenter/unetpp_effb7_1024/model.torchscript.pt", "torchscript"),
+                      "pytorch/best.pt": ("specimen_segmenter/unetpp_effb7_1024/best.pt", "pytorch"),
+                      "training_metadata.json": ("specimen_segmenter/unetpp_effb7_1024/training_metadata.json", "meta")}}]},
         "birefnet_hr_swinl_1024": {"units": [{
             "repo_id": f"{NAMESPACE}/lm3_specimen_segmenter__birefnet_hr_swinl_1024",
         "dir": "specimen_segmenter/birefnet_hr_swinl_1024",

@@ -15,11 +15,39 @@ edge halo -- WITHOUT assuming a fixed paper color:
 
 The sampling is seeded (``np.random.default_rng(0)``), so the result -- and the sampled
 patch centers used for the QC overlay -- is fully reproducible for a given (image, mask).
+
+Two methods share that sampler and the morphological finish (``run_paperclean`` picks one by
+name, ``modules.specimen_segmenter.LLR_Hyst_KeepBlobs`` in the settings):
+
+* ``METHOD_HSV`` -- the original above: an HSV value-range widened x3.5 around the samples.
+* ``METHOD_LLR_HYST_KEEPBLOBS`` (default since 3.0.1043) -- ``paperclean_llr_hyst_keepblobs``:
+  paper and plant are each modeled as a Gaussian in CIE Lab (the plant from the mask's own eroded
+  interior), every pixel scores a log-likelihood ratio, and a candidate region (LLR > 1) is removed
+  only when at least 10% of it is confidently paper (LLR > 4) -- hysteresis, so a pale leaf is not
+  deleted for brushing the paper's color. It also skips the final small-blob drop, which was
+  deleting every isolated leaf tip under ~3e-4 of the sheet regardless of color. Chosen on 100
+  held-out sheets (training project ``ctxclean/paperclean_variants.py``, variant V23): paper
+  precision 0.81 -> 0.91, sheets losing > 25% of their plant 13 -> 5, isolated tips lost 55 -> 0.
 """
 from __future__ import annotations
 
 import cv2
 import numpy as np
+
+METHOD_HSV = "hsv"
+METHOD_LLR_HYST_KEEPBLOBS = "LLR_Hyst_KeepBlobs"
+METHOD_NONE = "none"                  # recorded when paperclean is switched off
+PAPERCLEAN_METHODS = (METHOD_HSV, METHOD_LLR_HYST_KEEPBLOBS)
+
+# --- LLR hysteresis settings (locked; the harness's V23) ----------------------------
+LLR_SEED_TAU = 4.0                   # a region is paper only if >= LLR_MIN_SEED of it scores above this
+LLR_GROW_TAU = 1.0                   # ...and it extends over everything above this
+LLR_MIN_SEED = 0.10
+PLANT_INTERIOR_FRAC = 0.01           # plant color sample = mask eroded by this * min(H,W)
+PLANT_SAMPLE_MAX = 50000             # at most this many interior pixels fit the plant Gaussian
+LAB_VAR_FLOOR = 4.0                  # variance floor per Lab channel (units^2)
+MIN_PAPER_SAMPLES = 25
+MIN_PLANT_SAMPLES = 50
 
 # --- locked settings (identical to the training project) --------------------------
 N_PATCHES = 20
@@ -158,3 +186,100 @@ def paperclean(img_bgr: np.ndarray, mask: np.ndarray):
     final = remove_small_blobs(out, MIN_KEEP_FRAC)
     removed = ((m > 0) & (final == 0)).astype(np.uint8)
     return final, removed, [(int(x), int(y)) for (x, y) in centers]
+
+
+# --------------------------------------------------------------------------- #
+# LLR hysteresis, keep blobs
+# --------------------------------------------------------------------------- #
+def _hsv_samples_to_lab(paper_hsv: np.ndarray) -> np.ndarray:
+    """The sampler's float HSV pixels as float32 OpenCV Lab (L 0-255, a/b offset 128)."""
+    hsv8 = np.clip(paper_hsv, 0, 255).astype(np.uint8).reshape(-1, 1, 3)
+    bgr = cv2.cvtColor(hsv8, cv2.COLOR_HSV2BGR)
+    return cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
+
+
+def _gauss_fit(x: np.ndarray):
+    return x.mean(0), x.var(0) + np.float32(LAB_VAR_FLOOR)
+
+
+def _gauss_logp(x: np.ndarray, mu: np.ndarray, var: np.ndarray) -> np.ndarray:
+    return -0.5 * (((x - mu) ** 2) / var).sum(-1) - 0.5 * np.log(var).sum()
+
+
+def plant_interior(mask: np.ndarray, frac: float = PLANT_INTERIOR_FRAC) -> np.ndarray:
+    """Pixels deep inside the mask (eroded by ``frac`` of min(H, W)): the plant's own color sample."""
+    m = (np.asarray(mask) > 0).astype(np.uint8)
+    H, W = m.shape
+    r = max(3, int(frac * min(H, W)))
+    return cv2.erode(m, _disk(r)) > 0
+
+
+def llr_paper_region(img_bgr: np.ndarray, mask: np.ndarray, paper_hsv: np.ndarray):
+    """The hysteresis candidate region (bool, inside ``mask``) of pixels that read as paper rather
+    than plant, or ``None`` when either color sample is too small to fit."""
+    m = (np.asarray(mask) > 0).astype(np.uint8)
+    paper_lab = _hsv_samples_to_lab(paper_hsv)
+    inside = plant_interior(m)
+    if len(paper_lab) < MIN_PAPER_SAMPLES or int(inside.sum()) < MIN_PLANT_SAMPLES:
+        return None
+    lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    plant_lab = lab[inside]
+    if len(plant_lab) > PLANT_SAMPLE_MAX:
+        pick = np.random.default_rng(0).choice(len(plant_lab), PLANT_SAMPLE_MAX, replace=False)
+        plant_lab = plant_lab[pick]
+    mu_pa, var_pa = _gauss_fit(paper_lab)
+    mu_pl, var_pl = _gauss_fit(plant_lab)
+    llr = _gauss_logp(lab, mu_pa, var_pa) - _gauss_logp(lab, mu_pl, var_pl)
+    wide = (llr > LLR_GROW_TAU) & (m > 0)
+    seed = (llr > LLR_SEED_TAU) & wide
+    n, lab_cc, stats, _ = cv2.connectedComponentsWithStats(wide.astype(np.uint8), 8)
+    seeds_per = np.bincount(lab_cc[seed], minlength=n)
+    keep = [i for i in range(1, n) if seeds_per[i] >= LLR_MIN_SEED * stats[i, cv2.CC_STAT_AREA]]
+    return np.isin(lab_cc, keep)
+
+
+def paperclean_llr_hyst_keepblobs(img_bgr: np.ndarray, mask: np.ndarray):
+    """Lab log-likelihood-ratio paper removal with hysteresis; same contract as :func:`paperclean`.
+
+    Returns ``(final, removed, centers)``. The paper is sampled exactly as the HSV method samples
+    it (same boxes, same centers for the overlay); the sheet is then scored against a paper and a
+    plant Gaussian in Lab. The morphological finish is the original's speckle-open and minimum
+    paper-region size, but the final small-blob drop is deliberately NOT applied: every component
+    the network predicted survives unless its color says paper.
+    """
+    m = (np.asarray(mask) > 0).astype(np.uint8)
+    empty = np.zeros_like(m)
+    if m.sum() == 0:
+        return m, empty, []
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    paper, centers = sample_paper(hsv, m, return_centers=True)
+    centers = [(int(x), int(y)) for (x, y) in centers] if centers else []
+    if paper is None:
+        return m, empty, centers
+    region = llr_paper_region(img_bgr, m, paper)
+    if region is None:
+        return m, empty, centers
+    H, W = m.shape
+    open_k = max(3, int(OPEN_FRAC * min(H, W)))
+    pp = cv2.morphologyEx(region.astype(np.uint8), cv2.MORPH_OPEN, _disk(max(1, open_k // 2)))
+    pp = _keep_large(pp, MIN_GAP_FRAC)
+    final = ((m > 0) & (pp == 0)).astype(np.uint8)
+    removed = ((m > 0) & (final == 0)).astype(np.uint8)
+    return final, removed, centers
+
+
+def run_paperclean(img_bgr: np.ndarray, mask: np.ndarray, method: str = METHOD_LLR_HYST_KEEPBLOBS):
+    """Dispatch on ``method`` (one of :data:`PAPERCLEAN_METHODS`); same return as :func:`paperclean`."""
+    if method == METHOD_LLR_HYST_KEEPBLOBS:
+        return paperclean_llr_hyst_keepblobs(img_bgr, mask)
+    if method == METHOD_HSV:
+        return paperclean(img_bgr, mask)
+    raise ValueError(f"unknown paperclean method {method!r}; expected one of {PAPERCLEAN_METHODS}")
+
+
+def paperclean_method_from_cfg(paperclean_on: bool, llr_hyst_keepblobs: bool) -> str:
+    """The method name the two settings select: ``none`` when the pass is off, else the
+    LLR method when ``LLR_Hyst_KeepBlobs`` is true, else the original HSV method."""
+    if not paperclean_on:
+        return METHOD_NONE
+    return METHOD_LLR_HYST_KEEPBLOBS if llr_hyst_keepblobs else METHOD_HSV

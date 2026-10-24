@@ -1,11 +1,14 @@
 """Stage 2b — Specimen Segmenter.
 
 Segment the whole sheet into a plant-vs-background (specimen) binary mask with the exported
-UNet++ ONNX model, then apply the informed HSV **paperclean** follow-up step. Consumes each
-specimen's working image and writes one ``specimen_mask`` row (final mask PNG + the paperclean
-removed-region PNG + the paper-sampling box centers) per specimen. The mask is stored in the
-WORKING frame; the Reporter renders it on the original (scaled by ``1/work_scale``) as the
-``Overlay_Specimen_Segmentation`` view.
+UNet++ ONNX model, then apply the **paperclean** follow-up step (``core/paper_removal.py``: the
+Lab LLR-hysteresis method by default, ``LLR_Hyst_KeepBlobs: false`` for the original HSV range,
+``paperclean: false`` for none). Consumes each specimen's working image and writes one
+``specimen_mask`` row (cleaned mask PNG + the paperclean removed-region PNG + the paper-sampling
+box centers + the method name) per specimen; the network's raw mask is the union of the two PNGs.
+The mask is stored in the WORKING frame; the Reporter renders it on the original (scaled by
+``1/work_scale``) as the ``Overlay_Specimen_Segmentation`` view and exports both the raw and the
+cleaned mask under ``Specimen_Masks/``.
 
 Independent of the plant boxes (a boxless full-sheet segmenter), so it has no ``depends_on``;
 it is sequenced right after the Plant Detector purely by ``STAGE_ORDER`` position.

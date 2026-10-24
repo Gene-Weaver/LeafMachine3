@@ -159,6 +159,7 @@ class MockSpecimenSegmenter:
         return SpecimenMaskResult(
             final_png=final_png, removed_png=removed_png, frame_width=int(w), frame_height=int(h),
             centers=centers, area_frac=float((mask > 0).mean()), model_name="mock",
+            paperclean_method="none",
         )
 
 

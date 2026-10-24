@@ -830,6 +830,20 @@
     "important": false,
     "group": "Plant names"
   },
+  "naming.friendly_names.Specimen_PaperCleaned": {
+    "label": "Specimen, paper cleaned",
+    "help": "Short name written into every paper-cleaned whole-plant mask filename and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
+  "naming.friendly_names.Specimen_PaperCleaned_Inverse": {
+    "label": "Not-specimen, paper cleaned",
+    "help": "Short name written into every inverse of the paper-cleaned whole-plant mask and its export folder name.",
+    "type": "string",
+    "important": false,
+    "group": "Plant names"
+  },
   "naming.friendly_names.Roots": {
     "label": "Roots",
     "help": "Short name written into every Roots filename and its export folder name.",
@@ -1135,9 +1149,11 @@
   },
   "modules.specimen_segmenter.model.key": {
     "label": "Model",
-    "help": "Which specimen segmenter this is: unetpp_effb7_1024 (UNet++, default), birefnet_hr_swinl_1024 (BiRefNet), yolo26x_seg_1280 (YOLO26x-seg). The name picks how the sheet is prepared for the model, so it must match the file below.",
+    "help": "Which specimen segmenter this is: unetpp_effb7_1024_dinov3_vith16plus_2048_consensus (UNet++ v8, default), unetpp_effb7_1024_dinov3_vith16plus_2048 (UNet++ v2), unetpp_effb7_1024 (UNet++ v1, SAM 3 masks), birefnet_hr_swinl_1024 (BiRefNet), yolo26x_seg_1280 (YOLO26x-seg). The name picks how the sheet is prepared for the model, so it must match the file below.",
     "type": "enum",
     "enum": [
+      "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
+      "unetpp_effb7_1024_dinov3_vith16plus_2048",
       "unetpp_effb7_1024",
       "birefnet_hr_swinl_1024",
       "yolo26x_seg_1280"
@@ -1218,7 +1234,14 @@
   },
   "modules.specimen_segmenter.paperclean": {
     "label": "Paper cleanup",
-    "help": "Run the follow-up color pass that strips leftover paper the network kept.",
+    "help": "Run the follow-up color pass that strips leftover paper the network kept. The network's own mask is exported either way; this adds the paper-cleaned mask and cutout.",
+    "type": "bool",
+    "important": false,
+    "group": "Specimen Segmenter"
+  },
+  "modules.specimen_segmenter.LLR_Hyst_KeepBlobs": {
+    "label": "Paper cleanup: LLR hysteresis, keep blobs",
+    "help": "Use the Lab likelihood-ratio method with hysteresis for the paper cleanup (default): a region goes only when a tenth of it is confidently paper, and no isolated leaf piece is dropped for its size alone. Off = the original HSV color-range method.",
     "type": "bool",
     "important": false,
     "group": "Specimen Segmenter"
@@ -2876,28 +2899,56 @@
   },
   "report.masks.Binary_Masks__Specimen": {
     "label": "Specimen binary masks",
-    "help": "Write the whole-plant black-and-white mask from the Specimen Segmenter.",
+    "help": "Write the whole-plant black-and-white mask exactly as the Specimen Segmenter network predicted it, before any paper cleanup.",
     "type": "bool",
     "important": false,
     "group": "Mask Exports"
   },
   "report.masks.RGB_Masks__Specimen": {
     "label": "Specimen color cutouts",
-    "help": "Write the whole-plant color cutout on the chosen background.",
+    "help": "Write the whole-plant color cutout of the network's mask (before paper cleanup) on the chosen background.",
     "type": "bool",
     "important": false,
     "group": "Mask Exports"
   },
   "report.masks.Binary_Masks__Specimen_Inverse": {
     "label": "Not-specimen binary masks",
-    "help": "Write the exact inverse of the whole-plant mask: white everywhere the sheet is not plant.",
+    "help": "Write the exact inverse of the network's whole-plant mask: white everywhere the sheet is not plant.",
     "type": "bool",
     "important": false,
     "group": "Mask Exports"
   },
   "report.masks.RGB_Masks__Specimen_Inverse": {
     "label": "Not-specimen color cutouts",
-    "help": "Write the sheet with the plant lifted off it and painted over with the fill color below.",
+    "help": "Write the sheet with the network's plant mask lifted off it and painted over with the fill color below.",
+    "type": "bool",
+    "important": false,
+    "group": "Mask Exports"
+  },
+  "report.masks.Binary_Masks__Specimen_PaperCleaned": {
+    "label": "Paper-cleaned specimen binary masks",
+    "help": "Write the whole-plant mask after the paper cleanup pass (skipped when Paper cleanup is off).",
+    "type": "bool",
+    "important": false,
+    "group": "Mask Exports"
+  },
+  "report.masks.RGB_Masks__Specimen_PaperCleaned": {
+    "label": "Paper-cleaned specimen color cutouts",
+    "help": "Write the color cutout of the paper-cleaned mask on the chosen background.",
+    "type": "bool",
+    "important": false,
+    "group": "Mask Exports"
+  },
+  "report.masks.Binary_Masks__Specimen_PaperCleaned_Inverse": {
+    "label": "Paper-cleaned not-specimen binary masks",
+    "help": "Write the exact inverse of the paper-cleaned mask: white everywhere that is not plant after cleanup.",
+    "type": "bool",
+    "important": false,
+    "group": "Mask Exports"
+  },
+  "report.masks.RGB_Masks__Specimen_PaperCleaned_Inverse": {
+    "label": "Paper-cleaned not-specimen color cutouts",
+    "help": "Write the sheet with the paper-cleaned plant mask lifted off it and painted over with the fill color below.",
     "type": "bool",
     "important": false,
     "group": "Mask Exports"

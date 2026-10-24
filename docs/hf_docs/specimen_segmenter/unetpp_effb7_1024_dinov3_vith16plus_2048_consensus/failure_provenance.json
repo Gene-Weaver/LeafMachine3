@@ -1,0 +1,209 @@
+{
+ "what": "Sheets the v1 UNet++ failed on. __raw_masks: Original | UNet++ v2 (DINOv3) | UNet++ v8 (DINOv3, consensus) (model masks, black = removed). __with_paper_removal: the same after LM3's paper-removal follow-up (red = deleted by it). Every model runs as in an LM3 run: the ingest working image, the stage's backend, paperclean. Rendered by tools/release/model_card_assets/specimen_segmenter.py failures.",
+ "models": {
+  "unetpp_effb7_1024_dinov3_vith16plus_2048": "models/specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048/model.onnx",
+  "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": "unetpp-v8-1024-dinov3_vith16plus_2048-v4targets-consensus-weights-30ep epoch 7 (iteration 1), exported ONNX"
+ },
+ "paperclean_method": "LLR_Hyst_KeepBlobs",
+ "input": "/datac/Labelbox_Dump/datasets/LM3_Specimen_Segmentation-unet-failures_that_dinov3-improves/for_huggingface_readme/in",
+ "ingest": {
+  "max_working_dim": 3200,
+  "jpg_quality": 100
+ },
+ "rendered": "2026-10-24",
+ "examples": [
+  {
+   "stem": "dnmogprz__RSA_2430090681_Fagaceae_Quercus_ganderi",
+   "split": "val",
+   "files": [
+    "failure_val_RSA_2430090681_Fagaceae_Quercus_ganderi__raw_masks.jpg",
+    "failure_val_RSA_2430090681_Fagaceae_Quercus_ganderi__with_paper_removal.jpg"
+   ],
+   "working_image_size": [
+    2224,
+    3200
+   ],
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": {
+     "raw": 35.4,
+     "with_paper_removal": 35.1,
+     "removed_by_paper_removal": 0.3
+    },
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": {
+     "raw": 37.1,
+     "with_paper_removal": 36.9,
+     "removed_by_paper_removal": 0.2
+    }
+   }
+  },
+  {
+   "stem": "061z7k93__CHC21_001_6",
+   "split": "val",
+   "files": [
+    "failure_val_CHC21_001_6__raw_masks.jpg",
+    "failure_val_CHC21_001_6__with_paper_removal.jpg"
+   ],
+   "working_image_size": [
+    3200,
+    2400
+   ],
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": {
+     "raw": 17.7,
+     "with_paper_removal": 17.6,
+     "removed_by_paper_removal": 0.0
+    },
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": {
+     "raw": 17.8,
+     "with_paper_removal": 17.8,
+     "removed_by_paper_removal": 0.1
+    }
+   }
+  },
+  {
+   "stem": "dnmogprz__Z_2575336428_Fagaceae_Quercus_helvetica",
+   "split": "test",
+   "files": [
+    "failure_test_Z_2575336428_Fagaceae_Quercus_helvetica__raw_masks.jpg",
+    "failure_test_Z_2575336428_Fagaceae_Quercus_helvetica__with_paper_removal.jpg"
+   ],
+   "working_image_size": [
+    3200,
+    2125
+   ],
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": {
+     "raw": 28.4,
+     "with_paper_removal": 28.4,
+     "removed_by_paper_removal": 0.0
+    },
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": {
+     "raw": 28.5,
+     "with_paper_removal": 28.5,
+     "removed_by_paper_removal": 0.0
+    }
+   }
+  },
+  {
+   "stem": "dnmogprz__UM_1807440287_Fagaceae_Quercus_murbeckii",
+   "split": "test",
+   "files": [
+    "failure_test_UM_1807440287_Fagaceae_Quercus_murbeckii__raw_masks.jpg",
+    "failure_test_UM_1807440287_Fagaceae_Quercus_murbeckii__with_paper_removal.jpg"
+   ],
+   "working_image_size": [
+    2229,
+    3200
+   ],
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": {
+     "raw": 17.9,
+     "with_paper_removal": 17.4,
+     "removed_by_paper_removal": 0.5
+    },
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": {
+     "raw": 17.8,
+     "with_paper_removal": 17.4,
+     "removed_by_paper_removal": 0.4
+    }
+   }
+  }
+ ],
+ "selection": "Will's picks (2026-10-21, kept for iteration 2) from the 21 sheets rendered into datasets/LM3_Specimen_Segmentation-unet-failures_that_dinov3-improves/for_huggingface_readme/out",
+ "paper_removal_extra": [
+  {
+   "stem": "g6r0hofk__lab_acer_negundo_pi2027-05-2",
+   "split": "test",
+   "files": [
+    "failure_test_lab_acer_negundo_pi2027-05-2__with_paper_removal.jpg"
+   ],
+   "working_image_size": [
+    800,
+    766
+   ],
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": {
+     "raw": 16.0,
+     "with_paper_removal": 16.0,
+     "removed_by_paper_removal": 0.0
+    },
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": {
+     "raw": 16.3,
+     "with_paper_removal": 16.3,
+     "removed_by_paper_removal": 0.1
+    }
+   }
+  },
+  {
+   "stem": "016yguru__IMG_KS_T2",
+   "split": "val",
+   "files": [
+    "failure_val_IMG_KS_T2__with_paper_removal.jpg"
+   ],
+   "working_image_size": [
+    3200,
+    2133
+   ],
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": {
+     "raw": 10.3,
+     "with_paper_removal": 8.0,
+     "removed_by_paper_removal": 2.3
+    },
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": {
+     "raw": 9.5,
+     "with_paper_removal": 8.0,
+     "removed_by_paper_removal": 1.5
+    }
+   }
+  },
+  {
+   "stem": "g6r0hofk__lab_acer_saccharinum_pi2257-01-2",
+   "split": "val",
+   "files": [
+    "failure_val_lab_acer_saccharinum_pi2257-01-2__with_paper_removal.jpg"
+   ],
+   "working_image_size": [
+    800,
+    771
+   ],
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": {
+     "raw": 14.7,
+     "with_paper_removal": 13.6,
+     "removed_by_paper_removal": 1.1
+    },
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": {
+     "raw": 14.2,
+     "with_paper_removal": 13.9,
+     "removed_by_paper_removal": 0.3
+    }
+   }
+  },
+  {
+   "stem": "3d2xfs6m__Z_2575285125_Euphorbiaceae_Macaranga_corymbosa",
+   "split": "test",
+   "files": [
+    "failure_test_Z_2575285125_Euphorbiaceae_Macaranga_corymbosa__with_paper_removal.jpg"
+   ],
+   "working_image_size": [
+    2178,
+    3200
+   ],
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": {
+     "raw": 20.5,
+     "with_paper_removal": 20.4,
+     "removed_by_paper_removal": 0.1
+    },
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": {
+     "raw": 20.3,
+     "with_paper_removal": 20.2,
+     "removed_by_paper_removal": 0.2
+    }
+   }
+  }
+ ],
+ "selection_paper_removal_extra": "Will's picks (2026-10-21, kept for iteration 2): sheets where paper removal helps (paper-removal panels only)",
+ "picks_from": "/datac/Labelbox_Dump/LM3/docs/hf_docs/specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048/failure_provenance.json"
+}

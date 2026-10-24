@@ -1,0 +1,89 @@
+{
+ "what": "README section 4: the specimen mask with no paper cleanup, with LLR_Hyst_KeepBlobs (default) and with the HSV method; top = Reporter overlay, bottom = cutout. Rendered by tools/release/readme_specimen_paperclean.py.",
+ "model_key": "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
+ "model": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/dino_pseudo_dense_weak_bbox_from_plant_archival/unetpp/runs/unetpp-v8-1024-dinov3_vith16plus_2048-v4targets-consensus-weights-30ep/iteration1/exported/model.onnx",
+ "provider": "CUDAExecutionProvider",
+ "rendered": "2026-10-24",
+ "sheets": [
+  {
+   "file": "01_Quercus_helvetica_Z_2575336428.jpg",
+   "source_image": "/datac/Labelbox_Dump/LM3/examples/images/Z_2575336428_Fagaceae_Quercus_helvetica.jpg",
+   "source": "bundled example",
+   "license": "see examples/images",
+   "gbif": "https://www.gbif.org/occurrence/2575336428",
+   "working_image_size": [
+    3200,
+    2125
+   ],
+   "kept_pct_of_sheet": {
+    "none": 28.52,
+    "LLR_Hyst_KeepBlobs": 28.52,
+    "hsv": 0.04
+   },
+   "removed_pct_of_mask": {
+    "LLR_Hyst_KeepBlobs": 0.0,
+    "hsv": 99.85
+   }
+  },
+  {
+   "file": "02_Catalpa_erubescens_PH_3865012217.jpg",
+   "source_image": "/datac/Labelbox_Dump/LM3/examples/images/PH_3865012217_Bignoniaceae_Catalpa_erubescens.jpg",
+   "source": "bundled example",
+   "license": "see examples/images",
+   "gbif": "https://www.gbif.org/occurrence/3865012217",
+   "working_image_size": [
+    2133,
+    3200
+   ],
+   "kept_pct_of_sheet": {
+    "none": 28.58,
+    "LLR_Hyst_KeepBlobs": 28.12,
+    "hsv": 28.14
+   },
+   "removed_pct_of_mask": {
+    "LLR_Hyst_KeepBlobs": 1.61,
+    "hsv": 1.54
+   }
+  },
+  {
+   "file": "03_Quercus_anceps_LYN_4134274989.jpg",
+   "source_image": "/datac/Labelbox_Dump/datasets/LM3_Specimen_CC0Evaluation/v-0/images/test/dnmogprz__LYN_4134274989_Fagaceae_Quercus_anceps.jpg",
+   "source": "LM3 CC0 evaluation set (specimen)",
+   "license": "CC0 1.0 (Lynchburg College, Ramsey-Freer Herbarium)",
+   "gbif": "https://www.gbif.org/occurrence/4134274989",
+   "working_image_size": [
+    2133,
+    3200
+   ],
+   "kept_pct_of_sheet": {
+    "none": 21.49,
+    "LLR_Hyst_KeepBlobs": 18.67,
+    "hsv": 19.61
+   },
+   "removed_pct_of_mask": {
+    "LLR_Hyst_KeepBlobs": 13.12,
+    "hsv": 8.74
+   }
+  },
+  {
+   "file": "04_Quercus_hypoleuca_L_2515539380.jpg",
+   "source_image": "/datac/Labelbox_Dump/datasets/LM3_Plant_CC0Evaluation/v-0/images/test/dnmogprz__L_2515539380_Fagaceae_Quercus_hypoleuca.jpg",
+   "source": "LM3 CC0 evaluation set (plant)",
+   "license": "CC0 1.0 (Naturalis Biodiversity Center)",
+   "gbif": "https://www.gbif.org/occurrence/2515539380",
+   "working_image_size": [
+    1206,
+    1920
+   ],
+   "kept_pct_of_sheet": {
+    "none": 24.09,
+    "LLR_Hyst_KeepBlobs": 23.09,
+    "hsv": 4.33
+   },
+   "removed_pct_of_mask": {
+    "LLR_Hyst_KeepBlobs": 4.15,
+    "hsv": 82.05
+   }
+  }
+ ]
+}

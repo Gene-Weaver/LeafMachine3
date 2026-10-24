@@ -8,11 +8,12 @@ retrained version, published into the same repo, keeps its key and its workflow.
 
 Each workflow reproduces the image preparation its model was TRAINED with:
 
-``letterbox_imagenet`` (UNet++)
+``letterbox_imagenet`` (UNet++, both trainings)
     BGR -> RGB; keep aspect, long side -> ``imgsz`` with ``cv2.INTER_AREA``; centered on a white
     (255) square; /255 then ImageNet mean/std. Output: sigmoid, threshold at the square, drop the
     pad, nearest-neighbor resize to the image. Reference: the UNet++ trainer's
-    ``common/seg_data.py: letterbox_pair`` and ``common/seg_infer.py: predict_mask``.
+    ``common/seg_data.py: letterbox_pair`` and ``common/seg_infer.py: predict_mask``; the v2 trainer
+    (DINOv3 pseudo masks) uses the same letterbox (``unetpp/data.py: letterbox3``).
 ``stretch_imagenet`` (BiRefNet)
     Resize both sides to ``imgsz`` (aspect NOT kept) with ``cv2.INTER_LINEAR`` on the BGR image,
     then BGR -> RGB; /255 then ImageNet mean/std. Output: sigmoid, bilinear resize of the
@@ -48,6 +49,17 @@ class SpecimenModelSpec:
 
 
 SPECIMEN_MODELS: dict[str, SpecimenModelSpec] = {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": SpecimenModelSpec(
+        key="unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
+        label="UNet++ v8 (EfficientNet-B7), DINOv3 pseudo masks + consensus weights",
+        workflow=WORKFLOW_LETTERBOX_IMAGENET, imgsz=1024,
+        hub_repo="phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
+        trained_on="letterbox3: INTER_AREA, white pad, ImageNet norm"),
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": SpecimenModelSpec(
+        key="unetpp_effb7_1024_dinov3_vith16plus_2048", label="UNet++ (EfficientNet-B7), DINOv3 pseudo masks",
+        workflow=WORKFLOW_LETTERBOX_IMAGENET, imgsz=1024,
+        hub_repo="phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048",
+        trained_on="letterbox3: INTER_AREA, white pad, ImageNet norm"),
     "unetpp_effb7_1024": SpecimenModelSpec(
         key="unetpp_effb7_1024", label="UNet++ (EfficientNet-B7)", workflow=WORKFLOW_LETTERBOX_IMAGENET,
         imgsz=1024, hub_repo="phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024",
@@ -62,8 +74,11 @@ SPECIMEN_MODELS: dict[str, SpecimenModelSpec] = {
         trained_on="Ultralytics LetterBox: INTER_LINEAR, pad 114 to stride multiple, /255"),
 }
 
-#: The only model the stage could run before keys existed; a settings file without a key means it.
-DEFAULT_SPECIMEN_MODEL_KEY = "unetpp_effb7_1024"
+#: The model a settings file without a key gets: UNet++ v8 (since 3.0.1043; DINOv3 pseudo masks, context-cleaned,
+#: with consensus weights). Before that it was ``unetpp_effb7_1024_dinov3_vith16plus_2048`` (3.0.1042, UNet++ v2)
+#: and ``unetpp_effb7_1024`` (UNet++ v1); all three use the same workflow, so an old settings file that names no
+#: key but points at an older UNet++ file still runs it correctly.
+DEFAULT_SPECIMEN_MODEL_KEY = "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus"
 
 
 class UnknownSpecimenModel(ValueError):
@@ -96,7 +111,7 @@ def resolve_specimen_model(stage_cfg: Any) -> tuple[SpecimenModelSpec, list[str]
     if raw is None or str(raw).strip() == "":
         key = DEFAULT_SPECIMEN_MODEL_KEY
         warnings.append(
-            f"modules.specimen_segmenter.model.key is not set; assuming {key!r} (the UNet++ default). "
+            f"modules.specimen_segmenter.model.key is not set; assuming {key!r} (the default). "
             f"Set it explicitly: one of {', '.join(SPECIMEN_MODELS)}.")
     else:
         key = str(raw).strip()

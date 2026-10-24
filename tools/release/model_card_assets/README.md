@@ -12,6 +12,7 @@ model repos copy them into their own `docs/`. Re-run a script after retraining a
 | `plant_detector.py` | `docs/hf_docs/plant_detector/overlay_*`: the detector example grid, detected with the stage's own loader, settings and duplicate suppression, drawn with `build_summary_image` (boxes + labels) | LM3 runtime env |
 | `birefnet_leaf.py` | `docs/hf_docs/leaf_segmenter/birefnet/panel_*`: the two BiRefNet leaf alternates (lamina + petiole, lamina only) and their combination on `Leaf_WHOLE` crops; the leaf_segmenter card's crops plus four more | LM3 runtime env (onnxruntime) |
 | `specimen_detector.py` | `docs/hf_docs/specimen_detector/overlay_*`: Specimen boxes vs the hand-drawn ones on test sheets (not an LM3 stage, so its own drawing) | training env (ultralytics) |
+| `specimen_segmenter.py` | `docs/hf_docs/specimen_segmenter/<key>/`: `examples` = the earlier UNet++ card's 20 sheets, Original \| UNet++ v1 (its saved masks) \| UNet++ v2; `failures` = sheets v1 failed on, both models through the stage's own path, raw masks and with paper removal (red = removed) | LM3 runtime env (onnxruntime) |
 | `_common.py` | shared helpers: settings with the model path overridden, device pinning, read-only copies of the example runs' databases, "published only" selection | |
 
 `leaf_segmenter.py` and `landmark_detector.py` reproduce the pipeline itself, so the images look like
@@ -24,9 +25,9 @@ provenance `kept` list); `--all` also redraws pruned candidates so the set can b
 
 ```bash
 # LM3 runtime env; ONNX on the GPU needs the venv's CUDA libs on LD_LIBRARY_PATH (else silent CPU fallback)
-NV=$(ls -d .venv_LM3/lib/python3*/site-packages/nvidia); export LD_LIBRARY_PATH="$(ls -d $NV/*/lib | tr '\n' ':')"
-.venv_LM3/bin/python tools/release/model_card_assets/leaf_segmenter.py    --model <leaf seg model.onnx> --label "<model, iteration>" --device cuda:0
-.venv_LM3/bin/python tools/release/model_card_assets/landmark_detector.py --model <pose model.onnx>     --label "<model, iteration>" --device cuda:0
+NV=$(ls -d .venv/lib/python3*/site-packages/nvidia); export LD_LIBRARY_PATH="$(ls -d $NV/*/lib | tr '\n' ':')"
+.venv/bin/python tools/release/model_card_assets/leaf_segmenter.py    --model <leaf seg model.onnx> --label "<model, iteration>" --device cuda:0
+.venv/bin/python tools/release/model_card_assets/landmark_detector.py --model <pose model.onnx>     --label "<model, iteration>" --device cuda:0
 ```
 
 Not here (they render from other runs or were made by hand):

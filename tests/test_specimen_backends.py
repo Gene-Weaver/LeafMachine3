@@ -3,7 +3,8 @@
 No real weights: ONNX sessions and the YOLO model are faked. The input-preparation tests compare
 against the TRAINING references (reproduced inline, line for line, from the training projects):
 
-* UNet++  -- LM3_Specimen_Segmentation/common/seg_data.py ``letterbox_pair`` (image half)
+* UNet++  -- LM3_Specimen_Segmentation/common/seg_data.py ``letterbox_pair`` (image half); the DINOv3-trained
+  UNet++ (dino_pseudo_dense_weak_bbox_from_plant_archival/unetpp/data.py ``letterbox3``) has the same image half
 * BiRefNet -- BiRefNet ``utils.path_to_image`` (cv2 INTER_LINEAR stretch) + ``ToTensor`` + ``Normalize``
 """
 from __future__ import annotations
@@ -37,7 +38,7 @@ def _sheet(h=1601, w=1033, seed=0) -> np.ndarray:
 # ----------------------------------------------------------------- the name ---
 def test_missing_key_resolves_to_the_unet_default_with_a_warning():
     spec, warns = resolve_specimen_model({"model": {"path": "x.onnx"}})
-    assert spec.key == DEFAULT_SPECIMEN_MODEL_KEY == "unetpp_effb7_1024"
+    assert spec.key == DEFAULT_SPECIMEN_MODEL_KEY == "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus"
     assert any("model.key is not set" in w for w in warns)
 
 
@@ -160,7 +161,9 @@ class FakeSession:
         return [np.full((1, 1, x.shape[2], x.shape[3]), self.logit, np.float32)]
 
 
-@pytest.mark.parametrize("key,ref", [("unetpp_effb7_1024", _ref_unet_input), ("birefnet_hr_swinl_1024", _ref_birefnet_input)])
+@pytest.mark.parametrize("key,ref", [("unetpp_effb7_1024_dinov3_vith16plus_2048_consensus", _ref_unet_input),
+                                     ("unetpp_effb7_1024_dinov3_vith16plus_2048", _ref_unet_input),
+                                     ("unetpp_effb7_1024", _ref_unet_input), ("birefnet_hr_swinl_1024", _ref_birefnet_input)])
 def test_binary_backend_feeds_each_model_its_own_training_input(key, ref):
     sess = FakeSession()
     seg = SS.BinaryOnnxSpecimenSegmenter("m.onnx", SPECIMEN_MODELS[key], session=sess, paperclean=False)
@@ -224,7 +227,8 @@ def test_build_dispatches_on_the_name(monkeypatch):
     monkeypatch.setattr(SS, "YoloSpecimenSegmenter", lambda *a, **k: built.append(("yolo", a[1].key, k["conf"])) or "y")
     for key in SPECIMEN_MODELS:
         SS.build_specimen_segmenter(SPECIMEN_MODELS[key], "f.onnx", yolo={"conf": 0.4})
-    assert built == [("binary", "unetpp_effb7_1024"), ("binary", "birefnet_hr_swinl_1024"), ("yolo", "yolo26x_seg_1280", 0.4)]
+    assert built == [("binary", "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus"), ("binary", "unetpp_effb7_1024_dinov3_vith16plus_2048"), ("binary", "unetpp_effb7_1024"),
+                     ("binary", "birefnet_hr_swinl_1024"), ("yolo", "yolo26x_seg_1280", 0.4)]
 
 
 def test_builtin_default_key_is_the_registry_default():

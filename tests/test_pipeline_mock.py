@@ -236,6 +236,14 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
     # ...and the sheet OUTSIDE the plant is untouched, or this would be a solid red rectangle
     assert not _np.all(_np.median(_ir[~_plant], axis=0) == _med)
 
+    # The mock segmenter runs NO paper cleanup (paperclean_method = "none"), so the *_PaperCleaned
+    # family must be skipped: a "PaperCleaned" folder holding uncleaned masks would lie. (With the
+    # pass on, Binary_Masks_Specimen is the network's raw mask and Binary_Masks_Specimen_PaperCleaned
+    # the cleaned one; the unit tests in test_specimen_segmenter.py cover that split.)
+    for _sub in ("Binary_Masks_Specimen_PaperCleaned", "RGB_Masks_Specimen_PaperCleaned",
+                 "Binary_Masks_Specimen_PaperCleaned_Inverse", "RGB_Masks_Specimen_PaperCleaned_Inverse"):
+        assert not (masks_root / _sub).exists(), f"{_sub} written although the mock ran no paper cleanup"
+
     # every export is in the DB manifest under its own kind -- that is what --restart deletes by,
     # so a file on disk with no manifest row would survive a reset and go stale in place.
     _mc = _connect(db_path)
@@ -245,6 +253,9 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
                                 (f"Specimen_Masks/{_kind}",)).fetchall()
             assert len(_rows) == 2, f"{_kind}: {len(_rows)} manifest rows, expected 2"
             assert all(Path(r["path"]).is_file() for r in _rows), f"{_kind}: manifest path missing"
+        assert _mc.execute("SELECT COUNT(*) FROM report_manifest WHERE kind LIKE '%PaperCleaned%'").fetchone()[0] == 0
+        _pm = [r[0] for r in _mc.execute("SELECT paperclean_method FROM specimen_mask").fetchall()]
+        assert _pm and all(m == "none" for m in _pm), f"mock specimen_mask.paperclean_method: {_pm}"
     finally:
         _mc.close()
 

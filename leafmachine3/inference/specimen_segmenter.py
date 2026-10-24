@@ -11,8 +11,10 @@ inspects a file to decide what it is -- a file that cannot be the named model ra
 * :class:`YoloSpecimenSegmenter` -- a YOLO26-seg end2end export run through
   ``inference/ultra_replacements.py``; the foreground is the union of the instance masks.
 
-All of them finish identically: the informed HSV **paperclean** follow-up step, then a
-:class:`~leafmachine3.core.records.SpecimenMaskResult` whose ``model_name`` is the model KEY.
+All of them finish identically: the **paperclean** follow-up step (``core/paper_removal.py``; the
+method is named by ``paperclean_method``, ``none`` to skip it), then a
+:class:`~leafmachine3.core.records.SpecimenMaskResult` whose ``model_name`` is the model KEY and
+whose ``paperclean_method`` records which cleanup ran.
 Dependency-light: onnxruntime + numpy + cv2 only (no torch at runtime). See ``specimen_models.py``
 for each workflow's training reference.
 """
@@ -25,7 +27,9 @@ from typing import Optional, Sequence
 import cv2
 import numpy as np
 
-from leafmachine3.core.paper_removal import paperclean
+from leafmachine3.core.paper_removal import (
+    METHOD_LLR_HYST_KEEPBLOBS, METHOD_NONE, PAPERCLEAN_METHODS, run_paperclean,
+)
 from leafmachine3.core.records import SpecimenMaskResult
 from leafmachine3.inference.specimen_models import (
     SPECIMEN_MODELS, WORKFLOW_LETTERBOX_IMAGENET, WORKFLOW_STRETCH_IMAGENET, WORKFLOW_ULTRALYTICS_SEG,
@@ -109,16 +113,30 @@ def _sigmoid(z: np.ndarray) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 # shared tail
 # --------------------------------------------------------------------------- #
-def _finish(img_bgr: np.ndarray, mask: np.ndarray, do_paperclean: bool, model_name: str) -> SpecimenMaskResult:
+def _resolve_method(paperclean, method: Optional[str]) -> str:
+    """The cleanup to run: ``paperclean`` False -> none; else ``method`` (default LLR); a legacy
+    caller passing ``paperclean=True`` and no method gets the LLR default, a string ``paperclean``
+    is taken as the method itself."""
+    if isinstance(paperclean, str):
+        method, paperclean = paperclean, paperclean != METHOD_NONE
+    if not paperclean:
+        return METHOD_NONE
+    method = METHOD_LLR_HYST_KEEPBLOBS if method is None else str(method)
+    if method not in PAPERCLEAN_METHODS:
+        raise ValueError(f"unknown paperclean method {method!r}; expected one of {PAPERCLEAN_METHODS}")
+    return method
+
+
+def _finish(img_bgr: np.ndarray, mask: np.ndarray, method: str, model_name: str) -> SpecimenMaskResult:
     H, W = img_bgr.shape[:2]
-    if do_paperclean:
-        final, removed, centers = paperclean(img_bgr, mask)
+    if method != METHOD_NONE:
+        final, removed, centers = run_paperclean(img_bgr, mask, method)
     else:
         final, removed, centers = mask, np.zeros_like(mask), []
-    return _pack(final, removed, centers, H, W, model_name)
+    return _pack(final, removed, centers, H, W, model_name, method)
 
 
-def _pack(final, removed, centers, H, W, model_name) -> SpecimenMaskResult:
+def _pack(final, removed, centers, H, W, model_name, method: str = METHOD_NONE) -> SpecimenMaskResult:
     final_png = cv2.imencode(".png", (final > 0).astype(np.uint8) * 255)[1].tobytes()
     removed_png = cv2.imencode(".png", (removed > 0).astype(np.uint8) * 255)[1].tobytes()
     area_frac = float((final > 0).sum()) / float(final.size) if final.size else 0.0
@@ -126,7 +144,7 @@ def _pack(final, removed, centers, H, W, model_name) -> SpecimenMaskResult:
         final_png=final_png, removed_png=removed_png,
         frame_width=int(W), frame_height=int(H),
         centers=[(int(x), int(y)) for (x, y) in centers],
-        area_frac=area_frac, model_name=str(model_name),
+        area_frac=area_frac, model_name=str(model_name), paperclean_method=str(method),
     )
 
 
@@ -137,13 +155,15 @@ class BinaryOnnxSpecimenSegmenter:
     """Single-logit whole-sheet segmenter (UNet++ / BiRefNet ONNX) + paperclean."""
 
     def __init__(self, model_path, spec: SpecimenModelSpec, providers: Optional[Sequence] = None,
-                 conf: float = 0.5, paperclean: bool = True, session=None) -> None:
+                 conf: float = 0.5, paperclean: bool = True, session=None,
+                 paperclean_method: Optional[str] = None) -> None:
         if spec.workflow not in (WORKFLOW_LETTERBOX_IMAGENET, WORKFLOW_STRETCH_IMAGENET):
             raise ValueError(f"{spec.key} uses workflow {spec.workflow!r}, not a single-logit workflow")
         self.model_path = str(model_path)
         self.spec = spec
         self.thr = float(conf)
-        self.paperclean = bool(paperclean)
+        self.paperclean_method = _resolve_method(paperclean, paperclean_method)
+        self.paperclean = self.paperclean_method != METHOD_NONE
         self.model_name = spec.key
         if session is None:
             if not os.path.exists(self.model_path):
@@ -159,7 +179,7 @@ class BinaryOnnxSpecimenSegmenter:
         self._input_name = self.session.get_inputs()[0].name
         self._output_name = self.session.get_outputs()[0].name
         log.info("specimen segmenter loaded: key=%s (%s, workflow=%s, imgsz=%d, thr=%.2f, paperclean=%s, EP=%s) %s",
-                 spec.key, spec.label, spec.workflow, spec.imgsz, self.thr, self.paperclean,
+                 spec.key, spec.label, spec.workflow, spec.imgsz, self.thr, self.paperclean_method,
                  self.session.get_providers()[0], os.path.basename(self.model_path))
 
     def _check_contract(self) -> None:
@@ -198,7 +218,7 @@ class BinaryOnnxSpecimenSegmenter:
 
     def predict(self, img_bgr: np.ndarray) -> SpecimenMaskResult:
         img_bgr = np.ascontiguousarray(img_bgr)
-        return _finish(img_bgr, self.mask(img_bgr), self.paperclean, self.model_name)
+        return _finish(img_bgr, self.mask(img_bgr), self.paperclean_method, self.model_name)
 
 
 class YoloSpecimenSegmenter:
@@ -206,13 +226,14 @@ class YoloSpecimenSegmenter:
 
     def __init__(self, model_path, spec: SpecimenModelSpec, providers: Optional[Sequence] = None,
                  conf: float = 0.25, iou: float = 0.5, max_det: int = 300, paperclean: bool = True,
-                 model=None) -> None:
+                 model=None, paperclean_method: Optional[str] = None) -> None:
         if spec.workflow != WORKFLOW_ULTRALYTICS_SEG:
             raise ValueError(f"{spec.key} uses workflow {spec.workflow!r}, not {WORKFLOW_ULTRALYTICS_SEG!r}")
         self.model_path = str(model_path)
         self.spec = spec
         self.conf, self.iou, self.max_det = float(conf), float(iou), int(max_det)
-        self.paperclean = bool(paperclean)
+        self.paperclean_method = _resolve_method(paperclean, paperclean_method)
+        self.paperclean = self.paperclean_method != METHOD_NONE
         self.model_name = spec.key
         if model is None:
             if not os.path.exists(self.model_path):
@@ -227,7 +248,7 @@ class YoloSpecimenSegmenter:
                     f"{spec.key} export, or set model.key to the model that file is (known: {', '.join(SPECIMEN_MODELS)}).") from exc
         self.model = model
         log.info("specimen segmenter loaded: key=%s (%s, workflow=%s, imgsz=%d, conf=%.2f, max_det=%d, paperclean=%s) %s",
-                 spec.key, spec.label, spec.workflow, spec.imgsz, self.conf, self.max_det, self.paperclean,
+                 spec.key, spec.label, spec.workflow, spec.imgsz, self.conf, self.max_det, self.paperclean_method,
                  os.path.basename(self.model_path))
 
     def mask(self, img_bgr: np.ndarray) -> np.ndarray:
@@ -248,19 +269,23 @@ class YoloSpecimenSegmenter:
 
     def predict(self, img_bgr: np.ndarray) -> SpecimenMaskResult:
         img_bgr = np.ascontiguousarray(img_bgr)
-        return _finish(img_bgr, self.mask(img_bgr), self.paperclean, self.model_name)
+        return _finish(img_bgr, self.mask(img_bgr), self.paperclean_method, self.model_name)
 
 
 def build_specimen_segmenter(spec: SpecimenModelSpec, model_path, providers=None, *, conf: float = 0.5,
-                             yolo: Optional[dict] = None, paperclean: bool = True):
-    """Construct the backend for ``spec`` (the name decides; the file only has to match it)."""
+                             yolo: Optional[dict] = None, paperclean: bool = True,
+                             paperclean_method: Optional[str] = None):
+    """Construct the backend for ``spec`` (the name decides; the file only has to match it).
+    ``paperclean_method`` is one of ``core.paper_removal.PAPERCLEAN_METHODS`` (default the LLR
+    method); ``paperclean=False`` switches the pass off whatever the method."""
     if spec.workflow in (WORKFLOW_LETTERBOX_IMAGENET, WORKFLOW_STRETCH_IMAGENET):
-        return BinaryOnnxSpecimenSegmenter(model_path, spec, providers=providers, conf=conf, paperclean=paperclean)
+        return BinaryOnnxSpecimenSegmenter(model_path, spec, providers=providers, conf=conf, paperclean=paperclean,
+                                           paperclean_method=paperclean_method)
     if spec.workflow == WORKFLOW_ULTRALYTICS_SEG:
         y = dict(yolo or {})
         return YoloSpecimenSegmenter(model_path, spec, providers=providers, conf=float(y.get("conf", 0.25)),
                                      iou=float(y.get("iou", 0.5)), max_det=int(y.get("max_det", 300)),
-                                     paperclean=paperclean)
+                                     paperclean=paperclean, paperclean_method=paperclean_method)
     raise ValueError(f"{spec.key}: no backend for workflow {spec.workflow!r}")
 
 
@@ -268,9 +293,9 @@ class OnnxSpecimenSegmenter(BinaryOnnxSpecimenSegmenter):
     """Back-compat constructor (pre-registry signature): always the UNet++ letterbox workflow."""
 
     def __init__(self, model_path, providers=None, imgsz: int = 1024, conf: float = 0.5,
-                 paperclean: bool = True, model_name: str = "") -> None:
+                 paperclean: bool = True, model_name: str = "", paperclean_method: Optional[str] = None) -> None:
         super().__init__(model_path, SPECIMEN_MODELS[DEFAULT_SPECIMEN_MODEL_KEY], providers=providers,
-                         conf=conf, paperclean=paperclean)
+                         conf=conf, paperclean=paperclean, paperclean_method=paperclean_method)
 
     def _unet_mask(self, img_bgr: np.ndarray) -> np.ndarray:
         return self.mask(img_bgr)
