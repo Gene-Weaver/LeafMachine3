@@ -1149,9 +1149,10 @@
   },
   "modules.specimen_segmenter.model.key": {
     "label": "Model",
-    "help": "Which specimen segmenter this is: unetpp_effb7_1024_dinov3_vith16plus_2048_consensus (UNet++ v8, default), unetpp_effb7_1024_dinov3_vith16plus_2048 (UNet++ v2), unetpp_effb7_1024 (UNet++ v1, SAM 3 masks), birefnet_hr_swinl_1024 (BiRefNet), yolo26x_seg_1280 (YOLO26x-seg). The name picks how the sheet is prepared for the model, so it must match the file below.",
+    "help": "Which specimen segmenter this is: unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain (UNet++ v9, default), unetpp_effb7_1024_dinov3_vith16plus_2048_consensus (UNet++ v8), unetpp_effb7_1024_dinov3_vith16plus_2048 (UNet++ v2), unetpp_effb7_1024 (UNet++ v1, SAM 3 masks), birefnet_hr_swinl_1024 (BiRefNet), yolo26x_seg_1280 (YOLO26x-seg). The name picks how the sheet is prepared for the model, so it must match the file below.",
     "type": "enum",
     "enum": [
+      "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain",
       "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
       "unetpp_effb7_1024_dinov3_vith16plus_2048",
       "unetpp_effb7_1024",

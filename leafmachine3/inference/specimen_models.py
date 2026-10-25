@@ -49,6 +49,12 @@ class SpecimenModelSpec:
 
 
 SPECIMEN_MODELS: dict[str, SpecimenModelSpec] = {
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": SpecimenModelSpec(
+        key="unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain",
+        label="UNet++ v9 (EfficientNet-B7), self-trained on v8 + LLR paper cleanup",
+        workflow=WORKFLOW_LETTERBOX_IMAGENET, imgsz=1024,
+        hub_repo="phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain",
+        trained_on="letterbox3: INTER_AREA, white pad, ImageNet norm"),
     "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": SpecimenModelSpec(
         key="unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
         label="UNet++ v8 (EfficientNet-B7), DINOv3 pseudo masks + consensus weights",
@@ -74,11 +80,11 @@ SPECIMEN_MODELS: dict[str, SpecimenModelSpec] = {
         trained_on="Ultralytics LetterBox: INTER_LINEAR, pad 114 to stride multiple, /255"),
 }
 
-#: The model a settings file without a key gets: UNet++ v8 (since 3.0.1043; DINOv3 pseudo masks, context-cleaned,
-#: with consensus weights). Before that it was ``unetpp_effb7_1024_dinov3_vith16plus_2048`` (3.0.1042, UNet++ v2)
-#: and ``unetpp_effb7_1024`` (UNet++ v1); all three use the same workflow, so an old settings file that names no
-#: key but points at an older UNet++ file still runs it correctly.
-DEFAULT_SPECIMEN_MODEL_KEY = "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus"
+#: The model a settings file without a key gets: UNet++ v9 (since 3.0.1044; v8's recipe self-trained on v8's own masks
+#: after the LLR paper cleanup). Before that: ``unetpp_effb7_1024_dinov3_vith16plus_2048_consensus`` (3.0.1043, UNet++ v8),
+#: ``unetpp_effb7_1024_dinov3_vith16plus_2048`` (3.0.1042, UNet++ v2) and ``unetpp_effb7_1024`` (UNet++ v1); all use the same
+#: workflow, so an old settings file that names no key but points at an older UNet++ file still runs it correctly.
+DEFAULT_SPECIMEN_MODEL_KEY = "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain"
 
 
 class UnknownSpecimenModel(ValueError):

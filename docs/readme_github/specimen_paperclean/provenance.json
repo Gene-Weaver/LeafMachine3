@@ -1,9 +1,9 @@
 {
  "what": "README section 4: the specimen mask with no paper cleanup, with LLR_Hyst_KeepBlobs (default) and with the HSV method; top = Reporter overlay, bottom = cutout. Rendered by tools/release/readme_specimen_paperclean.py.",
- "model_key": "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus",
- "model": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/dino_pseudo_dense_weak_bbox_from_plant_archival/unetpp/runs/unetpp-v8-1024-dinov3_vith16plus_2048-v4targets-consensus-weights-30ep/iteration1/exported/model.onnx",
+ "model_key": "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain",
+ "model": "/datac/Labelbox_Dump/LM3/models/specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain/model.onnx",
  "provider": "CUDAExecutionProvider",
- "rendered": "2026-10-24",
+ "rendered": "2026-10-25",
  "sheets": [
   {
    "file": "01_Quercus_helvetica_Z_2575336428.jpg",
@@ -16,13 +16,13 @@
     2125
    ],
    "kept_pct_of_sheet": {
-    "none": 28.52,
-    "LLR_Hyst_KeepBlobs": 28.52,
-    "hsv": 0.04
+    "none": 29.34,
+    "LLR_Hyst_KeepBlobs": 29.34,
+    "hsv": 0.0
    },
    "removed_pct_of_mask": {
     "LLR_Hyst_KeepBlobs": 0.0,
-    "hsv": 99.85
+    "hsv": 100.0
    }
   },
   {
@@ -36,13 +36,13 @@
     3200
    ],
    "kept_pct_of_sheet": {
-    "none": 28.58,
+    "none": 28.12,
     "LLR_Hyst_KeepBlobs": 28.12,
-    "hsv": 28.14
+    "hsv": 28.06
    },
    "removed_pct_of_mask": {
-    "LLR_Hyst_KeepBlobs": 1.61,
-    "hsv": 1.54
+    "LLR_Hyst_KeepBlobs": 0.01,
+    "hsv": 0.21
    }
   },
   {
@@ -56,13 +56,13 @@
     3200
    ],
    "kept_pct_of_sheet": {
-    "none": 21.49,
-    "LLR_Hyst_KeepBlobs": 18.67,
-    "hsv": 19.61
+    "none": 18.66,
+    "LLR_Hyst_KeepBlobs": 18.61,
+    "hsv": 18.66
    },
    "removed_pct_of_mask": {
-    "LLR_Hyst_KeepBlobs": 13.12,
-    "hsv": 8.74
+    "LLR_Hyst_KeepBlobs": 0.27,
+    "hsv": 0.0
    }
   },
   {
@@ -76,13 +76,13 @@
     1920
    ],
    "kept_pct_of_sheet": {
-    "none": 24.09,
-    "LLR_Hyst_KeepBlobs": 23.09,
-    "hsv": 4.33
+    "none": 24.45,
+    "LLR_Hyst_KeepBlobs": 23.36,
+    "hsv": 5.25
    },
    "removed_pct_of_mask": {
-    "LLR_Hyst_KeepBlobs": 4.15,
-    "hsv": 82.05
+    "LLR_Hyst_KeepBlobs": 4.45,
+    "hsv": 78.55
    }
   }
  ]

@@ -67,12 +67,14 @@ Image = configure_pillow()
 V1_KEY = "unetpp_effb7_1024"
 V2_KEY = "unetpp_effb7_1024_dinov3_vith16plus_2048"
 V8_KEY = "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus"
+V9_KEY = "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain"
 NEW_KEY = V2_KEY                    # default --key: the v2 card's renders stay reproducible
 V1_DOCS = ROOT / "docs" / "hf_docs" / "specimen_segmenter"
 DATASETS = Path("/datac/Labelbox_Dump/datasets")
 IMAGE_GLOBS = ("LM3_Specimen_Segmentation-specimen-unetMasksFromSam3-paperclean/images/*/{stem}.jpg",
                "LM3_Specimen_Segmentation-dense-weak-bbox-from-plant-archival/images/*/{stem}.jpg")
-NAMES = {V1_KEY: "UNet++ v1", V2_KEY: "UNet++ v2 (DINOv3)", V8_KEY: "UNet++ v8 (DINOv3, consensus)"}
+NAMES = {V1_KEY: "UNet++ v1", V2_KEY: "UNet++ v2 (DINOv3)", V8_KEY: "UNet++ v8 (DINOv3, consensus)",
+         V9_KEY: "UNet++ v9 (self-trained)"}
 H, PAD, BAR, JPEG_QUALITY = 1000, 12, 76, 88
 REMOVED_RGB = (235, 60, 60)                                   # reporting/palette.py refined_color (paperclean red)
 
@@ -97,21 +99,25 @@ def cutout(img: np.ndarray, keep: np.ndarray, removed: np.ndarray | None = None)
     return out
 
 
-def panel(img: np.ndarray, tiles: list[tuple[str, np.ndarray, str]], path: Path) -> None:
-    """[Original | tiles...] at height H on a dark canvas (v1 card style); title, then the note on a second line."""
+def panel(img: np.ndarray, tiles: list[tuple[str, np.ndarray, str]], path: Path, rows: int = 1) -> None:
+    """[Original | tiles...] at height H on a dark canvas (v1 card style); title, then the note on a second line.
+    rows > 1 wraps the tiles into a grid (row by row, the last row padded), so many models stay legible."""
     h, w = img.shape[:2]
     s = H / h
     pw = int(round(w * s))
     cols = [("Original", img, "")] + tiles
-    canvas = Image.new("RGB", (len(cols) * pw + (len(cols) + 1) * PAD, H + BAR + 2 * PAD), (18, 18, 18))
+    per = -(-len(cols) // max(1, rows))
+    nrow = -(-len(cols) // per)
+    canvas = Image.new("RGB", (per * pw + (per + 1) * PAD, nrow * (H + BAR + PAD) + PAD), (18, 18, 18))
     dr = ImageDraw.Draw(canvas)
     for j, (title, im, note) in enumerate(cols):
         r = cv2.resize(im, (pw, H), interpolation=cv2.INTER_AREA)
-        x = PAD + j * (pw + PAD)
-        canvas.paste(Image.fromarray(cv2.cvtColor(r, cv2.COLOR_BGR2RGB)), (x, PAD))
-        dr.text((x + 4, H + PAD + 6), title, fill=(240, 240, 240), font=F)
+        x = PAD + (j % per) * (pw + PAD)
+        y = PAD + (j // per) * (H + BAR + PAD)
+        canvas.paste(Image.fromarray(cv2.cvtColor(r, cv2.COLOR_BGR2RGB)), (x, y))
+        dr.text((x + 4, y + H + 6), title, fill=(240, 240, 240), font=F)
         if note:
-            dr.text((x + 4, H + PAD + 42), note, fill=(170, 170, 170), font=FS)
+            dr.text((x + 4, y + H + 42), note, fill=(170, 170, 170), font=FS)
     canvas.save(path, quality=JPEG_QUALITY)
 
 
@@ -183,6 +189,7 @@ def examples(a) -> None:
         raise SystemExit("give --v1-masks and/or --baseline KEY=model.onnx: the panels compare against an earlier model")
     models = load_models(base | {a.key: a.model}, a.device)
     order = ([V1_KEY] if a.v1_masks else []) + list(base) + [a.key]
+    method = method_for(a.paperclean, a.settings)
     recs = []
     for k, ex in enumerate(v1_prov["examples"], 1):
         stem = ex["stem"]
@@ -204,8 +211,16 @@ def examples(a) -> None:
         for key, m in models.items():
             masks[key] = m.mask(img) > 0
         kept = {key: pct(masks[key]) for key in order}
+        tiles = []
+        for key in order:
+            tiles.append((NAMES.get(key, key), cutout(img, masks[key]), f"{kept[key]}% kept"))
+            if key in a.paperclean_after:
+                f = run_paperclean(img, masks[key].astype(np.uint8), method)[0] > 0
+                rm = masks[key] & ~f
+                kept[f"{key}+paperclean"] = pct(f)
+                tiles.append((f"{NAMES.get(key, key)} + paper removal", cutout(img, f, rm), f"{pct(f)}% kept, {pct(rm)}% removed"))
         name = f"compare_{k:02d}_{ex['dataset_split']}_{ex['specimen']}.jpg"
-        panel(img, [(NAMES.get(key, key), cutout(img, masks[key]), f"{kept[key]}% kept") for key in order], docs / name)
+        panel(img, tiles, docs / name, rows=a.rows)
         rec = {"file": name, "stem": stem, "specimen": ex["specimen"], "project_key": ex["project_key"],
                "dataset_split": ex["dataset_split"], "image_size": [w, h]}
         if a.v1_masks:
@@ -218,8 +233,10 @@ def examples(a) -> None:
         src_note.append("v1 = the saved masks behind that card (not re-run)")
     src_note.append("the others = the exported ONNX through LM3's specimen backend on the same input (the dataset image at "
                     "native resolution)")
+    pc_note = (f" Tiles marked '+ paper removal' are the preceding model's mask after LM3's paper removal ({method}); red = "
+               "what it deleted." if a.paperclean_after else "")
     prov = {"what": f"Background removal on the 20 sheets of the unetpp_effb7_1024 card: Original | {cols}; black = removed. "
-                    f"Raw model masks, no paper-removal follow-up. {'; '.join(src_note)}. "
+                    f"Raw model masks unless marked.{pc_note} {'; '.join(src_note)}. "
                     "Rendered by tools/release/model_card_assets/specimen_segmenter.py examples.",
             "models": ({V1_KEY: "unet/runs/unet_masksFromSam3_paperclean_control_1024/best.pt (saved masks)"} if a.v1_masks else {})
             | dict(base) | {a.key: a.label},
@@ -268,12 +285,12 @@ def failures(a) -> None:
             files = []
             if "raw" in kinds:
                 panel(img, [(NAMES.get(k, k), cutout(img, raw[k]), f"{pct(raw[k])}% kept") for k in models],
-                      out / f"{base}__raw_masks.jpg")
+                      out / f"{base}__raw_masks.jpg", rows=a.rows)
                 files.append(f"{base}__raw_masks.jpg")
             if "pc" in kinds:
                 panel(img, [(f"{NAMES.get(k, k)} + paper removal", cutout(img, final[k], removed[k]),
                              f"{pct(final[k])}% kept, {pct(removed[k])}% removed") for k in models],
-                      out / f"{base}__with_paper_removal.jpg")
+                      out / f"{base}__with_paper_removal.jpg", rows=a.rows)
                 files.append(f"{base}__with_paper_removal.jpg")
             rec = {"stem": stem, "split": split, "files": files,
                    "working_image_size": [img.shape[1], img.shape[0]],
@@ -310,18 +327,23 @@ def main() -> None:
         p.add_argument("--label", required=True, help="model description written into the provenance file")
         p.add_argument("--baseline", action="append", default=[], metavar="KEY=ONNX", help="earlier model to show (repeat)")
         p.add_argument("--device", default="cpu", help="cpu or cuda:N")
+        p.add_argument("--rows", type=int, default=1, help="wrap the tiles into this many rows")
+        p.add_argument("--settings", default=str(ROOT / "LM3_settings.yaml"), help="ingest sizes and the paper-removal method")
+        p.add_argument("--paperclean", default="settings", choices=("settings", "llr", "hsv"),
+                       help="paper-removal method (settings = what --settings selects; LLR_Hyst_KeepBlobs by default)")
     ex = sub.choices["examples"]
     ex.add_argument("--v1-masks", nargs="+", default=[], help="folders holding the v1 card's saved <stem>.png masks")
     ex.add_argument("--docs", default="", help="output folder (default docs/hf_docs/specimen_segmenter/<key>)")
+    ex.add_argument("--paperclean-after", nargs="*", default=[], metavar="KEY",
+                    help="add a '+ paper removal' tile after each of these models' raw tile")
     fa = sub.choices["failures"]
     fa.add_argument("--v1-model", default="", help=f"{V1_KEY} ONNX (same as --baseline {V1_KEY}=...)")
     fa.add_argument("--picks-from", default="", help="an earlier card's failure_provenance.json: render only its picks")
-    fa.add_argument("--paperclean", default="settings", choices=("settings", "llr", "hsv"),
-                    help="paper-removal method (settings = what --settings selects; LLR_Hyst_KeepBlobs by default)")
+
     fa.add_argument("--in", dest="inp", required=True)
     fa.add_argument("--out", required=True)
     fa.add_argument("--manifest", default="", help="CSV with stem + dense_weak_split/split columns (file names carry the split)")
-    fa.add_argument("--settings", default=str(ROOT / "LM3_settings.yaml"), help="for ingest.max_working_dim / jpg_quality")
+
     a = ap.parse_args()
     device(a.device)
     examples(a) if a.cmd == "examples" else failures(a)

@@ -62,8 +62,8 @@ modules:
     imgsz: 1280
   specimen_segmenter:
     enabled: true
-    model: {key: unetpp_effb7_1024_dinov3_vith16plus_2048_consensus,
-      path: models/specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_consensus/model.onnx, format: onnx}
+    model: {key: unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain,
+      path: models/specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain/model.onnx, format: onnx}
     conf: 0.5
     yolo: {conf: 0.25, iou: 0.5, max_det: 300}
     paperclean: true

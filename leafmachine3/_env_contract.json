@@ -1,11 +1,11 @@
 {
  "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
- "lm3_version": "3.0.1043",
+ "lm3_version": "3.0.1044",
  "locks": {
   "uv_lock_sha256": "a9dfcbba18068380be51d0145b7e15baaf7c9d2cfd1c1831b8bc6d27bf58f565",
-  "models_lock_sha256": "da4699d3f34fc0caf47ba2f2a4daa32a8fb24ccfcfff72da33869cee94a860a0",
-  "models_lock_version": "3.0.1043",
-  "models_lock_generated_at": "2026-10-24T18:50:13+00:00",
+  "models_lock_sha256": "4e1cc53d29fa773a87b5c70feee5e42784118537085c716d8c4b93df9103aa1e",
+  "models_lock_version": "3.0.1044",
+  "models_lock_generated_at": "2026-10-25T18:02:14+00:00",
   "hub_revisions": {
    "phyloforfun/lm3_archival_detector__yolo26n_det_640": "cb621ab07b3d99a7a457853ef2ce1417db5d47b0",
    "phyloforfun/lm3_archival_detector__yolo26x_det_1280": "519b73c6c5bf60ec83bcc5ac4d44ed2d478408bb",
@@ -20,7 +20,8 @@
    "phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024": "ac015972d111e63a76f3814fa4409a318c33d512",
    "phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024": "15636b5f438a607be2b808737fb18833c2f9c533",
    "phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048": "64a9ffc99e9bfefc8de850df2f4554e2a805bbe5",
-   "phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": "112f2da57276c209d6b27de51d5c31267ad9881c",
+   "phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": "c0c898f154453c97ea6f8f9879a6daba0b1535e3",
+   "phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": "addfccc96715543f7babc1070d21398542fbe3ad",
    "phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280": "a990ed8ae5d164a1665cc98e2108380879e1a9dc"
   }
  },

@@ -1,0 +1,432 @@
+{
+ "what": "Background removal on the 20 sheets of the unetpp_effb7_1024 card: Original | UNet++ v1 | UNet++ v2 (DINOv3) | UNet++ v8 (DINOv3, consensus) | UNet++ v9 (self-trained); black = removed. Raw model masks unless marked. Tiles marked '+ paper removal' are the preceding model's mask after LM3's paper removal (LLR_Hyst_KeepBlobs); red = what it deleted. v1 = the saved masks behind that card (not re-run); the others = the exported ONNX through LM3's specimen backend on the same input (the dataset image at native resolution). Rendered by tools/release/model_card_assets/specimen_segmenter.py examples.",
+ "models": {
+  "unetpp_effb7_1024": "unet/runs/unet_masksFromSam3_paperclean_control_1024/best.pt (saved masks)",
+  "unetpp_effb7_1024_dinov3_vith16plus_2048": "models/specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048/model.onnx",
+  "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": "models/specimen_segmenter/unetpp_effb7_1024_dinov3_vith16plus_2048_consensus/model.onnx",
+  "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": "unetpp-v9-1024-dinov3_vith16plus_2048-v5targets-v8ep7llr-tta-30ep epoch 30 (iteration 1), exported ONNX"
+ },
+ "rendered": "2026-10-25",
+ "examples": [
+  {
+   "file": "compare_01_test_CMN_1804514859_Sapindaceae_Acer_saccharum.jpg",
+   "stem": "048ze8d5__CMN_1804514859_Sapindaceae_Acer_saccharum",
+   "specimen": "CMN_1804514859_Sapindaceae_Acer_saccharum",
+   "project_key": "048ze8d5",
+   "dataset_split": "test",
+   "image_size": [
+    3097,
+    4500
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/048ze8d5__CMN_1804514859_Sapindaceae_Acer_saccharum.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 40.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 41.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 40.9,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 40.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 40.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 40.4
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_02_train_CM_2859177966_Sapindaceae_Acer_saccharum.jpg",
+   "stem": "048ze8d5__CM_2859177966_Sapindaceae_Acer_saccharum",
+   "specimen": "CM_2859177966_Sapindaceae_Acer_saccharum",
+   "project_key": "048ze8d5",
+   "dataset_split": "train",
+   "image_size": [
+    3333,
+    5000
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/048ze8d5__CM_2859177966_Sapindaceae_Acer_saccharum.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 28.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 31.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 29.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 28.8,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 28.9,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 28.8
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_03_val_FLAS_1457816931_Fabaceae_Cassia_fistula.jpg",
+   "stem": "0b8m7oz6__FLAS_1457816931_Fabaceae_Cassia_fistula",
+   "specimen": "FLAS_1457816931_Fabaceae_Cassia_fistula",
+   "project_key": "0b8m7oz6",
+   "dataset_split": "val",
+   "image_size": [
+    4992,
+    6668
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/0b8m7oz6__FLAS_1457816931_Fabaceae_Cassia_fistula.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 23.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 25.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 24.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 23.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 23.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 23.5
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_04_val_NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum.jpg",
+   "stem": "0b8m7oz6__NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum",
+   "specimen": "NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum",
+   "project_key": "0b8m7oz6",
+   "dataset_split": "val",
+   "image_size": [
+    4900,
+    7250
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/0b8m7oz6__NY_1928830727_Sapotaceae_Chrysophyllum_gonocarpum.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 22.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 23.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 23.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 22.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 22.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 22.2
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_05_val_CHC21_009_9.jpg",
+   "stem": "11sj7ls7__CHC21_009_9",
+   "specimen": "CHC21_009_9",
+   "project_key": "11sj7ls7",
+   "dataset_split": "val",
+   "image_size": [
+    4032,
+    3024
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/11sj7ls7__CHC21_009_9.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 2.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 2.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 2.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 2.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 2.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 2.6
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_06_val_MNHN_730851102_Euphorbiaceae_Macaranga_saccifera.jpg",
+   "stem": "3d2xfs6m__MNHN_730851102_Euphorbiaceae_Macaranga_saccifera",
+   "specimen": "MNHN_730851102_Euphorbiaceae_Macaranga_saccifera",
+   "project_key": "3d2xfs6m",
+   "dataset_split": "val",
+   "image_size": [
+    3287,
+    5190
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/3d2xfs6m__MNHN_730851102_Euphorbiaceae_Macaranga_saccifera.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 44.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 44.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 44.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 44.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 44.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 44.4
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_07_train_MNHN_731821562_Euphorbiaceae_Macaranga_magnifolia.jpg",
+   "stem": "3d2xfs6m__MNHN_731821562_Euphorbiaceae_Macaranga_magnifolia",
+   "specimen": "MNHN_731821562_Euphorbiaceae_Macaranga_magnifolia",
+   "project_key": "3d2xfs6m",
+   "dataset_split": "train",
+   "image_size": [
+    3280,
+    5086
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/3d2xfs6m__MNHN_731821562_Euphorbiaceae_Macaranga_magnifolia.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 11.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 34.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 68.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 68.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 68.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 68.4
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_08_train_UM_1807486051_Euphorbiaceae_Macaranga_gracilis.jpg",
+   "stem": "3d2xfs6m__UM_1807486051_Euphorbiaceae_Macaranga_gracilis",
+   "specimen": "UM_1807486051_Euphorbiaceae_Macaranga_gracilis",
+   "project_key": "3d2xfs6m",
+   "dataset_split": "train",
+   "image_size": [
+    4176,
+    5936
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/3d2xfs6m__UM_1807486051_Euphorbiaceae_Macaranga_gracilis.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 31.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 34.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 34.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 34.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 33.8,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 33.8
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_09_train_K_912592861_Torricelliaceae_Torricellia_angulata.jpg",
+   "stem": "73k42yzt__K_912592861_Torricelliaceae_Torricellia_angulata",
+   "specimen": "K_912592861_Torricelliaceae_Torricellia_angulata",
+   "project_key": "73k42yzt",
+   "dataset_split": "train",
+   "image_size": [
+    1409,
+    2000
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/73k42yzt__K_912592861_Torricelliaceae_Torricellia_angulata.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 22.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 21.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 22.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 22.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 22.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 21.9
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_10_train_CLF_1437883182_Fagaceae_Quercus_grisebachii.jpg",
+   "stem": "dnmogprz__CLF_1437883182_Fagaceae_Quercus_grisebachii",
+   "specimen": "CLF_1437883182_Fagaceae_Quercus_grisebachii",
+   "project_key": "dnmogprz",
+   "dataset_split": "train",
+   "image_size": [
+    3408,
+    4890
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/dnmogprz__CLF_1437883182_Fagaceae_Quercus_grisebachii.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 22.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 23.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 23.8,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 23.8,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 23.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 23.8
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_11_train_CLF_1437893278_Fagaceae_Quercus_semilanuginosa.jpg",
+   "stem": "dnmogprz__CLF_1437893278_Fagaceae_Quercus_semilanuginosa",
+   "specimen": "CLF_1437893278_Fagaceae_Quercus_semilanuginosa",
+   "project_key": "dnmogprz",
+   "dataset_split": "train",
+   "image_size": [
+    3442,
+    4801
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/dnmogprz__CLF_1437893278_Fagaceae_Quercus_semilanuginosa.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 20.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 16.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 36.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 36.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 36.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 36.5
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_12_train_MNHN_731018123_Fagaceae_Quercus_pinnatiloba.jpg",
+   "stem": "dnmogprz__MNHN_731018123_Fagaceae_Quercus_pinnatiloba",
+   "specimen": "MNHN_731018123_Fagaceae_Quercus_pinnatiloba",
+   "project_key": "dnmogprz",
+   "dataset_split": "train",
+   "image_size": [
+    3279,
+    5059
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks/dnmogprz__MNHN_731018123_Fagaceae_Quercus_pinnatiloba.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 33.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 34.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 34.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 34.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 34.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 34.2
+   },
+   "selection": "standing QC set: 4 primary QC specimens + 2 Acer + the 6 worst-ground-truth specimens from the self-heal run (deliberately hard cases)"
+  },
+  {
+   "file": "compare_13_test_KYO_2443051967_Caprifoliaceae_Lonicera_maackii.jpg",
+   "stem": "1lts0tgt__KYO_2443051967_Caprifoliaceae_Lonicera_maackii",
+   "specimen": "KYO_2443051967_Caprifoliaceae_Lonicera_maackii",
+   "project_key": "1lts0tgt",
+   "dataset_split": "test",
+   "image_size": [
+    3000,
+    4000
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks_hf_test8/1lts0tgt__KYO_2443051967_Caprifoliaceae_Lonicera_maackii.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 15.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 20.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 17.9,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 16.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 16.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 15.7
+   },
+   "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+  },
+  {
+   "file": "compare_14_test_BO1284103_4067113860_Euphorbiaceae_Macaranga_waturandangii.jpg",
+   "stem": "3d2xfs6m__BO1284103_4067113860_Euphorbiaceae_Macaranga_waturandangii",
+   "specimen": "BO1284103_4067113860_Euphorbiaceae_Macaranga_waturandangii",
+   "project_key": "3d2xfs6m",
+   "dataset_split": "test",
+   "image_size": [
+    7100,
+    10117
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks_hf_test8/3d2xfs6m__BO1284103_4067113860_Euphorbiaceae_Macaranga_waturandangii.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 33.8,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 30.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 31.9,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 31.9,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 31.8,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 31.9
+   },
+   "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+  },
+  {
+   "file": "compare_15_test_L_2517447339_Torricelliaceae_Melanophylla_alnifolia.jpg",
+   "stem": "73k42yzt__L_2517447339_Torricelliaceae_Melanophylla_alnifolia",
+   "specimen": "L_2517447339_Torricelliaceae_Melanophylla_alnifolia",
+   "project_key": "73k42yzt",
+   "dataset_split": "test",
+   "image_size": [
+    1237,
+    1920
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks_hf_test8/73k42yzt__L_2517447339_Torricelliaceae_Melanophylla_alnifolia.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 22.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 21.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 21.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 21.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 21.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 21.2
+   },
+   "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+  },
+  {
+   "file": "compare_16_test_ASU_2270499210_Brassicaceae_Raphanus_raphanistrum.jpg",
+   "stem": "97et0mcw__ASU_2270499210_Brassicaceae_Raphanus_raphanistrum",
+   "specimen": "ASU_2270499210_Brassicaceae_Raphanus_raphanistrum",
+   "project_key": "97et0mcw",
+   "dataset_split": "test",
+   "image_size": [
+    3456,
+    5184
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks_hf_test8/97et0mcw__ASU_2270499210_Brassicaceae_Raphanus_raphanistrum.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 10.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 39.0,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 14.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 9.9,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 10.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 9.7
+   },
+   "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+  },
+  {
+   "file": "compare_17_test_UM_1807432107_Rubiaceae_Posoqueria_longiflora.jpg",
+   "stem": "em107v5k__UM_1807432107_Rubiaceae_Posoqueria_longiflora",
+   "specimen": "UM_1807432107_Rubiaceae_Posoqueria_longiflora",
+   "project_key": "em107v5k",
+   "dataset_split": "test",
+   "image_size": [
+    4242,
+    6086
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks_hf_test8/em107v5k__UM_1807432107_Rubiaceae_Posoqueria_longiflora.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 29.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 29.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 29.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 29.8,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 29.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 29.8
+   },
+   "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+  },
+  {
+   "file": "compare_18_test_1D41D09F-BC60-4E11-9283-3A0F23787BA7_1_105_c.jpg",
+   "stem": "exw33kvr__1D41D09F-BC60-4E11-9283-3A0F23787BA7_1_105_c",
+   "specimen": "1D41D09F-BC60-4E11-9283-3A0F23787BA7_1_105_c",
+   "project_key": "exw33kvr",
+   "dataset_split": "test",
+   "image_size": [
+    795,
+    995
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks_hf_test8/exw33kvr__1D41D09F-BC60-4E11-9283-3A0F23787BA7_1_105_c.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 24.9,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 23.2,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 24.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 23.9,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 24.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 23.9
+   },
+   "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+  },
+  {
+   "file": "compare_19_test_MNHN_438671634_Piperaceae_Piper_salinasanum.jpg",
+   "stem": "fbuk2yx3__MNHN_438671634_Piperaceae_Piper_salinasanum",
+   "specimen": "MNHN_438671634_Piperaceae_Piper_salinasanum",
+   "project_key": "fbuk2yx3",
+   "dataset_split": "test",
+   "image_size": [
+    3346,
+    5120
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks_hf_test8/fbuk2yx3__MNHN_438671634_Piperaceae_Piper_salinasanum.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 12.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 13.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 12.3,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 12.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 12.1,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 12.1
+   },
+   "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+  },
+  {
+   "file": "compare_20_test_lab_tilia_tomentosa_ny1110-08-4.jpg",
+   "stem": "g6r0hofk__lab_tilia_tomentosa_ny1110-08-4",
+   "specimen": "lab_tilia_tomentosa_ny1110-08-4",
+   "project_key": "g6r0hofk",
+   "dataset_split": "test",
+   "image_size": [
+    800,
+    752
+   ],
+   "v1_mask": "/datac/Labelbox_Dump/LM3_Specimen_Segmentation/compare_unet_yolo26_birefnet/_unet/masks_hf_test8/g6r0hofk__lab_tilia_tomentosa_ny1110-08-4.png",
+   "percent_of_sheet_kept": {
+    "unetpp_effb7_1024": 7.5,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048": 6.4,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus": 6.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain": 6.7,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_consensus+paperclean": 6.6,
+    "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain+paperclean": 6.7
+   },
+   "selection": "held-out TEST split: 8 sheets drawn at random (seed 26), one per herbarium and labeling project, target mask covering 6-50% of the sheet"
+  }
+ ]
+}
