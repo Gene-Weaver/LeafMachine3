@@ -1,0 +1,234 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LM3 — computational time guide</title>
+<style>
+:root{--bg:#101012;--panel:#191a1d;--panel2:#1f2024;--ink:#e8e8ea;--mute:#9ca3af;--dim:#6f757f;
+ --line:#2a2b30;--acc:#fb923c;--acc2:#38bdf8;--acc3:#4ade80;--warn:#fbbf24;--bad:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font:16px/1.66 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+ -webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:48px 26px 90px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,"DejaVu Sans Mono",monospace}
+header{border-bottom:2px solid var(--line);padding-bottom:22px;margin-bottom:8px}
+.kicker{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--acc);font-weight:700}
+h1{font-size:2.2rem;line-height:1.1;margin:.3em 0 .3em;letter-spacing:-.022em}
+.sub{color:var(--mute);font-size:1.02rem;max-width:80ch;margin:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:26px 0 8px}
+.grid.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:13px 15px}
+.stat .v{font-size:1.34rem;font-weight:650;letter-spacing:-.02em;color:var(--acc2);
+ font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,"DejaVu Sans Mono",monospace}
+.stat .l{font-size:12px;color:var(--mute);margin-top:6px}
+h2{font-size:1.16rem;margin:44px 0 4px;letter-spacing:-.01em}
+.hint{color:var(--dim);font-size:13px;margin:0 0 16px}
+.gantt{display:flex;width:100%;height:52px;border-radius:8px;overflow:hidden;border:1px solid var(--line);
+ background:var(--panel)}
+.gantt .seg{position:relative;height:100%;border-right:1px solid var(--bg);background:var(--c);
+ opacity:.86;display:flex;align-items:center;justify-content:center;overflow:hidden;
+ font-size:11px;font-weight:650;color:#0b0b0d;white-space:nowrap;padding:0 4px;min-width:2px}
+.gantt .seg span{margin-left:6px;font-weight:500;opacity:.8;font-family:ui-monospace,monospace}
+.gantt .seg:hover{opacity:1}
+.legend{display:flex;flex-wrap:wrap;gap:18px;margin:12px 0 0;font-size:12.5px;color:var(--mute)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.tblwrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+thead th{text-align:right;padding:11px 13px;color:var(--mute);font-weight:600;font-size:11.5px;
+ letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid var(--line);white-space:nowrap}
+thead th:first-child,thead th:nth-child(2){text-align:left}
+.note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--warn);
+ border-radius:8px;padding:12px 16px;margin:18px 0 4px;font-size:13.4px;color:var(--mute);line-height:1.6;max-width:96ch}
+.note b{color:var(--ink);font-weight:640}
+.note ul{margin:.5em 0 .2em;padding-left:20px}
+.note li{margin:.28em 0}
+tbody td{padding:9px 13px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+td.num{text-align:right;font-variant-numeric:tabular-nums;
+ font-family:ui-monospace,SFMono-Regular,Menlo,"DejaVu Sans Mono",monospace;white-space:nowrap}
+td.mono{font-family:ui-monospace,SFMono-Regular,Menlo,"DejaVu Sans Mono",monospace}
+.dim{color:var(--dim)}
+tr.ref td{background:#16241b}
+tr.grp td{background:#141519;color:var(--mute);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.mini{height:5px;border-radius:3px;background:var(--panel2);margin-top:5px;overflow:hidden}
+.mini span{display:block;height:100%;border-radius:3px}
+tbody tr:hover td{background:#1c1d21}
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10.5px;letter-spacing:.04em;
+ text-transform:uppercase;border:1px solid currentColor;white-space:nowrap}
+.tag.m{color:var(--acc3)}.tag.e{color:var(--warn)}.tag.s{color:var(--dim)}
+.traits{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:20px 0}
+.traits .stat h3{margin:0 0 6px;font-size:.86rem;color:var(--mute);letter-spacing:.09em;text-transform:uppercase;font-weight:650}
+.traits .stat h3 b{color:var(--acc2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-left:6px}
+.traits ul{margin:0;padding-left:18px;font-size:13.4px;color:var(--ink)}
+.traits li{margin:.18em 0}
+footer{margin-top:40px;color:var(--dim);font-size:12px;border-top:1px solid var(--line);padding-top:16px}
+@media (max-width:700px){.wrap{padding:32px 16px 70px}.grid.g3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style></head><body><div class="wrap">
+
+<header><div class="kicker">LeafMachine3 · guide</div>
+<h1>Computational time</h1>
+<p class="sub">What to expect, per 1,000 herbarium images. Measured on a real, representative batch.</p></header>
+
+<div class="note"><b>October 29, 2026 · LM3 3.0.1044.</b> Models, settings and speeds will change in later
+versions. Treat these as a planning guide for large batches, not exact figures.</div>
+
+<h2>Per 1,000 images</h2>
+<div class="grid g3">
+<div class="stat"><div class="v">27 min</div><div class="l">wall time · reference machine (2 GPUs)</div></div>
+<div class="stat"><div class="v">0.39</div><div class="l">GPU-hours</div></div>
+<div class="stat"><div class="v">8.1</div><div class="l">CPU core-hours</div></div>
+<div class="stat"><div class="v">0.45</div><div class="l">node-hours (whole machine)</div></div>
+<div class="stat"><div class="v">~15,000</div><div class="l">leaves measured</div></div>
+<div class="stat"><div class="v">~37 GB</div><div class="l">output on disk (all products on)</div></div>
+</div>
+<p class="hint">GPU-hours = GPU-module time × 2 GPUs. CPU core-hours = CPU-module time × 32 cores. Node-hours = total
+wall time. Modules run one after another, so each one holds the whole machine while it runs.</p>
+
+<h2>Test setup</h2>
+<div class="tblwrap"><table>
+<thead><tr><th>parameter</th><th>value</th></tr></thead>
+<tbody>
+<tr><td>Images</td><td>1,107 GBIF herbarium sheets, randomly sampled species</td></tr>
+<tr><td>Image size</td><td>7.2 MP average (5.7–8.6 MP), 1.7 MB JPG</td></tr>
+<tr><td>Working size</td><td>long edge 3,200 px</td></tr>
+<tr><td>Modules</td><td>all 18 on, default settings</td></tr>
+<tr><td>Inference</td><td>ONNX Runtime, CUDA, fp16 · no TensorRT</td></tr>
+<tr><td>GPUs</td><td>2× NVIDIA RTX 6000 Ada (48 GB) · 6 workers per GPU</td></tr>
+<tr><td>CPU</td><td>AMD Threadripper PRO 5975WX · 32 cores / 64 threads</td></tr>
+<tr><td>RAM · OS</td><td>503 GB · Linux</td></tr>
+<tr><td>Total run</td><td>29.6 min for 1,107 images · 1.6 s per image</td></tr>
+</tbody></table></div>
+
+<h2>Where the time goes</h2>
+<p class="hint">Seconds per 1,000 images. Hover a segment for its time.</p>
+<div class="gantt">
+<div class="seg" style="width:1.35%;--c:var(--acc)" title="ingest — 21.7s (1.4%)"></div>
+<div class="seg" style="width:0.04%;--c:var(--acc)" title="mp_conversion_factor — 0.6s (0.0%)"></div>
+<div class="seg" style="width:1.10%;--c:var(--acc2)" title="archival_detector — 17.6s (1.1%)"></div>
+<div class="seg" style="width:1.41%;--c:var(--acc2)" title="plant_detector — 22.7s (1.4%)"></div>
+<div class="seg" style="width:5.49%;--c:var(--acc2)" title="specimen_segmenter — 88.0s (5.5%)"></div>
+<div class="seg" style="width:0.07%;--c:var(--acc)" title="phenology_detector — 1.2s (0.1%)"></div>
+<div class="seg" style="width:0.46%;--c:var(--acc2)" title="ruler_classifier — 7.4s (0.5%)"></div>
+<div class="seg" style="width:12.80%;--c:var(--acc)" title="ruler_cf — 205.3s (12.8%)">ruler_cf<span>205s</span></div>
+<div class="seg" style="width:25.04%;--c:var(--acc2)" title="leaf_segmenter — 401.7s (25.0%)">leaf_segmenter<span>402s</span></div>
+<div class="seg" style="width:0.43%;--c:var(--acc)" title="morphology — 6.9s (0.4%)"></div>
+<div class="seg" style="width:9.71%;--c:var(--acc2)" title="landmark_detector — 155.7s (9.7%)">landmarks<span>156s</span></div>
+<div class="seg" style="width:0.19%;--c:var(--acc)" title="landmark_measurements — 3.0s (0.2%)"></div>
+<div class="seg" style="width:0.17%;--c:var(--acc)" title="leaf_orientation — 2.8s (0.2%)"></div>
+<div class="seg" style="width:4.15%;--c:var(--acc)" title="petiole_width — 66.6s (4.2%)"></div>
+<div class="seg" style="width:2.75%;--c:var(--acc)" title="bilateral_symmetry — 44.1s (2.7%)"></div>
+<div class="seg" style="width:0.65%;--c:var(--acc)" title="metric_grounding — 10.5s (0.7%)"></div>
+<div class="seg" style="width:17.28%;--c:var(--acc)" title="reporter — 277.2s (17.3%)">reporter<span>277s</span></div>
+<div class="seg" style="width:13.32%;--c:var(--acc)" title="ect — 213.6s (13.3%)">ect<span>214s</span></div>
+<div class="seg" style="width:3.58%;--c:var(--acc)" title="momocs — 57.5s (3.6%)"></div>
+</div>
+<div class="legend"><span><i style="background:var(--acc2)"></i>GPU · 43% of time</span>
+<span><i style="background:var(--acc)"></i>CPU · 57% of time</span></div>
+
+<div class="tblwrap"><table>
+<thead><tr><th>module</th><th>runs on</th><th>s / 1,000 images</th><th>share</th></tr></thead>
+<tbody>
+<tr><td class="mono">leaf_segmenter</td><td class="mono dim">GPU</td><td class="num">401.7</td><td class="num">25.0%<div class="mini"><span style="width:25.0%;background:var(--acc2)"></span></div></td></tr>
+<tr><td class="mono">reporter</td><td class="mono dim">CPU</td><td class="num">277.2</td><td class="num">17.3%<div class="mini"><span style="width:17.3%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">ect</td><td class="mono dim">CPU</td><td class="num">213.6</td><td class="num">13.3%<div class="mini"><span style="width:13.3%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">ruler_cf</td><td class="mono dim">CPU</td><td class="num">205.3</td><td class="num">12.8%<div class="mini"><span style="width:12.8%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">landmark_detector</td><td class="mono dim">GPU</td><td class="num">155.7</td><td class="num">9.7%<div class="mini"><span style="width:9.7%;background:var(--acc2)"></span></div></td></tr>
+<tr><td class="mono">specimen_segmenter</td><td class="mono dim">GPU</td><td class="num">88.0</td><td class="num">5.5%<div class="mini"><span style="width:5.5%;background:var(--acc2)"></span></div></td></tr>
+<tr><td class="mono">petiole_width</td><td class="mono dim">CPU</td><td class="num">66.6</td><td class="num">4.2%<div class="mini"><span style="width:4.2%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">momocs</td><td class="mono dim">CPU</td><td class="num">57.5</td><td class="num">3.6%<div class="mini"><span style="width:3.6%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">bilateral_symmetry</td><td class="mono dim">CPU</td><td class="num">44.1</td><td class="num">2.7%<div class="mini"><span style="width:2.7%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">plant_detector</td><td class="mono dim">GPU</td><td class="num">22.7</td><td class="num">1.4%<div class="mini"><span style="width:1.4%;background:var(--acc2)"></span></div></td></tr>
+<tr><td class="mono">ingest</td><td class="mono dim">CPU</td><td class="num">21.7</td><td class="num">1.4%<div class="mini"><span style="width:1.4%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">archival_detector</td><td class="mono dim">GPU</td><td class="num">17.6</td><td class="num">1.1%<div class="mini"><span style="width:1.1%;background:var(--acc2)"></span></div></td></tr>
+<tr><td class="mono">metric_grounding</td><td class="mono dim">CPU</td><td class="num">10.5</td><td class="num">0.7%<div class="mini"><span style="width:0.7%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">ruler_classifier</td><td class="mono dim">GPU</td><td class="num">7.4</td><td class="num">0.5%<div class="mini"><span style="width:0.5%;background:var(--acc2)"></span></div></td></tr>
+<tr><td class="mono">morphology</td><td class="mono dim">CPU</td><td class="num">6.9</td><td class="num">0.4%<div class="mini"><span style="width:0.4%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono">4 small modules</td><td class="mono dim">CPU</td><td class="num">7.6</td><td class="num">0.5%<div class="mini"><span style="width:0.5%;background:var(--acc)"></span></div></td></tr>
+<tr><td class="mono"><b>total</b></td><td></td><td class="num"><b>1,604</b></td><td class="num">100%</td></tr>
+</tbody></table></div>
+<p class="hint">4 small modules: landmark_measurements, leaf_orientation, phenology_detector, mp_conversion_factor.</p>
+
+<h2>Leaves per image</h2>
+<div class="tblwrap"><table>
+<thead><tr><th>leaves</th><th>mean</th><th>median</th><th>90th pct</th><th>max</th><th>images with 0</th></tr></thead>
+<tbody>
+<tr><td>Whole leaves measured</td><td class="num">15.1</td><td class="num">6</td><td class="num">31</td><td class="num">298</td><td class="num">17%</td></tr>
+<tr><td>Best-quality (archetypal)</td><td class="num">10.7</td><td class="num">4</td><td class="num">25</td><td class="num">229</td><td class="num">20%</td></tr>
+<tr><td>With petiole measured</td><td class="num">6.3</td><td class="num">3</td><td class="num">17</td><td class="num">66</td><td class="num">26%</td></tr>
+<tr><td>All leaf detections (incl. partial)</td><td class="num">29.5</td><td class="num">16</td><td class="num">68</td><td class="num">300</td><td class="num">5%</td></tr>
+</tbody></table></div>
+<p class="hint">Typical sheet ≈ 6 whole leaves; a few very leafy sheets pull the mean to 15. Leaf-heavy collections take longer.</p>
+
+<h2>GPU classes</h2>
+<div class="note"><b>What matters</b>
+<ul>
+<li><b>VRAM</b> — each GPU worker needs 1.6–4.2 GB. More VRAM = more workers per card (48 GB fits 6).</li>
+<li><b>fp16 speed</b> — newer generations run the models faster.</li>
+<li><b>The CPU</b> — GPU modules still decode, resize and post-process on the CPU. In our tests the GPUs averaged
+under 25% busy, so a much faster GPU gives less than its specs suggest. 57% of the time is CPU-only modules regardless.</li>
+</ul></div>
+<div class="tblwrap"><table>
+<thead><tr><th>hardware</th><th>class</th><th>VRAM</th><th>vs reference</th><th>GPU-hours / 1,000</th><th>status</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="6">University HPC · data center</td></tr>
+<tr><td>B200</td><td class="dim">Blackwell</td><td class="num">180 GB</td><td class="num">1.5–2.5× faster</td><td class="num">0.15–0.25</td><td><span class="tag e">estimate</span></td></tr>
+<tr><td>H100 / H200</td><td class="dim">Hopper</td><td class="num">80–141 GB</td><td class="num">1.5–2× faster</td><td class="num">0.2–0.25</td><td><span class="tag e">estimate</span></td></tr>
+<tr><td>A100</td><td class="dim">Ampere</td><td class="num">40–80 GB</td><td class="num">about the same</td><td class="num">0.35–0.45</td><td><span class="tag e">estimate</span></td></tr>
+<tr><td>L40S</td><td class="dim">Ada</td><td class="num">48 GB</td><td class="num">same</td><td class="num">~0.39</td><td><span class="tag e">estimate</span></td></tr>
+<tr><td>L4</td><td class="dim">Ada</td><td class="num">24 GB</td><td class="num">3× slower</td><td class="num">1.0–1.3</td><td><span class="tag e">estimate</span></td></tr>
+<tr class="grp"><td colspan="6">Workstation</td></tr>
+<tr><td>RTX PRO 6000 Blackwell</td><td class="dim">Blackwell</td><td class="num">96 GB</td><td class="num">1.3–1.6× faster</td><td class="num">0.25–0.3</td><td><span class="tag e">estimate</span></td></tr>
+<tr class="ref"><td><b>RTX 6000 Ada</b></td><td class="dim">Ada</td><td class="num">48 GB</td><td class="num">reference</td><td class="num"><b>0.39</b></td><td><span class="tag m">measured</span></td></tr>
+<tr><td>RTX A6000</td><td class="dim">Ampere</td><td class="num">48 GB</td><td class="num">~2× slower</td><td class="num">0.65–0.8</td><td><span class="tag e">estimate</span></td></tr>
+<tr class="grp"><td colspan="6">Consumer</td></tr>
+<tr><td>RTX 5090</td><td class="dim">Blackwell</td><td class="num">32 GB</td><td class="num">1.2–1.5× faster</td><td class="num">0.25–0.35</td><td><span class="tag e">estimate</span></td></tr>
+<tr><td>RTX 4090</td><td class="dim">Ada</td><td class="num">24 GB</td><td class="num">about the same</td><td class="num">0.4–0.5</td><td><span class="tag e">estimate</span></td></tr>
+<tr><td>RTX 3090</td><td class="dim">Ampere</td><td class="num">24 GB</td><td class="num">~2× slower</td><td class="num">0.7–0.9</td><td><span class="tag e">estimate</span></td></tr>
+<tr><td>RTX 2080</td><td class="dim">Turing (older)</td><td class="num">8 GB</td><td class="num">4–5× slower</td><td class="num">1.5–2</td><td><span class="tag e">estimate</span></td></tr>
+<tr class="grp"><td colspan="6">No NVIDIA GPU</td></tr>
+<tr><td>CPU only (32-core Threadripper)</td><td class="dim">—</td><td class="num">—</td><td class="num">~20× slower</td><td class="num">0 · 4.3 h wall · 138 core-h</td><td><span class="tag m">measured + scaled</span></td></tr>
+<tr><td>MacBook (Apple silicon)</td><td class="dim">—</td><td class="num">shared</td><td class="num">—</td><td class="num">—</td><td><span class="tag s">real numbers coming soon</span></td></tr>
+</tbody></table></div>
+<p class="hint">"vs reference" = GPU modules only, per card. Estimates assume a fast CPU feeding the GPU; CPU modules add
+~15 min per 1,000 images on any GPU. CPU only: model modules timed on 24 example images, scaled by images / ruler crops / leaves to this batch. ~10× the reference wall time.</p>
+
+<h2>What you get</h2>
+<p class="hint">~37 traits per leaf + ~16 per specimen, plus shape data. Most leaf traits come in px and cm.
+Column definitions: <span class="mono">reports/Data/data_dictionary.csv</span>.</p>
+<div class="traits">
+<div class="stat"><h3>Leaf size &amp; outline<b>15</b></h3><ul>
+<li>Area incl. holes · area excl. holes · hole area · hole count</li>
+<li>Perimeter · convex hull area</li>
+<li>Convexity · concavity · circularity · aspect ratio</li>
+<li>Bounding box width, height</li>
+<li>Rotated box length, width · enclosing circle radius</li></ul></div>
+<div class="stat"><h3>Leaf landmarks<b>10</b></h3><ul>
+<li>Midvein length · lamina extent · tip–base length</li>
+<li>Leaf width · petiole trace length</li>
+<li>Apex angle + type (acute / obtuse / reflex)</li>
+<li>Base angle + type</li>
+<li>Midvein curvature</li></ul></div>
+<div class="stat"><h3>Petiole &amp; LMA<b>3</b></h3><ul>
+<li>Petiole width · petiole length</li>
+<li>Leaf mass per area (proxy, g/m²; no ruler needed)</li></ul></div>
+<div class="stat"><h3>Symmetry &amp; quality<b>9</b></h3><ul>
+<li>Asymmetry index · signed left/right imbalance</li>
+<li>Mirrored-half overlap (Dice) · midvein sinuosity</li>
+<li>Solidity · perimeter ratio · hole fraction</li>
+<li>Largest-piece fraction · archetype score + flag</li></ul></div>
+<div class="stat"><h3>Specimen<b>~16</b></h3><ul>
+<li>Has leaves / flowers / fruits · fertile</li>
+<li>Counts: whole leaf, partial leaf, leaflet, fruit, fruits, flower, flowers, bud, roots, wood</li>
+<li>Plant cover of sheet · archetypal leaf count · median leaf area</li>
+<li>Scale (px/cm) + ruler type</li></ul></div>
+<div class="stat"><h3>Shape data<b>per leaf</b></h3><ul>
+<li>31 landmarks (x, y, confidence)</li>
+<li>ECT: 360 × 360 matrix + images</li>
+<li>Outline coordinates (full + simplified)</li>
+<li>Momocs outlines + oriented images → elliptic Fourier descriptors in Momocs (R)</li>
+<li>Leaf masks &amp; cutouts · specimen masks · crops of 16 sheet objects</li></ul></div>
+</div>
+
+<footer>Source run: <span class="mono">runs/Timing_Test_DwC_Random</span> (October 29, 2026). GPU / CPU split per module from
+each module's <span class="mono">device_kind</span>. Per-1,000 figures = measured times × 1,000 / 1,107. Reserved
+(allocated) hours, not measured busy time. Hardware rows marked <i>estimate</i> are informed guesses.</footer>
+</div></body></html>

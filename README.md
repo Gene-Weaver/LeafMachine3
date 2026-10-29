@@ -150,7 +150,7 @@ uv run --frozen --no-sync lm3 models install --yes
 ```bash
 uv --version                               # must print 0.12.23
 uv run --frozen --no-sync lm3 doctor                            # must end with "Result: READY"
-uv run --frozen --no-sync machine3 --config LM3_settings.yaml   # processes examples/images into runs/demo/
+uv run --frozen --no-sync machine3 --config LM3_settings.yaml   # processes examples/images into runs/my_first_project/
 uv run --frozen --no-sync lm3 serve                             # GUI at http://127.0.0.1:8765  (Ctrl+C stops it)
 ```
 
@@ -326,7 +326,13 @@ runs/<run_name>/
     Leaf_Momocs/             every leaf as a Momocs-ready image, plus outlines for the R packages Momocs and Momocs2
     Data/                    the numbers: leaf_measurements.csv is the one to open first
   logs/
+  _crops/  _working/  _tmp_original/  _specimen_masks/  _ruler_cf_lattice/  _ruler_squarify/
+                             working dirs, not results (see below)
 ```
+
+The `_*` folders are working directories: intermediate files the modules hand to each other
+during a run. Delete them once the run is finished; keep them only if you plan to `--restart` a
+stage of that run. A future version of LeafMachine3 will manage them automatically.
 
 ---
 
@@ -1035,7 +1041,7 @@ into the outline of one primary mask: a leaf built out of leaves. Reads existing
 only; nothing is re-segmented.
 
 ```bash
-uv run --frozen --no-sync python -m leafmachine3.postprocessing.generate_leaf_collage --config postprocessing_settings.yaml --run-dir runs/demo --primary-mask <mask.png>
+uv run --frozen --no-sync python -m leafmachine3.postprocessing.generate_leaf_collage --config postprocessing_settings.yaml --run-dir runs/my_first_project --primary-mask <mask.png>
 ```
 
 ---

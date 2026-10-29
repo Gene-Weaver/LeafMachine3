@@ -411,7 +411,7 @@ def _report_profile_drift(cfg: Any, hw_path: Path, profile: "HardwareSettings") 
         if diffs:
             log.warning(
                 "changed since the last LM3_Setup: %s. This run uses the EXISTING profile at %s; "
-                "rerun `python -m leafmachine3.setup` to re-tune when convenient",
+                "rerun `uv run --frozen --no-sync lm3-setup --force` to re-tune when convenient",
                 "; ".join(diffs), hw_path
             )
     except Exception as exc:  # noqa: BLE001 - the drift check must never cost a run its profile
@@ -1424,7 +1424,7 @@ def _write(path: Path, profile: HardwareSettings) -> None:
     with tmp.open("w", encoding="utf-8") as fh:
         fh.write(
             "# LM3 hardware profile -- MACHINE-DERIVED runtime settings, written by LM3_Setup\n"
-            "# (python -m leafmachine3.setup). Reused by every module so runs never re-probe.\n"
+            "# (uv run --frozen --no-sync lm3-setup). Reused by every module so runs never re-probe.\n"
             "# Do NOT hand-edit unless you know why; rerun LM3_Setup after a hardware/driver/model change.\n"
         )
         yaml.safe_dump(payload, fh, sort_keys=False, default_flow_style=False)

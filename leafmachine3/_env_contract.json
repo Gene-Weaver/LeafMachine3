@@ -1,6 +1,6 @@
 {
  "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
- "lm3_version": "3.0.1044",
+ "lm3_version": "3.0.1045",
  "locks": {
   "uv_lock_sha256": "a9dfcbba18068380be51d0145b7e15baaf7c9d2cfd1c1831b8bc6d27bf58f565",
   "models_lock_sha256": "4e1cc53d29fa773a87b5c70feee5e42784118537085c716d8c4b93df9103aa1e",

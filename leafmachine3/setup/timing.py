@@ -553,7 +553,7 @@ def _render_html(rows: list[dict], timer: Any, sampler: UtilizationSampler, run_
             'workers</span>; the compute-heavy <span class="mono">ruler_cf</span>/<span class="mono">ect</span> '
             'use a spawn <b>process pool</b> sized to the measured CPU knee (threads are GIL-bound for them); '
             'the disk-write-bound <span class="mono">reporter</span> is capped at the disk-write knee. Re-tune '
-            'with <span class="mono">python -m leafmachine3.setup --force --calibrate</span>.</p>')
+            'with <span class="mono">uv run --frozen --no-sync lm3-setup --force --calibrate</span>.</p>')
 
     b_ram = getattr(sampler, "baseline_ram_mb", 0.0) if sampler else 0.0
     b_vram = getattr(sampler, "baseline_vram_mb", 0.0) if sampler else 0.0
