@@ -132,6 +132,29 @@ def summarize_yolo(per_image: Sequence[dict]) -> dict:
     return s
 
 
+def _native_stats(session) -> dict:
+    """Load seconds and first-call vs later-call milliseconds of a native CoreML session (else {})."""
+    stats = getattr(session, "stats", None)
+    if not isinstance(stats, dict):
+        return {}
+
+    def med(v):
+        return float(np.median(v)) if v else None
+
+    return {"load_s": round(float(getattr(session, "load_seconds", 0.0)), 2), "shapes_seen": len(stats["first_ms"]),
+            "first_call_ms": med(stats["first_ms"]), "later_call_ms": med(stats["steady_ms"]),
+            "cpu_fallback_inputs": len(stats["cpu_fallback"])}
+
+
+def _not_on_coreml(s: dict, session) -> None:
+    """A model that was sent to CoreML but runs on the CPU (no package, or an unreadable one) proves
+    nothing about CoreML: say so instead of reporting a trivially perfect match."""
+    from leafmachine3.inference import coreml
+
+    if not coreml.is_coreml_session(session):
+        s.update(verdict=WARN, why="runs on the CPU, not CoreML (no coreml_fp32 package installed?)")
+
+
 def _timed(fn: Callable, *args, **kwargs):
     t0 = time.perf_counter()
     out = fn(*args, **kwargs)
@@ -208,7 +231,8 @@ def check_models(cfg, images: Sequence[Path], log: Callable[[str], None] = lambd
             s.update(model=name, path=str(paths[name]), bound=test.session.get_providers()[0],
                      sessions_built=getattr(test.session, "n_built", None),
                      ms_cpu=float(np.mean(t_ref)) if t_ref else None,
-                     ms_coreml=float(np.mean(t_test)) if t_test else None)
+                     ms_coreml=float(np.mean(t_test)) if t_test else None, **_native_stats(test.session))
+            _not_on_coreml(s, test.session)
             results.append(s)
             log(_line(s))
         del ref, test
@@ -231,11 +255,14 @@ def check_models(cfg, images: Sequence[Path], log: Callable[[str], None] = lambd
             t_test.append(tt)
         m = min(ious) if ious else None
         verdict = OK if m is None or m >= ROUNDING["specimen_iou_min"] else WARN if m >= 0.95 else FAIL
-        bound = getattr(getattr(test, "session", None), "get_providers", lambda: ["(via ultra_rep)"])()[0]
+        session = getattr(test, "session", None) or getattr(getattr(test, "model", None), "session", None)
+        bound = session.get_providers()[0] if session is not None else "?"
         s = dict(model="specimen_segmenter", key=spec.key, path=str(mpath), images=len(ious), bound=bound,
                  mask_iou_min=m, mask_iou_mean=float(np.mean(ious)) if ious else None,
                  ms_cpu=float(np.mean(t_ref)) if t_ref else None, ms_coreml=float(np.mean(t_test)) if t_test else None,
-                 verdict=verdict, why="" if verdict == OK else f"specimen mask IoU down to {m:.4f}")
+                 verdict=verdict, why="" if verdict == OK else f"specimen mask IoU down to {m:.4f}",
+                 **_native_stats(session))
+        _not_on_coreml(s, session)
         results.append(s)
         log(_line(s))
         del ref, test
@@ -282,7 +309,9 @@ def _check_ruler(models_dir: str, sheets: Sequence[np.ndarray], cpu, cml, log) -
         s = dict(model=f"ruler_classifier {key}", path=os.path.join(models_dir, dir_name), images=len(tiles),
                  bound=test.session.get_providers()[0], top1_same=same, prob_diff_max=dmax,
                  ms_cpu=float(np.mean(t_ref)) if t_ref else None, ms_coreml=float(np.mean(t_test)) if t_test else None,
-                 verdict=verdict, why="" if verdict == OK else f"top-1 same on {same}/{len(tiles)}, max prob diff {dmax:.3f}")
+                 verdict=verdict, why="" if verdict == OK else f"top-1 same on {same}/{len(tiles)}, max prob diff {dmax:.3f}",
+                 **_native_stats(test.session))
+        _not_on_coreml(s, test.session)
         out.append(s)
         log(_line(s))
     return out
@@ -307,4 +336,11 @@ def _line(s: dict) -> str:
         body = f"top-1 same {s['top1_same']}/{s['images']}, prob diff max {_fmt(s['prob_diff_max'])}"
     else:
         body = f"mask IoU min {_fmt(s.get('mask_iou_min'), '{:.4f}')} mean {_fmt(s.get('mask_iou_mean'), '{:.4f}')}"
-    return f"[{s['verdict']:4s}] {s['model']:22s} on {s['bound']}: {body}{speed}"
+    native = ""
+    if s.get("load_s") is not None:
+        native = (f"\n         load {s['load_s']:.1f} s, first call per shape {_fmt(s.get('first_call_ms'), '{:.0f}')} ms "
+                  f"({s.get('shapes_seen')} shapes), later calls {_fmt(s.get('later_call_ms'), '{:.0f}')} ms")
+        if s.get("cpu_fallback_inputs"):
+            native += f", {s['cpu_fallback_inputs']} input(s) ran on the CPU (shape not in the package)"
+    why = f"\n         {s['why']}" if s.get("why") and s["verdict"] != OK else ""
+    return f"[{s['verdict']:4s}] {s['model']:22s} on {s['bound']}: {body}{speed}{native}{why}"

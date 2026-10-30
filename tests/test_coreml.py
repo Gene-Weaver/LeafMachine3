@@ -279,6 +279,7 @@ def test_real_exports_cut_path_matches_the_full_graph(name, task, monkeypatch):
     from leafmachine3.inference import ultra_replacements as ultra_rep
 
     monkeypatch.setenv("LM3_COREML_SIMULATE", "1")
+    monkeypatch.setenv("LM3_COREML_ROUTE", "ort")
     img = ultra_rep.imread(coreml_check.calibration_images()[0])
     cut = ultra_rep.YOLO(path, task=task, providers=coreml.providers())
     ref = ultra_rep.YOLO(path, task=task, providers=["CPUExecutionProvider"])

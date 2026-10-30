@@ -175,11 +175,12 @@ class _Member:
         from leafmachine3.inference import coreml
         from leafmachine3.inference.providers import session_options
 
+        self.session = None
         if coreml.is_coreml(providers):   # CoreML needs the one static shape _preprocess produces
             crop = 224 if self.family == "dinov2" else self.imgsz
-            self.session = coreml.make_static_session(onnx_path, providers, (1, 3, crop, crop))
-        else:
-            self.session = ort.InferenceSession(onnx_path, session_options(), providers=list(providers))
+            self.session = coreml.static_session(onnx_path, providers, (1, 3, crop, crop))
+        if self.session is None:
+            self.session = ort.InferenceSession(onnx_path, session_options(), providers=coreml.for_model(providers, False))
         self._input_name = self.session.get_inputs()[0].name
         self._output_name = self.session.get_outputs()[0].name
         # The class names come from the shared label map, the scores from this model: if their

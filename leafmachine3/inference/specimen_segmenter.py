@@ -174,9 +174,9 @@ class BinaryOnnxSpecimenSegmenter:
             from leafmachine3.inference.providers import session_options
             providers = coreml.for_model(providers, coreml.specimen_on_coreml(spec.workflow, spec.key))
             if coreml.is_coreml(providers):
-                session = coreml.make_static_session(self.model_path, providers, (1, 3, spec.imgsz, spec.imgsz))
-            else:
-                session = ort.InferenceSession(self.model_path, session_options(), providers=providers)
+                session = coreml.static_session(self.model_path, providers, (1, 3, spec.imgsz, spec.imgsz))
+            if session is None:
+                session = ort.InferenceSession(self.model_path, session_options(), providers=coreml.for_model(providers, False))
         self.session = session
         self._check_contract()
         self._input_name = self.session.get_inputs()[0].name

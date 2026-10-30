@@ -1,17 +1,18 @@
 """Check the CoreML path model by model on a Mac: same answers as the CPU, and how much faster.
 
 Every model the settings select that LM3 sends to CoreML is run twice on the same images -- once
-through the CoreML path exactly as a pipeline worker builds it, once on the CPU as every other
-platform runs it, with the same input tensors -- and compared (leafmachine3/inference/coreml_check.py). Prints the
-environment, one line per model, and exits 1 if any model gives different answers.
+through the CoreML path exactly as a pipeline worker builds it (its ``coreml_fp32`` package, by
+default), once on the CPU as every other platform runs it, with the same input tensors -- and compared
+(leafmachine3/inference/coreml_check.py). Prints the environment, one line per model (with load time
+and first-call vs later-call milliseconds for a package), and exits 1 if any model gives different
+answers.
 
-Usage (from the LeafMachine3 folder):
-    uv run --frozen --no-sync python tools/macos/verify_coreml.py
-    uv run --frozen --no-sync python tools/macos/verify_coreml.py --images examples/images --n 23 --json out.json
-    LM3_COREML_DYNAMIC=1 uv run --frozen --no-sync python tools/macos/verify_coreml.py   # one session for every shape
+Usage (from the LeafMachine3 folder; coremltools is layered in until the lock carries it):
+    uv run --frozen --no-sync --with coremltools==9.0 python tools/macos/verify_coreml.py --n 23 --json out.json
+    LM3_COREML_UNITS=CPUOnly ...   # Core ML on the CPU (float32): separates GPU arithmetic from conversion
 
-On Linux it runs only with LM3_COREML_SIMULATE=1 (the CPU provider in CoreML's place), which checks
-everything except CoreML itself.
+On Linux it runs only with LM3_COREML_SIMULATE=1 (each package's network stood in for by its ONNX twin
+on the CPU), which checks everything except Core ML itself.
 """
 from __future__ import annotations
 
@@ -48,7 +49,19 @@ def main(argv=None) -> int:
     env = {k: v for k, v in os.environ.items() if k.startswith("LM3_COREML")}
     print(f"platform      {platform.platform()} ({platform.machine()})")
     print(f"onnxruntime   {ort.__version__}  providers {ort.get_available_providers()}")
-    print(f"coreml        available={coreml.available()} simulated={coreml.simulated()} options={coreml.provider_options()}")
+    if coreml.route() == "native":
+        from leafmachine3.inference import coreml_native
+
+        try:
+            import coremltools
+            ct_version = coremltools.__version__
+        except Exception:  # noqa: BLE001
+            ct_version = "not installed"
+        print(f"coreml        route=native available={coreml.available()} simulated={coreml.simulated()} "
+              f"units={coreml_native.compute_units()} coremltools {ct_version}")
+    else:
+        print(f"coreml        route=ort available={coreml.available()} simulated={coreml.simulated()} "
+              f"options={coreml.provider_options()}")
     print(f"switches      {env or '(defaults)'}")
     if not coreml.available():
         print("CoreML is not available here (on Linux, set LM3_COREML_SIMULATE=1 to test the code path).")

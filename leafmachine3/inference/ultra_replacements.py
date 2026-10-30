@@ -289,11 +289,14 @@ class YOLO:
         Checked against the export's metadata ``task``; ``None`` takes the metadata value.
     providers : sequence or None
         onnxruntime execution providers (e.g. ``Device.ort_providers()``). Defaults to CPU. A list that
-        starts with CoreML gets an :class:`~leafmachine3.inference.coreml.End2EndSession`: the network
-        on CoreML, the end2end tail in numpy, a CoreML session per input shape.
+        starts with CoreML gets the model's CoreML session (``coreml.yolo_session``: its ``coreml_fp32``
+        package on a Mac), or the CPU when there is none.
+    session : InferenceSession-like or None
+        A ready session to run instead of building one (it must look like the ONNX model's).
     """
 
-    def __init__(self, model_path, task: Optional[str] = None, providers: Optional[Sequence] = None) -> None:
+    def __init__(self, model_path, task: Optional[str] = None, providers: Optional[Sequence] = None,
+                 session: Any = None) -> None:
         import onnxruntime as ort   # deferred so importing this module never needs ORT
 
         self.model_path = str(model_path)
@@ -308,17 +311,14 @@ class YOLO:
         from leafmachine3.inference import coreml
         from leafmachine3.inference.providers import session_options
 
-        self.session = None
-        if coreml.is_coreml(self.providers):
-            try:
-                self.session = coreml.End2EndSession(self.model_path, self.providers)
-            except coreml.CoremlUnsupported as exc:
-                log.warning("ultra_rep.YOLO: %s cannot run on CoreML (%s); using the CPU",
-                            os.path.basename(self.model_path), exc)
+        self.session = session
+        if self.session is None and coreml.is_coreml(self.providers):
+            self.session = coreml.yolo_session(self.model_path, self.providers)
+            if self.session is None:
                 self.providers = list(coreml.CPU_PROVIDERS)
         if self.session is None:
             self.session = ort.InferenceSession(self.model_path, session_options(), providers=self.providers)
-        coreml_session = isinstance(self.session, coreml.End2EndSession)
+        coreml_session = session is not None or coreml.is_coreml_session(self.session)
         self.bound_provider = self.session.get_providers()[0]
         requested = self.providers[0][0] if isinstance(self.providers[0], (tuple, list)) else self.providers[0]
         if requested != self.bound_provider and not coreml_session:   # CoreML binds per shape, at first use

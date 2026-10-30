@@ -1,6 +1,14 @@
-"""Apple GPU (CoreML) execution on macOS -- the one place LM3 builds a CoreML session.
+"""Apple GPU (CoreML) execution on macOS -- the one place LM3 decides how a model runs on CoreML.
 
-Three facts shape it. The first is read from the onnxruntime source; the other two were measured on
+Two routes (``LM3_COREML_ROUTE``):
+
+* ``native`` (default): the model's ``coreml_fp32`` package, run by Core ML itself
+  (``coreml_native.py``): float32, every LM3 input shape in one compiled model. A model without an
+  installed package runs on the CPU.
+* ``ort``: onnxruntime's CoreML execution provider on the ONNX file -- the first attempt, kept until the
+  native route is verified on a Mac, then removed. The rest of this docstring describes it.
+
+Three facts shape the ``ort`` route. The first is read from the onnxruntime source; the other two were measured on
 an M2 Pro with onnxruntime 1.20.1 (2026-10-29):
 
 1. **Options.** onnxruntime 1.20.1's Python binding reads ONE CoreML option, ``flags``: a string of
@@ -90,14 +98,27 @@ def simulated() -> bool:
     return os.environ.get("LM3_COREML_SIMULATE", "") == "1"
 
 
+def route() -> str:
+    """``native`` (default) or ``ort`` -- see the module docstring."""
+    r = os.environ.get("LM3_COREML_ROUTE", "native").strip().lower()
+    if r not in ("native", "ort"):
+        log.warning("LM3_COREML_ROUTE=%r is not native or ort; using native", r)
+        return "native"
+    return r
+
+
 def available() -> bool:
-    """True on a Mac whose onnxruntime exposes CoreML (or when simulating), unless ``LM3_COREML=0``."""
+    """True on a Mac that can run the selected route (or when simulating), unless ``LM3_COREML=0``."""
     if os.environ.get("LM3_COREML", "") == "0":
         return False
     if simulated():
         return True
     if sys.platform != "darwin":
         return False
+    if route() == "native":
+        from leafmachine3.inference import coreml_native
+
+        return coreml_native.available()
     try:
         import onnxruntime as ort
     except Exception:  # noqa: BLE001 - ORT optional at import time
@@ -204,6 +225,36 @@ def make_static_session(model_path: str, provider_list: Sequence, shape: Sequenc
     return sess
 
 
+def yolo_session(model_path: str, provider_list: Sequence):
+    """The CoreML session for a YOLO26 end2end model on a CoreML device, or None: the caller then runs
+    the ONNX model on the CPU."""
+    if route() == "native":
+        from leafmachine3.inference import coreml_native
+
+        return coreml_native.session_for(model_path)
+    try:
+        return End2EndSession(model_path, provider_list)
+    except CoremlUnsupported as exc:
+        log.warning("CoreML: %s cannot run on CoreML (%s); using the CPU", _label(model_path), exc)
+        return None
+
+
+def static_session(model_path: str, provider_list: Sequence, shape: Sequence[int]):
+    """The CoreML session for a fixed-input model (ruler member, UNet++), or None (CPU)."""
+    if route() == "native":
+        from leafmachine3.inference import coreml_native
+
+        return coreml_native.session_for(model_path)
+    return make_static_session(model_path, provider_list, shape)
+
+
+def is_coreml_session(sess: Any) -> bool:
+    """Is this session one of the CoreML stand-ins (either route)?"""
+    from leafmachine3.inference import coreml_native
+
+    return isinstance(sess, (End2EndSession, coreml_native.NativeSession))
+
+
 def _label(model_path) -> str:
     """``plant_detector/model.onnx`` -- every LM3 model file is called model.onnx."""
     p = os.path.normpath(str(model_path))
@@ -285,30 +336,8 @@ def find_end2end_tail(model: Any) -> TailSpec:
     return TailSpec(tuple(split.output), sizes, max_det, out0, tuple(outputs[1:]))
 
 
-def _topk(a: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
-    """onnxruntime ``TopK(largest=1, sorted=1)`` on the last axis; equal values keep index order."""
-    idx = np.argsort(-a, axis=-1, kind="stable")[..., :k]
-    return np.take_along_axis(a, idx, -1), idx
-
-
-def end2end_tail(boxes: np.ndarray, scores: np.ndarray, extra: Optional[np.ndarray], max_det: int) -> np.ndarray:
-    """The Ultralytics YOLO26 end2end postprocess in numpy -> (b, k, 4 + 1 + 1 [+ e]).
-
-    The graph's own two-stage top-k: keep the ``k`` anchors with the highest class score, then the
-    ``k`` best (anchor, class) pairs among them; each row is box, score, class[, extra of its anchor].
-    """
-    b, n, nc = scores.shape
-    k = min(int(max_det), n)
-    _, anchors = _topk(scores.max(-1), k)                                       # (b, k)
-    cand = np.take_along_axis(scores, np.repeat(anchors[..., None], nc, -1), 1)  # (b, k, nc)
-    vals, flat = _topk(cand.reshape(b, -1), k)
-    anchor = np.take_along_axis(anchors, flat // nc, 1)
-    cls = (flat % nc).astype(scores.dtype)
-    parts = [np.take_along_axis(boxes, np.repeat(anchor[..., None], boxes.shape[-1], -1), 1),
-             vals[..., None], cls[..., None]]
-    if extra is not None:
-        parts.append(np.take_along_axis(extra, np.repeat(anchor[..., None], extra.shape[-1], -1), 1))
-    return np.concatenate(parts, -1)
+# The numpy tail: one implementation, shared with the native route.
+from leafmachine3.inference.coreml_native import _topk, end2end_tail  # noqa: E402,F401
 
 
 @dataclass(frozen=True)
