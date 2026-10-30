@@ -155,6 +155,15 @@ def _not_on_coreml(s: dict, session) -> None:
         s.update(verdict=WARN, why="runs on the CPU, not CoreML (no coreml_fp32 package installed?)")
 
 
+def _compiles(session) -> int:
+    """How many inputs so far made this session compile or specialize: a native session's first call
+    at each shape, an onnxruntime-route session's builds. Calls that did are timed separately."""
+    stats = getattr(session, "stats", None)
+    if isinstance(stats, dict):
+        return len(stats["first_ms"])
+    return int(getattr(session, "n_built", 0) or 0)
+
+
 def _timed(fn: Callable, *args, **kwargs):
     t0 = time.perf_counter()
     out = fn(*args, **kwargs)
@@ -215,15 +224,17 @@ def check_models(cfg, images: Sequence[Path], log: Callable[[str], None] = lambd
         imgsz = ref.metadata.get("imgsz") or 640
         inputs = [im for _, im in sheets] if task == "detect" else crops
         kw = dict(imgsz=imgsz, retina_masks=True)
-        per_image, t_ref, t_test = [], [], []
+        per_image, t_ref, t_test, t_first = [], [], [], []
         if inputs:
             test.predict(inputs[0], conf=TEST_CONF, **kw)            # compile / warm up, not timed
         for im in inputs:
             r, tr = _timed(ref.predict, im, conf=REF_CONF, **kw)
+            before = _compiles(test.session)
             t, tt = _timed(test.predict, im, conf=TEST_CONF, **kw)
             per_image.append(compare_yolo(r[0], t[0]))
             t_ref.append(tr)
-            t_test.append(tt)
+            # a call that compiled for a new input shape is not the model's speed
+            (t_first if _compiles(test.session) > before else t_test).append(tt)
             if name == "plant_detector":
                 crops.extend(leaf_crops(im, r[0]))
         if want(name):
@@ -231,7 +242,9 @@ def check_models(cfg, images: Sequence[Path], log: Callable[[str], None] = lambd
             s.update(model=name, path=str(paths[name]), bound=test.session.get_providers()[0],
                      sessions_built=getattr(test.session, "n_built", None),
                      ms_cpu=float(np.mean(t_ref)) if t_ref else None,
-                     ms_coreml=float(np.mean(t_test)) if t_test else None, **_native_stats(test.session))
+                     ms_coreml=float(np.mean(t_test or t_first)) if (t_test or t_first) else None,
+                     ms_coreml_compiling=float(np.mean(t_first)) if t_first else None,
+                     calls_compiling=len(t_first), **_native_stats(test.session))
             _not_on_coreml(s, test.session)
             results.append(s)
             log(_line(s))

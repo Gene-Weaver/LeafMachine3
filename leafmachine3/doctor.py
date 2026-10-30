@@ -139,6 +139,7 @@ class Check:
     status: str
     detail: str = ""
     fix: str = ""
+    data: dict = field(default_factory=dict)     # machine-readable numbers for --json
 
 
 @dataclass
@@ -432,16 +433,19 @@ def check_coreml_models(settings: Optional[str], environ: Mapping[str, str],
                      f"{len(bad)} model(s) give different answers on CoreML than on the CPU: "
                      + "; ".join(f"{r['model']} ({r.get('why', '')})" for r in bad),
                      "report this with `lm3 doctor --models --json`; until it is fixed, LM3_COREML=0 runs on the CPU")
-    off = [r["model"] for r in rows if r.get("bound") not in ("CoreMLExecutionProvider", "(via ultra_rep)")]
-    loose = [r for r in rows if r.get("verdict") == "warn"]
-    speed = ", ".join(f"{r['model'].split()[-1]} x{r['ms_cpu'] / r['ms_coreml']:.1f}"
+    data = {"models": rows}
+    off = [r["model"] for r in rows if r.get("bound") == "CPUExecutionProvider"]
+    loose = [r for r in rows if r.get("verdict") == "warn" and r["model"] not in off]
+    # compile-free speed: a call that compiled for a new input shape is timed separately
+    speed = ", ".join(f"{r['model']} x{r['ms_cpu'] / r['ms_coreml']:.1f}"
                       for r in rows if r.get("ms_cpu") and r.get("ms_coreml"))
     if off or loose:
         what = ([f"ran on the CPU instead of CoreML: {', '.join(off)}"] if off else []) + \
                ([f"agree less closely than expected: {', '.join(r['model'] for r in loose)}"] if loose else [])
         return Check(7, "models", WARN, "; ".join(what) + f" (speed vs CPU: {speed})",
-                     "slower or slightly different, not wrong; `lm3 doctor --models --json` has the numbers")
-    return Check(7, "models", OK, f"all {len(rows)} CoreML models agree with the CPU (speed vs CPU: {speed})")
+                     "slower or slightly different, not wrong; `lm3 doctor --models --json` has the numbers", data)
+    return Check(7, "models", OK, f"all {len(rows)} CoreML models agree with the CPU (speed vs CPU: {speed})",
+                 data=data)
 
 
 def check_models(settings: Optional[str] = None, variant: Optional[str] = None,

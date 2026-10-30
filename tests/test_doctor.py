@@ -401,9 +401,11 @@ def _coreml_row(model, verdict="ok", bound="CoreMLExecutionProvider", why=""):
 
 def test_models_check_on_a_mac_compares_coreml_with_the_cpu(monkeypatch, tmp_path):
     _fake_status(monkeypatch, tmp_path)
-    rows = [_coreml_row("plant_detector"), _coreml_row("ruler_classifier x224")]
+    # a native Core ML session reports "CoreML", the onnxruntime route "CoreMLExecutionProvider": both are CoreML
+    rows = [_coreml_row("plant_detector", bound="CoreML"), _coreml_row("ruler_classifier x224")]
     c = doctor.check_models(variant="macos", environ={}, coreml_run=lambda s, e: {"results": rows})
-    assert c.status == OK and "all 2 CoreML models agree with the CPU" in c.detail and "x224 x6.0" in c.detail
+    assert c.status == OK and "all 2 CoreML models agree with the CPU" in c.detail
+    assert "ruler_classifier x224 x6.0" in c.detail and c.data["models"] == rows     # --json carries the numbers
 
 
 def test_models_check_on_a_mac_fails_on_wrong_boxes(monkeypatch, tmp_path):

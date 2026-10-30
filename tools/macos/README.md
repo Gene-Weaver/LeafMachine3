@@ -28,6 +28,17 @@ written.
 
 The earlier runbook on this branch, for onnxruntime's CoreML route, is replaced by this one; do not
 run it. That route is still selectable with `LM3_COREML_ROUTE=ort`, but it is not part of this test.
+Its results (a92ae5b, M2 Pro) are why this design exists:
+- the Apple GPU in float32 reproduced the CPU exactly;
+- a static-shape session ran about 7.5x faster than the CPU;
+- but compiling one session per input shape (about 1.9 s and 1.1 GB each) made the run slower than
+  the CPU.
+
+A package compiles once and holds every shape.
+
+**Memory:** report `/usr/bin/time -l`'s **peak memory footprint** line, not maximum resident set size.
+On a92ae5b, RSS stayed at 2-2.6 GB while the footprint grew past 18 GB: RSS under-counts Core ML's
+memory.
 
 ## 1. Check out the branch
 
@@ -85,7 +96,8 @@ Each model gets an `[ok  ]` / `[warn]` / `[fail]` line comparing CoreML with the
 - **load:** the first run includes compiling the package; the second run loads it from the compile
   cache (`~/Library/Caches/LeafMachine3/coreml`);
 - **first call per shape vs later calls:** shows whether Core ML does extra work the first time it
-  sees each input size;
+  sees each input size. The `coreml N ms (xS)` speed on the model line excludes those first calls,
+  so it is compile-free;
 - **inputs run on the CPU:** must not appear. It means an input size the package does not list.
 
 Expect `ok` on all 6 and `on CoreML` for all 6. `ok` means within float32 rounding of the CPU, the
@@ -149,6 +161,9 @@ In the run (b) log, expect:
 - Step 2: every `check` line, the total time, any error.
 - Both `verify_coreml.py` outputs and their JSON files, plus the CPU-only one if you ran it.
 - The doctor `--models` line.
-- Wall time and peak memory for runs (a) and (b).
+- Wall time and peak memory footprint for steps 2 and 3 and runs (a) and (b).
+- Per-stage times for runs (a) and (b), as in the a92ae5b report.
 - The `grep` output from the run (b) log.
 - The comparison output and `cmp_native.json`.
+- `runs/mac_cpu/reports/Data/` as a zip. On Linux, the CPU measures 258 leaves on the 23 examples and
+  the Mac CPU 257; the CSVs let Linux find which leaf and why.
