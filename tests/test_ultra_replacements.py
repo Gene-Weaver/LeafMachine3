@@ -54,6 +54,18 @@ def test_letterbox_auto_pads_short_side_to_stride_multiple(hw):
     assert (out == 7).any() and ((out == 114) | (out == 7)).all()
 
 
+def test_letterbox_resizes_with_the_platform_exact_bilinear():
+    """INTER_LINEAR differs between x86 and ARM builds of OpenCV; INTER_LINEAR_EXACT does not."""
+    import cv2
+
+    rng = np.random.default_rng(0)
+    img = rng.integers(0, 256, (1000, 700, 3), dtype=np.uint8)
+    out = ultra_rep.letterbox(img, (640, 640), stride=32, auto=True)
+    assert ultra_rep.RESIZE == cv2.INTER_LINEAR_EXACT
+    ref = cv2.resize(img, (448, 640), interpolation=cv2.INTER_LINEAR_EXACT)
+    assert np.array_equal(out, ref)                    # 448 = 640 * 0.7, already a multiple of 32: no pad
+
+
 def test_letterbox_square_when_auto_false():
     out = ultra_rep.letterbox(np.zeros((300, 100, 3), np.uint8), (640, 640), auto=False)
     assert out.shape == (640, 640, 3)

@@ -93,9 +93,12 @@ def prep_stretch_imagenet(img_bgr: np.ndarray, imgsz: int):
     """``(tensor, None)`` for the BiRefNet workflow: BGR INTER_LINEAR stretch, then RGB.
 
     Same order and filter as BiRefNet's training loader (``utils.path_to_image``: ``cv2.resize``
-    on the BGR image, then ``cvtColor`` to RGB), so the uint8 pixels the model sees are identical.
+    on the BGR image, then ``cvtColor`` to RGB), except that the resize is OpenCV's platform-exact
+    bilinear (``ultra_replacements.RESIZE``), so every platform feeds the model the same pixels.
     """
-    r = cv2.resize(img_bgr, (imgsz, imgsz), interpolation=cv2.INTER_LINEAR)
+    from leafmachine3.inference.ultra_replacements import RESIZE
+
+    r = cv2.resize(img_bgr, (imgsz, imgsz), interpolation=RESIZE)
     return _normalize_imagenet(cv2.cvtColor(r, cv2.COLOR_BGR2RGB)), None
 
 

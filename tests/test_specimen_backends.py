@@ -96,9 +96,10 @@ def _ref_unet_input(img_bgr, imgsz):
     return ((ci.astype(np.float32) / 255.0 - MEAN) / STD).transpose(2, 0, 1)[None]
 
 
-def _ref_birefnet_input(img_bgr, imgsz):
-    """path_to_image: cv2.resize(BGR, (w, h), INTER_LINEAR) -> RGB; ToTensor (/255); Normalize."""
-    image = cv2.resize(img_bgr, (imgsz, imgsz), interpolation=cv2.INTER_LINEAR)
+def _ref_birefnet_input(img_bgr, imgsz, interpolation=cv2.INTER_LINEAR_EXACT):
+    """path_to_image: cv2.resize(BGR, (w, h)) -> RGB; ToTensor (/255); Normalize. BiRefNet trained with
+    INTER_LINEAR; LM3 uses OpenCV's platform-exact bilinear (ultra_replacements.RESIZE)."""
+    image = cv2.resize(img_bgr, (imgsz, imgsz), interpolation=interpolation)
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     return ((rgb.astype(np.float32) / 255.0 - MEAN) / STD).transpose(2, 0, 1)[None]
 
@@ -111,10 +112,13 @@ def test_unet_input_is_byte_identical_to_its_training_letterbox(hw):
 
 
 @pytest.mark.parametrize("hw", [(1601, 1033), (900, 1500)])
-def test_birefnet_input_is_byte_identical_to_its_training_loader(hw):
+def test_birefnet_input_is_its_training_loader_with_the_exact_resize(hw):
     img = _sheet(*hw)
     x, _ = SS.prep_stretch_imagenet(img, 1024)
     assert x.shape == (1, 3, 1024, 1024) and np.array_equal(x, _ref_birefnet_input(img, 1024))
+    # and within two pixel levels of the training loader's INTER_LINEAR (upscaling noise is the worst case)
+    level = 1 / 255.0 / STD.min()
+    assert np.abs(x - _ref_birefnet_input(img, 1024, cv2.INTER_LINEAR)).max() <= 2 * level + 1e-5
 
 
 def test_unet_and_birefnet_inputs_differ_for_a_non_square_sheet():

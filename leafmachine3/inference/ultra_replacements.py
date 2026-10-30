@@ -21,8 +21,9 @@ sorted detections (no NMS). What Ultralytics still did for us on top of ``onnxru
 Each step below is a line-for-line port of the Ultralytics 8.4.107 code it replaces (named in the
 docstrings) with ``numpy`` / ``cv2`` standing in for ``torch``. Rounding conventions (``round(x - 0.1)``
 pads, ``np.mod`` stride padding, float32 arithmetic) are preserved so boxes and keypoints match the
-Ultralytics path bit-for-bit on the same execution provider; masks match up to last-ulp differences
-in bilinear upsampling (see ``_bilinear_resize``).
+Ultralytics path bit-for-bit on the same execution provider and the same input tensor; masks match
+up to last-ulp differences in bilinear upsampling (see ``_bilinear_resize``). The one deliberate
+departure is the letterbox resize (:data:`RESIZE`), which is platform-exact where Ultralytics' is not.
 
 **Division convention.** Ultralytics runs its three scalar divisions (``im /= 255``, ``boxes /= gain``,
 ``coords /= gain``) as torch tensor ops. On a CUDA device torch's ``div`` kernel turns a CPU-scalar
@@ -54,6 +55,14 @@ import numpy as np
 log = logging.getLogger("leafmachine3.inference.ultra_rep")
 
 PAD_VALUE = 114          # LetterBox(padding_value=114)
+#: The letterbox resize. Ultralytics uses ``cv2.INTER_LINEAR``, but OpenCV computes that differently on
+#: x86 and on ARM: on the 23 example sheets the same image, decoded to identical pixels, came out of it
+#: with 15-25% of pixels one level apart (Linux x86_64 vs an M2 Pro, opencv-python-headless 5.0.0.93),
+#: enough to move confidences by up to 0.4 and change detection counts. ``INTER_LINEAR_EXACT`` is
+#: OpenCV's bit-exact bilinear: identical on both machines for all 23 sheets, and within one level of
+#: ``INTER_LINEAR`` on ~10% of pixels. Every platform resizes with it, so a Mac, Linux and Windows
+#: feed every YOLO model the same tensor (tools/verification/input_fingerprint.py checks this).
+RESIZE = cv2.INTER_LINEAR_EXACT
 DEFAULT_IMGSZ = 640      # ultralytics cfg/default.yaml ``imgsz: 640`` (used when a caller passes none)
 DEFAULT_MAX_DET = 300    # ultralytics cfg/default.yaml ``max_det: 300``
 
@@ -150,7 +159,8 @@ def letterbox(img: np.ndarray, new_shape: tuple[int, int], stride: int = 32, aut
     ``auto=True`` is what the Ultralytics predictor uses for a dynamic-shape ONNX export
     (``rect=True`` and ``model.dynamic``): the image is scaled so its long side is ``new_shape`` and
     the short side is padded only up to the next multiple of ``stride``. ``scaleup=True``,
-    ``scale_fill=False``, ``center=True``, ``padding_value=114``, ``cv2.INTER_LINEAR`` are the defaults.
+    ``scale_fill=False``, ``center=True``, ``padding_value=114`` are the defaults. The resize is
+    :data:`RESIZE` (``INTER_LINEAR_EXACT``), not Ultralytics' ``INTER_LINEAR``: see there.
     """
     shape = img.shape[:2]                                  # (h, w)
     r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
@@ -164,7 +174,7 @@ def letterbox(img: np.ndarray, new_shape: tuple[int, int], stride: int = 32, aut
     top, bottom = (round(dh - 0.1) if center else 0), round(dh + 0.1)
     left, right = (round(dw - 0.1) if center else 0), round(dw + 0.1)
     if shape[::-1] != new_unpad:
-        img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+        img = cv2.resize(img, new_unpad, interpolation=RESIZE)
     return cv2.copyMakeBorder(img, int(top), int(bottom), int(left), int(right),
                               cv2.BORDER_CONSTANT, value=(PAD_VALUE, PAD_VALUE, PAD_VALUE))
 

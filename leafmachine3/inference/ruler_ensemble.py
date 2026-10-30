@@ -215,9 +215,11 @@ class _Member:
 
         if self.family == "dinov2":
             resize_size, crop_size, interp = 256, 224, cv2.INTER_CUBIC
-        else:  # yolo classify transform
+        else:  # yolo classify transform, with OpenCV's platform-exact bilinear (ultra_replacements.RESIZE)
+            from leafmachine3.inference.ultra_replacements import RESIZE
+
             resize_size = crop_size = self.imgsz
-            interp = cv2.INTER_LINEAR
+            interp = RESIZE
         img = _resize_shortest(rgb, resize_size, interp)
         img = _center_crop(img, crop_size)
         arr = img.astype(np.float32) / 255.0

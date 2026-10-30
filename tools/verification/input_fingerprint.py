@@ -15,7 +15,9 @@ Per image it records the SHA-256 of:
 * ``ingest_resized`` / ``ingest_jpeg`` / ``ingest_decoded``: for images ingest downsizes, the Pillow
   LANCZOS resize, the JPEG it writes and that JPEG decoded again (the working image);
 * ``letterbox``: the working image letterboxed to ``--imgsz``, as the detectors see it;
-* ``resize_exact``: the same resize with ``cv2.INTER_LINEAR_EXACT``, OpenCV's platform-exact variant.
+* ``resize_exact``: the same resize with ``cv2.INTER_LINEAR_EXACT``, OpenCV's platform-exact variant;
+* ``prim_*``: the other OpenCV resizes and warps the pipeline runs on images, masks and maps, each on
+  this image (:data:`PRIMITIVES`), so a platform difference anywhere downstream is named too.
 
 Once per machine it also runs the archival detector's ONNX file on the CPU on a seeded random tensor
 (``ort_random``), so differences in the network arithmetic alone show up separately from the inputs.
@@ -68,6 +70,52 @@ def versions() -> dict:
     return out
 
 
+def _rotate(img, angle, interp, ceil=False):
+    """``imaging.rotate_image`` / ``ruler_lattice.lattice.rotate_bound``: rotate onto an expanded canvas."""
+    h, w = img.shape[:2]
+    m = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), angle, 1.0)
+    c, s_ = abs(m[0, 0]), abs(m[0, 1])
+    f = np.ceil if ceil else np.round
+    nw, nh = int(f(h * s_ + w * c)), int(f(h * c + w * s_))
+    m[0, 2] += nw / 2.0 - w / 2.0
+    m[1, 2] += nh / 2.0 - h / 2.0
+    return cv2.warpAffine(img, m, (nw, nh), flags=interp, borderValue=(255, 255, 255) if img.ndim == 3 else 0)
+
+
+def _long(img, n):
+    r = n / max(img.shape[:2])
+    return max(1, round(img.shape[1] * r)), max(1, round(img.shape[0] * r))
+
+
+def _short(img, n):
+    r = n / min(img.shape[:2])
+    return max(1, round(img.shape[1] * r)), max(1, round(img.shape[0] * r))
+
+
+#: name -> f(working BGR image): the OpenCV resamplings the pipeline applies to pixels it measures or
+#: feeds a model, on inputs shaped like the real ones.
+PRIMITIVES = {
+    # UNet++ specimen input (letterbox_imagenet): INTER_AREA, long side 1024
+    "area_1024": lambda im: cv2.resize(im, _long(im, 1024), interpolation=cv2.INTER_AREA),
+    # ruler squarify / stored tiles: INTER_AREA downscale
+    "area_512": lambda im: cv2.resize(im[:1440, :1440], (512, 512), interpolation=cv2.INTER_AREA),
+    # DINOv2 ruler member: INTER_CUBIC, shortest side 256; YOLO ruler members: INTER_LINEAR
+    "cubic_256": lambda im: cv2.resize(im[:900, :700], _short(im[:900, :700], 256), interpolation=cv2.INTER_CUBIC),
+    "linear_224": lambda im: cv2.resize(im[:900, :700], _short(im[:900, :700], 224), interpolation=cv2.INTER_LINEAR),
+    # mask logits / probabilities upsampled to native size (float32 INTER_LINEAR)
+    "linear_float_up": lambda im: cv2.resize(
+        (cv2.resize(cv2.cvtColor(im, cv2.COLOR_BGR2GRAY), (160, 160), interpolation=cv2.INTER_AREA)
+         .astype(np.float32) / 255.0 - 0.5), (1000, 700), interpolation=cv2.INTER_LINEAR),
+    # leaf orientation (imaging.rotate_image): INTER_LINEAR image, INTER_NEAREST mask
+    "rotate_linear": lambda im: _rotate(im[:1200, :900], -23.7, cv2.INTER_LINEAR),
+    "rotate_nearest_mask": lambda im: _rotate(
+        (cv2.cvtColor(im[:1200, :900], cv2.COLOR_BGR2GRAY) > 128).astype(np.uint8), -23.7, cv2.INTER_NEAREST),
+    # ruler lattice (lattice.rotate_bound): INTER_CUBIC
+    "rotate_cubic": lambda im: _rotate(cv2.cvtColor(im[:600, :1400], cv2.COLOR_BGR2GRAY), 7.3, cv2.INTER_CUBIC,
+                                       ceil=True),
+}
+
+
 def ingest_copy(path: Path, max_dim: int, quality: int):
     """``Ingest._normalize`` in memory: (resized RGB array or None, JPEG bytes or None)."""
     with Image.open(path) as im:
@@ -89,8 +137,9 @@ def fingerprint(args) -> dict:
     wanted = set(args.dump_images.split(",")) if args.dump_images else set()
     if dump:
         dump.mkdir(parents=True, exist_ok=True)
-    out = {"versions": versions(), "settings": {"max_dim": args.max_dim, "quality": args.quality,
-                                                "imgsz": args.imgsz}, "images": {}}
+    out = {"versions": versions(), "images": {},
+           "settings": {"max_dim": args.max_dim, "quality": args.quality, "imgsz": args.imgsz,
+                        "letterbox_resize": int(getattr(ultra_rep, "RESIZE", cv2.INTER_LINEAR))}}
     for p in images:
         rec = {}
         raw = p.read_bytes()
@@ -111,9 +160,12 @@ def fingerprint(args) -> dict:
         r = args.imgsz / max(work.shape[:2])
         size = (round(work.shape[1] * r), round(work.shape[0] * r))
         rec["resize_exact"] = sha(cv2.resize(work, size, interpolation=cv2.INTER_LINEAR_EXACT))
+        for name, fn in PRIMITIVES.items():
+            rec[f"prim_{name}"] = sha(fn(work))
         rec["shape"] = list(work.shape)
         out["images"][p.name] = rec
-        print(p.name, " ".join(f"{k}={v}" for k, v in rec.items() if k != "shape"), flush=True)
+        print(p.name, " ".join(f"{k}={v}" for k, v in rec.items() if k != "shape" and not k.startswith("prim_")),
+              flush=True)
         if dump and p.stem in wanted:
             arrays = {"decode_cv2": dec, "letterbox": lb}
             if jpeg is not None:
@@ -141,7 +193,7 @@ def compare(a_path: str, b_path: str) -> int:
         va, vb = a["versions"].get(k), b["versions"].get(k)
         print(f"  {'  ' if va == vb else '!='} {k}: {va} | {vb}")
     steps = ["file", "decode_cv2", "decode_pil", "ingest_resized", "ingest_jpeg", "ingest_decoded", "letterbox",
-             "resize_exact"]
+             "resize_exact"] + [f"prim_{n}" for n in PRIMITIVES]
     counts = {s: [0, 0] for s in steps}
     print("first step that differs, per image:")
     for name in sorted(set(a["images"]) & set(b["images"])):
