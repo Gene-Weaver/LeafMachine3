@@ -18,6 +18,7 @@ from leafmachine3.core.landmarks import KPT_INDEX
 from leafmachine3.core.records import LandmarkRow
 from leafmachine3.core.stage import PipelineStage, WorkItem
 from leafmachine3.inference import load_landmark_pose
+from leafmachine3.inference.coreml_native import crop_shape_order
 
 log = logging.getLogger("leafmachine3.landmark_detector")
 
@@ -52,8 +53,10 @@ class LandmarkDetector(PipelineStage):
     def infer(self, item: WorkItem, model) -> list[LandmarkRow]:
         """Predict keypoints per crop; re-base each to parent (working) coords."""
         rows: list[LandmarkRow] = []
-        for crop in item.payload:
-            for inst_index, leaf in enumerate(model.predict(crop.crop_path)):
+        # predict grouped by input shape (cheaper on Core ML), assemble in the original order
+        preds = {j: model.predict(item.payload[j].crop_path) for j in crop_shape_order(item.payload)}
+        for j, crop in enumerate(item.payload):
+            for inst_index, leaf in enumerate(preds.pop(j)):
                 for name, (xc, yc, conf) in leaf.items():
                     idx = KPT_INDEX.get(name)
                     if idx is None:

@@ -203,3 +203,34 @@ def test_the_exporter_covers_the_default_models_that_run_on_coreml(tmp_path):
     assert set(by_stage) == {"archival_detector", "plant_detector", "landmark_detector", "leaf_segmenter",
                              "specimen_segmenter", "ruler_classifier"}
     assert by_stage["ruler_classifier"] == ["yolo26x_cls_224"]          # the n and DINOv2 members stay on the CPU
+
+
+# --------------------------------------------------------------------------------------------------
+# Fewer shape changes, same rows
+# --------------------------------------------------------------------------------------------------
+def test_crops_are_grouped_by_the_input_shape_they_get():
+    from types import SimpleNamespace
+
+    from leafmachine3.inference import ultra_replacements as ultra_rep
+
+    rng = np.random.default_rng(3)
+    crops = []
+    for _ in range(400):
+        w, h = (int(v) for v in rng.integers(30, 2500, 2))
+        crops.append(SimpleNamespace(x1=10.0, y1=20.0, x2=10.0 + w, y2=20.0 + h))
+    order = cn.crop_shape_order(crops)
+    assert sorted(order) == list(range(len(crops)))
+    for imgsz in (640, 1024):
+        seq = [tuple(ultra_rep.preprocess(np.zeros((int(c.y2 - c.y1), int(c.x2 - c.x1), 3), np.uint8),
+                                          (imgsz, imgsz), 32, True).shape) for c in (crops[i] for i in order)]
+        runs = [s for k, s in enumerate(seq) if k == 0 or s != seq[k - 1]]
+        assert len(runs) == len(set(seq)), "each input shape should come up in one run"
+
+
+def test_cpu_only_is_refused_for_a_package_with_several_shapes(tmp_path, monkeypatch):
+    """Core ML's CPU path crashes the process on an enumerated-shape package (BNNS, macOS 26)."""
+    monkeypatch.delenv("LM3_COREML_SIMULATE", raising=False)
+    monkeypatch.setenv("LM3_COREML_UNITS", "CPUOnly")
+    onnx_path, pkg = _package(tmp_path / "m", onnx_bytes=b"", shapes=((1, 900, 13), (1, 400, 13)))
+    with pytest.raises(cn.CoremlPackageError, match="CPU path crashes"):
+        cn.NativeSession(pkg, onnx_path)

@@ -15,6 +15,10 @@ What a `coreml_fp32` package is (made by `tools/modelhub/export_coreml_fp32.py`)
   leaf segmenter and 39 for landmarks, all in one compiled model.
 - **No top-k inside the model.** YOLO26 networks stop where their end2end top-k step begins (CoreML got
   the boxes wrong there), and LM3 runs that step in numpy, identically to the ONNX graph.
+- **Attention rewritten so Apple's GPU compiler accepts it.** MPSGraph aborts on Ultralytics'
+  `v @ attn^T` (your 7ac03d2 bisection), so the exporter writes it as `(attn @ v^T)^T`. On Linux the
+  rewritten networks are bit-identical to the originals (difference 0.0 on every output of all four
+  YOLO26 models).
 
 The six default models get packages: archival, plant, leaf segmenter, landmarks, the UNet++ specimen
 segmenter and the YOLO26x ruler member. The YOLO26n and DINOv2 ruler members stay on the CPU. A model
@@ -38,7 +42,11 @@ A package compiles once and holds every shape.
 
 **Memory:** report `/usr/bin/time -l`'s **peak memory footprint** line, not maximum resident set size.
 On a92ae5b, RSS stayed at 2-2.6 GB while the footprint grew past 18 GB: RSS under-counts Core ML's
-memory.
+memory. `time` must wrap Python, not uv, so the commands below put it after `uv run ...`.
+
+**Shape changes:** Core ML spends about 150-250 ms whenever the input shape changes (your 7ac03d2
+measurement). The leaf segmenter and landmark stages now predict each sheet's crops grouped by input
+shape and assemble the rows in the original order, so the rows are the same.
 
 ## 1. Check out the branch
 
@@ -69,26 +77,31 @@ not modified.
 ## 2. Make the six packages
 
 ```bash
-uv run --frozen --no-sync lm3 models install --formats pytorch,meta --dest ~/lm3-checkpoints --yes
-/usr/bin/time -l uv run --frozen --no-sync $CONVERT \
+uv run --frozen --no-sync lm3 models install --formats pytorch,meta --dest ~/lm3-checkpoints --yes   # done already
+uv run --frozen --no-sync $CONVERT /usr/bin/time -l \
   python tools/modelhub/export_coreml_fp32.py all --models $MODELS --pytorch ~/lm3-checkpoints
 ```
 
-The first command downloads the pinned checkpoints (about 1.4 GB) into a separate folder. The
-second writes `$MODELS/<model>/coreml_fp32/` beside each ONNX model: `model.mlpackage` plus
-`model.json`, the contract LM3 reads. For each model it prints:
+The checkpoints are already in `~/lm3-checkpoints` from the last round. The second command writes
+`$MODELS/<model>/coreml_fp32/` beside each ONNX model: `model.mlpackage` plus `model.json`, the
+contract LM3 reads. It replaces the UNet++ package the last round wrote. For each model it prints:
 
 - one `check` line per tested input size, comparing the traced network with the ONNX model;
-- `converted in N s`, then `wrote ...`.
+- `converted in N s`;
+- `load test on this Mac: ...`. The package is loaded on CPU+GPU in a child process and run on the
+  same inputs as the checks. The line shows the load time, CoreML vs ONNX max difference and the
+  milliseconds per call. A package that fails to load (a compiler abort kills only the child) or
+  disagrees beyond 1e-3 is removed and reported, and the exporter moves on to the next model;
+- `wrote ...`.
 
-Expect `6 package(s) written`. Report every `check` line, the total time and any error. Deleting
-the `coreml_fp32` folders undoes this step.
+Expect `6 package(s) written`. Report every `check` and `load test` line, the total time and any
+`FAILED` line. Deleting the `coreml_fp32` folders undoes this step.
 
 ## 3. Model by model
 
 ```bash
-uv run --frozen --no-sync $CML python tools/macos/verify_coreml.py --n 23 --json native_1.json
-uv run --frozen --no-sync $CML python tools/macos/verify_coreml.py --n 23 --json native_2.json   # again: cached load
+uv run --frozen --no-sync $CML /usr/bin/time -l python tools/macos/verify_coreml.py --n 23 --json native_1.json
+uv run --frozen --no-sync $CML /usr/bin/time -l python tools/macos/verify_coreml.py --n 23 --json native_2.json   # again: cached load
 ```
 
 Each model gets an `[ok  ]` / `[warn]` / `[fail]` line comparing CoreML with the CPU, then a line with:
@@ -101,12 +114,9 @@ Each model gets an `[ok  ]` / `[warn]` / `[fail]` line comparing CoreML with the
 - **inputs run on the CPU:** must not appear. It means an input size the package does not list.
 
 Expect `ok` on all 6 and `on CoreML` for all 6. `ok` means within float32 rounding of the CPU, the
-same bar CUDA meets on Linux. If any model warns or fails, run that model once more on Core ML's CPU
-(also float32). That separates the Apple GPU's arithmetic from the conversion:
-
-```bash
-LM3_COREML_UNITS=CPUOnly uv run --frozen --no-sync $CML python tools/macos/verify_coreml.py --n 23 --only <model> --json native_cpuonly.json
-```
+same bar CUDA meets on Linux. Don't use `LM3_COREML_UNITS=CPUOnly` here. Core ML's CPU path crashes on
+packages with several input shapes (your BNNS SIGTRAP), so LM3 now refuses CPUOnly for those models
+and runs their ONNX file on the CPU instead.
 
 ## 4. Doctor
 
@@ -123,10 +133,10 @@ One after another, not in parallel. `/usr/bin/time -l` reports wall time and pea
 
 ```bash
 # a. the CPU reference on this commit (CoreML off)
-LM3_COREML=0 /usr/bin/time -l uv run --frozen --no-sync machine3 --config LM3_settings.yaml --run-name mac_cpu
+LM3_COREML=0 uv run --frozen --no-sync /usr/bin/time -l machine3 --config LM3_settings.yaml --run-name mac_cpu
 
 # b. native CoreML
-/usr/bin/time -l uv run --frozen --no-sync $CML machine3 --config LM3_settings.yaml --run-name mac_native
+uv run --frozen --no-sync $CML /usr/bin/time -l machine3 --config LM3_settings.yaml --run-name mac_native
 
 grep -E "GPU plan|CoreML" runs/mac_native/logs/lm3.log | head -40
 uv run --frozen --no-sync python tools/verification/compare_runs_close.py runs/mac_cpu runs/mac_native --json cmp_native.json
@@ -144,7 +154,7 @@ In the run (b) log, expect:
 
 | Check | Pass | CUDA vs CPU (Linux) |
 |---|---|---|
-| packages | 6 written; every ONNX check within 1e-3 | Linux export: YOLO <= 6e-5, UNet++ 1.1e-4 |
+| packages | 6 written; every ONNX check and load test within 1e-3 | Linux export: YOLO <= 6e-5, UNet++ 1.1e-4 |
 | `verify_coreml.py --n 23` | 6/6 `ok`, all on CoreML, no inputs on the CPU | 6/6 |
 | `lm3 doctor --models` | check 7 OK | |
 | run exit | exit 0, `stage_errors.csv` empty | |
@@ -158,12 +168,12 @@ In the run (b) log, expect:
 ## Report back
 
 - The commit tested, the chip and the RAM.
-- Step 2: every `check` line, the total time, any error.
-- Both `verify_coreml.py` outputs and their JSON files, plus the CPU-only one if you ran it.
+- Step 2: every `check` and `load test` line, the total time, any `FAILED` line.
+- Both `verify_coreml.py` outputs and their JSON files.
 - The doctor `--models` line.
 - Wall time and peak memory footprint for steps 2 and 3 and runs (a) and (b).
 - Per-stage times for runs (a) and (b), as in the a92ae5b report.
 - The `grep` output from the run (b) log.
 - The comparison output and `cmp_native.json`.
-- `runs/mac_cpu/reports/Data/` as a zip. On Linux, the CPU measures 258 leaves on the 23 examples and
-  the Mac CPU 257; the CSVs let Linux find which leaf and why.
+- If the switch cost still dominates: run (b)'s leaf segmenter and landmark stage times, so the next
+  step (grouping crops across sheets, not only within one) can be judged.

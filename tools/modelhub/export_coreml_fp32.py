@@ -21,7 +21,14 @@ LM3. A ``coreml_fp32`` package gives the CPU's answers because:
 Before converting, the traced network is compared with the published ONNX model on the CPU (the split
 tensors of an end2end graph, the whole output otherwise) at several input shapes, so a package is never
 built from a network that differs from the ONNX model. Conversion runs on Linux or macOS; only running a
-package needs a Mac.
+package needs a Mac. On a Mac the package is then loaded on the GPU in a child process and run on the
+same inputs, compared with the ONNX model again (``load_test`` in model.json): a package that does not
+load, or disagrees, is removed and reported, and ``all`` goes on with the next model.
+
+Two rewrites make the network convert and compile, both the same arithmetic (the ONNX comparison proves
+it for each package): Proto26's resize-to-size becomes an integer scale factor, and Attention's
+``v @ attn^T`` becomes ``(attn @ v^T)^T`` -- Apple's GPU compiler (MPSGraph, macOS 26) aborts on the
+original form, in every YOLO26 model, including Ultralytics' own CoreML exports.
 
 Environment: torch, ultralytics 8.4.79 (the version LM3's ONNX exports were made with), coremltools 9.0,
 onnx and onnxruntime; segmentation_models_pytorch for UNet++. On a Mac, without touching LM3's own
@@ -50,7 +57,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 import types
 from pathlib import Path
@@ -105,7 +116,7 @@ def yolo_network(checkpoint: str):
     import torch.nn.functional as F
     from ultralytics import YOLO
     from ultralytics.nn.modules import C2f, Classify, Detect
-    from ultralytics.nn.modules.block import Proto, Proto26
+    from ultralytics.nn.modules.block import Attention, Proto, Proto26
 
     yolo = YOLO(checkpoint)
     task, model = yolo.task, yolo.model
@@ -144,6 +155,8 @@ def yolo_network(checkpoint: str):
                 return Proto.forward(self, self.feat_fuse(feat))
 
             m.forward = types.MethodType(proto_forward, m)
+        elif isinstance(m, Attention):
+            m.forward = types.MethodType(_attention_forward, m)
 
     class Flat(torch.nn.Module):
         def __init__(self, net):
@@ -160,6 +173,20 @@ def yolo_network(checkpoint: str):
         return Flat(model).eval(), task, None, [], 0
     names = ["boxes", "scores"] + (["extra"] if len(sizes) == 3 else []) + (["protos"] if task == "segment" else [])
     return Flat(model).eval(), task, names, sizes, max_det
+
+
+def _attention_forward(self, x):
+    """Ultralytics ``Attention.forward`` (8.4.79) with its second matmul written as ``(attn @ v^T)^T``
+    instead of ``v @ attn^T`` -- the same products and sums. Apple's GPU compiler (MPSGraph) aborts the
+    whole process ("MLIR pass manager failed") on the original form under macOS 26; this one compiles."""
+    B, C, H, W = x.shape
+    N = H * W
+    qkv = self.qkv(x)
+    q, k, v = qkv.view(B, self.num_heads, self.key_dim * 2 + self.head_dim, N).split(
+        [self.key_dim, self.key_dim, self.head_dim], dim=2)
+    attn = ((q.transpose(-2, -1) @ k) * self.scale).softmax(dim=-1)
+    o = (attn @ v.transpose(-2, -1)).transpose(-2, -1)
+    return self.proj(o.reshape(B, C, H, W) + self.pe(v.reshape(B, C, H, W)))
 
 
 def unetpp_network(checkpoint: str):
@@ -223,8 +250,10 @@ def check_inputs(shape: tuple, images: Sequence[Path], i: int, normalize=None) -
     return np.ascontiguousarray(x.transpose(2, 0, 1)[None])
 
 
-def compare_with_onnx(traced, sess, shapes: Sequence[tuple], images: Sequence[Path] = (), normalize=None) -> list[dict]:
-    """Traced network vs the ONNX session on the CPU, one input per shape."""
+def compare_with_onnx(traced, sess, shapes: Sequence[tuple], images: Sequence[Path] = (), normalize=None,
+                      keep: list | None = None) -> list[dict]:
+    """Traced network vs the ONNX session on the CPU, one input per shape. ``keep`` collects
+    ``(shape, input, onnx outputs)`` for the Mac load test."""
     import torch
 
     rows = []
@@ -235,6 +264,8 @@ def compare_with_onnx(traced, sess, shapes: Sequence[tuple], images: Sequence[Pa
             got = traced(torch.from_numpy(x))
         got = [t.numpy() for t in (got if isinstance(got, (tuple, list)) else [got])]
         ref = sess.run(None, {in_name: x})
+        if keep is not None:
+            keep.append((shape, x, ref))
         worst = []
         for g, r in zip(got, ref):
             if g.shape != r.shape:
@@ -281,7 +312,64 @@ def convert(traced, input_name: str, shapes: Sequence[tuple], output_names: Sequ
         traced, convert_to="mlprogram", compute_precision=ct.precision.FLOAT32,
         minimum_deployment_target=getattr(ct.target, MIN_TARGET),
         inputs=[ct.TensorType(name=input_name, shape=shape, dtype=np.float32)],
-        outputs=[ct.TensorType(name=n, dtype=np.float32) for n in output_names])
+        outputs=[ct.TensorType(name=n, dtype=np.float32) for n in output_names],
+        skip_model_load=True)          # loading compiles for the GPU; done in a child (mac_load_test)
+
+
+def _rel_diffs(got: Sequence[np.ndarray], ref: Sequence[np.ndarray]) -> list[float]:
+    return [float(np.abs(np.asarray(g, np.float32) - r).max()) / max(float(np.abs(r).max()), 1.0)
+            for g, r in zip(got, ref)]
+
+
+def mac_load_test(pkg: Path, samples: list, timeout: int = 1800) -> dict:
+    """On a Mac: load the package on CPU+GPU in a child process and run the check inputs through it.
+
+    A Core ML compiler failure kills the process it happens in (SIGABRT), so the load runs in a child:
+    a failure is reported instead of ending the exporter. Off a Mac (or with
+    LM3_EXPORT_SKIP_LOAD_TEST=1) nothing runs."""
+    if sys.platform != "darwin" or os.environ.get("LM3_EXPORT_SKIP_LOAD_TEST") == "1":
+        return {"skipped": "not on a Mac" if sys.platform != "darwin" else "LM3_EXPORT_SKIP_LOAD_TEST=1"}
+    with tempfile.TemporaryDirectory() as td:
+        inp, outp = Path(td) / "in.npz", Path(td) / "out.npz"
+        np.savez(inp, **{f"x{i}": x for i, (_shape, x, _ref) in enumerate(samples)})
+        cmd = [sys.executable, str(Path(__file__).resolve()), "load-test", str(pkg), str(inp), str(outp)]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": f"no answer after {timeout} s"}
+        if r.returncode != 0:
+            tail = [ln for ln in (r.stderr or "").splitlines() if ln.strip()][-6:]
+            return {"ok": False, "returncode": r.returncode, "error": " | ".join(tail)}
+        info = json.loads(r.stdout.strip().splitlines()[-1])
+        got = np.load(outp)
+        rows = [{"shape": list(shape), "max_rel_diff": _rel_diffs([got[f"y{i}_{j}"] for j in range(len(ref))], ref)}
+                for i, (shape, _x, ref) in enumerate(samples)]
+    worst = max(max(r["max_rel_diff"]) for r in rows)
+    return {"ok": worst <= CHECK_TOL, "load_s": info["load_s"], "ms": info["ms"], "coreml_vs_onnx": rows,
+            "max_rel_diff": worst}
+
+
+def _load_test_child(pkg: str, inp: str, outp: str) -> int:
+    """The child side of :func:`mac_load_test`: load, predict each input, save the outputs."""
+    import coremltools as ct
+
+    t0 = time.perf_counter()
+    model = ct.models.MLModel(pkg, compute_units=ct.ComputeUnit.CPU_AND_GPU)
+    load_s = time.perf_counter() - t0
+    spec = model.get_spec()
+    in_name = spec.description.input[0].name
+    out_names = [o.name for o in spec.description.output]
+    xs = np.load(inp)
+    out, ms = {}, []
+    for i in range(len(xs.files)):
+        t0 = time.perf_counter()
+        y = model.predict({in_name: xs[f"x{i}"]})
+        ms.append(round((time.perf_counter() - t0) * 1000.0, 1))
+        for j, n in enumerate(out_names):
+            out[f"y{i}_{j}"] = np.asarray(y[n], np.float32)
+    np.savez(outp, **out)
+    print(json.dumps({"load_s": round(load_s, 2), "ms": ms}))
+    return 0
 
 
 def versions() -> dict[str, str]:
@@ -333,7 +421,8 @@ def export(kind: str, checkpoint: str, onnx_path: str, out: str, n_check: int = 
 
     sess = onnx_split_session(onnx_path) if tail == "end2end" else ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
     pick = [shapes[i] for i in np.unique(np.linspace(0, len(shapes) - 1, max(1, n_check)).round().astype(int))]
-    check = compare_with_onnx(traced, sess, pick, check_images, IMAGENET if kind == "unetpp" else None)
+    samples: list = []
+    check = compare_with_onnx(traced, sess, pick, check_images, IMAGENET if kind == "unetpp" else None, samples)
     if not all(r["ok"] for r in check):
         raise SystemExit(f"the traced network differs from {onnx_path} by more than {CHECK_TOL} -- not converting")
     del sess
@@ -371,8 +460,20 @@ def export(kind: str, checkpoint: str, onnx_path: str, out: str, n_check: int = 
               "onnx_check": check, "exporter": versions(),
               "package_bytes": sum(p.stat().st_size for p in out_p.rglob("*") if p.is_file()),
               "seconds": round(time.perf_counter() - t0, 1)}
+    t2 = time.perf_counter()
+    record["load_test"] = mac_load_test(out_p, samples)
+    if record["load_test"].get("ok") is False:
+        shutil.rmtree(out_p, ignore_errors=True)
+        lt = record["load_test"]
+        raise SystemExit(f"{out_p} failed the load test on this Mac and was removed: "
+                         + (lt.get("error") or f"CoreML vs ONNX max diff {lt.get('max_rel_diff'):.1e} > {CHECK_TOL}"))
+    if "ok" in record["load_test"]:
+        lt = record["load_test"]
+        print(f"  load test on this Mac: loaded in {lt['load_s']:.1f} s, CoreML vs ONNX max diff "
+              f"{lt['max_rel_diff']:.1e}, predict ms {lt['ms']} ({time.perf_counter() - t2:.0f} s)", flush=True)
     (out_p.parent / "model.json").write_text(json.dumps(record, indent=1))
-    print(f"wrote {out_p} ({record['package_bytes'] / 1e6:.0f} MB) + model.json in {record['seconds']:.0f} s", flush=True)
+    print(f"wrote {out_p} ({record['package_bytes'] / 1e6:.0f} MB) + model.json in "
+          f"{time.perf_counter() - t0:.0f} s", flush=True)
     return record
 
 
@@ -407,6 +508,9 @@ def lock_jobs(models: Path, pytorch: Path, out: Path, only: Sequence[str] = ()) 
 
 
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["load-test"]:                # internal: the child process of mac_load_test
+        return _load_test_child(*argv[1:4])
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="kind", required=True)
     one = {}
@@ -435,11 +539,18 @@ def main(argv=None) -> int:
     missing = [str(f) for job in jobs for f in job[3:5] if not Path(f).is_file()]
     if missing:
         raise SystemExit("missing (install the onnx and pytorch formats first):\n  " + "\n  ".join(missing))
+    failed = []
     for stage, key, kind, ckpt, onnx_path, out in jobs:
         print(f"\n=== {stage} ({key})", flush=True)
-        export(kind, str(ckpt), str(onnx_path), str(out), a.check_shapes, images)
-    print(f"\n{len(jobs)} package(s) written", flush=True)
-    return 0
+        try:
+            export(kind, str(ckpt), str(onnx_path), str(out), a.check_shapes, images)
+        except (SystemExit, Exception) as exc:  # noqa: BLE001 - report and go on with the next model
+            failed.append(f"{stage}: {exc}")
+            print(f"FAILED {stage}: {exc}", flush=True)
+    print(f"\n{len(jobs) - len(failed)} package(s) written" + (f", {len(failed)} failed:" if failed else ""), flush=True)
+    for f in failed:
+        print(f"  {f}", flush=True)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

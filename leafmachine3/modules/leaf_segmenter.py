@@ -23,6 +23,7 @@ from leafmachine3.core.imaging import (
 from leafmachine3.core.records import LeafRow
 from leafmachine3.core.stage import PipelineStage, WorkItem
 from leafmachine3.inference import load_segmenter
+from leafmachine3.inference.coreml_native import crop_shape_order
 
 log = logging.getLogger("leafmachine3.leaf_segmenter")
 
@@ -75,9 +76,11 @@ class LeafSegmenter(PipelineStage):
     def infer(self, item: WorkItem, model) -> list[LeafRow]:
         """Segment each crop and re-base every polygon to parent (working) coords."""
         rows: list[LeafRow] = []
-        for crop in item.payload:
+        # predict grouped by input shape (cheaper on Core ML), assemble in the original order
+        preds = {j: model.predict(item.payload[j].crop_path) for j in crop_shape_order(item.payload)}
+        for j, crop in enumerate(item.payload):
             leaves: list[tuple[int, np.ndarray]] = []
-            for i, inst in enumerate(model.predict(crop.crop_path)):
+            for i, inst in enumerate(preds.pop(j)):
                 poly = offset_polygon(inst.polygon, crop.x1, crop.y1)
                 if inst.cls_name == "Leaf":
                     owner = i

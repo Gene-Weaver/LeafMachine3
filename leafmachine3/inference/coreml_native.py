@@ -19,7 +19,9 @@ Environment switches (testing; the defaults are what a Mac user gets):
 
 * ``LM3_COREML=0`` -- never use CoreML.
 * ``LM3_COREML_UNITS`` -- ``CPUAndGPU`` (default) | ``CPUOnly`` | ``ALL``. ``ALL`` adds the Neural
-  Engine, which computes in float16 only: a speed probe, never a setting for real work.
+  Engine, which computes in float16 only: a speed probe, never a setting for real work. ``CPUOnly``
+  applies to fixed-size packages only: Core ML's CPU path crashes the process on a package with
+  several input shapes (BNNS, macOS 26), so those models run their ONNX twin on the CPU instead.
 * ``LM3_COREML_SIMULATE=1`` -- off a Mac, run this whole path with the ONNX twin (cut at the same
   split) on the CPU in place of CoreML, so everything except CoreML itself is tested on Linux.
 """
@@ -291,6 +293,9 @@ class NativeSession:
         self._inputs = [_Arg(n, list(s)) for n, s in self.info.onnx_inputs]
         self._outputs = [_Arg(n, list(s)) for n, s in self.info.onnx_outputs]
         self._meta = _ModelMeta(dict(self.info.metadata))
+        if compute_units() == "CPUOnly" and len(self.info.shapes) > 1 and not simulated():
+            raise CoremlPackageError(f"{self.label}: Core ML's CPU path crashes on a package with several input "
+                                     "shapes; LM3_COREML_UNITS=CPUOnly runs this model's ONNX file on the CPU")
         self._lock = threading.Lock()
         self._cpu = None                 # the ONNX twin on the CPU, built on the first unlisted shape
         self._warned: set = set()
@@ -357,6 +362,23 @@ class NativeSession:
         else:
             result = {name: np.asarray(out[name], np.float32) for name in self.info.outputs}
         return [result[n] for n in names]
+
+
+def crop_shape_order(crops: Sequence[Any]) -> list[int]:
+    """Indices of ``crops`` (records with ``x1, y1, x2, y2``) grouped by the input shape each will get.
+
+    A crop's letterbox shape depends only on its orientation and aspect ratio, so sorting by those puts
+    equal shapes next to each other: portrait from thin to square, then landscape from square to thin
+    (near-square crops of both orientations share the square shape). Core ML spends ~150-250 ms whenever
+    the input shape changes, even to a shape it has seen (M2 Pro, macOS 26), so a stage predicts in this
+    order and assembles its rows in the original order: the same rows, fewer shape changes."""
+    def key(i: int):
+        c = crops[i]
+        w, h = max(float(c.x2) - float(c.x1), 1.0), max(float(c.y2) - float(c.y1), 1.0)
+        ratio = round(min(w, h) / max(w, h), 4)
+        return (0, ratio, i) if h >= w else (1, -ratio, i)
+
+    return sorted(range(len(crops)), key=key)
 
 
 def session_for(onnx_path: str | os.PathLike) -> Optional[NativeSession]:
