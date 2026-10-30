@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Mapping
@@ -55,6 +56,8 @@ class Action:
 class Lock:
     schema_version: int
     lm3_version: str
+    #: the formats installed by default HERE: the lock's ``default_formats`` plus this platform's
+    #: ``platform_formats`` (a Mac adds ``coreml_fp32``)
     default_formats: tuple[str, ...]
     actions: Mapping[str, Action] = field(default_factory=dict)
     path: str | None = None
@@ -98,7 +101,15 @@ def alternate_record_key(stage: str, model_key: str) -> str:
     return f"{stage}__{model_key}"
 
 
-def parse_lock(data: Mapping, path: str | None = None) -> Lock:
+def resolve_default_formats(data: Mapping, platform: str | None = None) -> tuple[str, ...]:
+    """The lock's ``default_formats`` plus the ``platform_formats`` entry for ``platform``
+    (default: this interpreter's ``sys.platform``)."""
+    base = tuple(data.get("default_formats") or ("onnx",))
+    extra = ((data.get("platform_formats") or {}).get(platform or sys.platform)) or ()
+    return base + tuple(f for f in extra if f not in base)
+
+
+def parse_lock(data: Mapping, path: str | None = None, platform: str | None = None) -> Lock:
     actions: dict[str, Action] = {}
     for key, spec in (data.get("actions") or {}).items():
         actions[key] = Action(key=key, required=bool(spec.get("required", True)),
@@ -114,7 +125,7 @@ def parse_lock(data: Mapping, path: str | None = None) -> Lock:
                 stage=stage, model_key=model_key, settings=dict(spec.get("settings") or {}),
                 activatable=bool((data.get("actions") or {}).get(stage, {}).get("activatable", True)))
     return Lock(schema_version=int(data.get("schema_version", 1)), lm3_version=str(data.get("lm3_version", "")),
-                default_formats=tuple(data.get("default_formats") or ("onnx",)), actions=actions, path=path,
+                default_formats=resolve_default_formats(data, platform), actions=actions, path=path,
                 alternates=alternates)
 
 

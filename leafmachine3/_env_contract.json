@@ -1,8 +1,8 @@
 {
  "_generated_by": "tools/release/write_env_contract.py -- do not edit by hand",
- "lm3_version": "3.0.1050",
+ "lm3_version": "3.0.1051",
  "locks": {
-  "uv_lock_sha256": "1961ff331acc4089c5c58d46d9f1c10dc62005c947d378cc6b4d9352106a4b84",
+  "uv_lock_sha256": "7a460774533d1773f4c5f05fc2abc590e7078be4772c2c15e6a537aa81eccc07",
   "models_lock_sha256": "4e1cc53d29fa773a87b5c70feee5e42784118537085c716d8c4b93df9103aa1e",
   "models_lock_version": "3.0.1044",
   "models_lock_generated_at": "2026-10-25T18:02:14+00:00",
@@ -711,6 +711,16 @@
     "marker": "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
    },
    {
+    "name": "attrs",
+    "version": "26.1.0",
+    "marker": "platform_machine == 'arm64' and sys_platform == 'darwin'"
+   },
+   {
+    "name": "cattrs",
+    "version": "26.2.1",
+    "marker": "platform_machine == 'arm64' and sys_platform == 'darwin'"
+   },
+   {
     "name": "certifi",
     "version": "2026.7.22",
     "marker": "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
@@ -744,6 +754,11 @@
     "name": "contourpy",
     "version": "1.3.3",
     "marker": "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+   },
+   {
+    "name": "coremltools",
+    "version": "9.0",
+    "marker": "platform_machine == 'arm64' and sys_platform == 'darwin'"
    },
    {
     "name": "cycler",
@@ -836,11 +851,6 @@
     "marker": "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
    },
    {
-    "name": "ml-dtypes",
-    "version": "0.6.0",
-    "marker": "platform_machine == 'arm64' and sys_platform == 'darwin'"
-   },
-   {
     "name": "mpmath",
     "version": "1.3.0",
     "marker": "platform_machine == 'arm64' and sys_platform == 'darwin'"
@@ -864,11 +874,6 @@
     "name": "numpy",
     "version": "2.4.4",
     "marker": "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
-   },
-   {
-    "name": "onnx",
-    "version": "1.22.0",
-    "marker": "platform_machine == 'arm64' and sys_platform == 'darwin'"
    },
    {
     "name": "onnxruntime",
@@ -899,6 +904,11 @@
     "name": "psutil",
     "version": "7.2.2",
     "marker": "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')"
+   },
+   {
+    "name": "pyaml",
+    "version": "26.7.0",
+    "marker": "platform_machine == 'arm64' and sys_platform == 'darwin'"
    },
    {
     "name": "pydantic",

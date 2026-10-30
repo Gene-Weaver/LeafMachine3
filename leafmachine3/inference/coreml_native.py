@@ -96,7 +96,7 @@ def package_for(onnx_path: str | os.PathLike) -> Optional[Path]:
 
 
 # --------------------------------------------------------------------------------------------------
-# The YOLO26 end2end tail (also used by the onnxruntime route in coreml.py)
+# The YOLO26 end2end tail
 # --------------------------------------------------------------------------------------------------
 def _topk(a: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
     """onnxruntime ``TopK(largest=1, sorted=1)`` on the last axis; equal values keep index order."""

@@ -115,12 +115,12 @@ MP Conversion Factor → Archival Detector → Plant Detector → Specimen Segme
 | Python | none to install: `uv` downloads the pinned 3.11 interpreter itself |
 | NVIDIA GPU (recommended) | driver ≥ 525.60 (Linux) / 528.33 (Windows); no CUDA toolkit needed. Check with `nvidia-smi`. |
 | CPU-only | supported on every platform; expect runs to be several times slower |
-| Apple Silicon | supported; inference runs through the CoreML execution provider, falling back to CPU |
-| Disk | About 1.7 GB for default models, plus several GB for the environment (especially GPU dependencies) and space for run outputs |
+| Apple Silicon | supported; the detectors and segmenters run on the Apple GPU with Core ML (float32), the rest on the CPU |
+| Disk | About 1.7 GB for default models (3.0 GB on a Mac, which also gets the Core ML packages), plus several GB for the environment (especially GPU dependencies) and space for run outputs |
 
 > **A GPU is optional, not required.** Pick the `cpu` or `macos` variant below and the whole
-> pipeline runs unchanged, just slower. The Apple-GPU path has had far less testing than CUDA;
-> if `lm3 doctor` reports the CPU provider on a Mac, the run still works.
+> pipeline runs unchanged, just slower. On a Mac, `lm3 doctor --models` runs every Core ML model
+> against the CPU and reports any that differ; a model without its Core ML package runs on the CPU.
 
 ### Install
 
@@ -141,7 +141,7 @@ uv sync --frozen --extra gpu       # NVIDIA GPU, Linux or Windows
 uv sync --frozen --extra cpu       # no GPU, any platform
 uv sync --frozen --extra macos     # Apple Silicon
 
-# 4. models (about 1.7 GB, from Hugging Face)
+# 4. models (about 1.7 GB, 3.0 GB on a Mac, from Hugging Face)
 uv run --frozen --no-sync lm3 models install --yes
 ```
 

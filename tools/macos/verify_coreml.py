@@ -1,15 +1,13 @@
 """Check the CoreML path model by model on a Mac: same answers as the CPU, and how much faster.
 
 Every model the settings select that LM3 sends to CoreML is run twice on the same images -- once
-through the CoreML path exactly as a pipeline worker builds it (its ``coreml_fp32`` package, by
-default), once on the CPU as every other platform runs it, with the same input tensors -- and compared
+through the CoreML path exactly as a pipeline worker builds it (its ``coreml_fp32`` package), once on
+the CPU as every other platform runs it, with the same input tensors -- and compared
 (leafmachine3/inference/coreml_check.py). Prints the environment, one line per model (with load time
-and first-call vs later-call milliseconds for a package), and exits 1 if any model gives different
-answers.
+and first-call vs later-call milliseconds), and exits 1 if any model gives different answers.
 
-Usage (from the LeafMachine3 folder; coremltools is layered in until the lock carries it):
-    uv run --frozen --no-sync --with coremltools==9.0 python tools/macos/verify_coreml.py --n 23 --json out.json
-    LM3_COREML_UNITS=CPUOnly ...   # Core ML on the CPU (float32): separates GPU arithmetic from conversion
+Usage (from the LeafMachine3 folder, installed with ``uv sync --frozen --extra macos``):
+    uv run --frozen --no-sync python tools/macos/verify_coreml.py --n 23 --json out.json
 
 On Linux it runs only with LM3_COREML_SIMULATE=1 (each package's network stood in for by its ONNX twin
 on the CPU), which checks everything except Core ML itself.
@@ -49,19 +47,15 @@ def main(argv=None) -> int:
     env = {k: v for k, v in os.environ.items() if k.startswith("LM3_COREML")}
     print(f"platform      {platform.platform()} ({platform.machine()})")
     print(f"onnxruntime   {ort.__version__}  providers {ort.get_available_providers()}")
-    if coreml.route() == "native":
-        from leafmachine3.inference import coreml_native
+    from leafmachine3.inference import coreml_native
 
-        try:
-            import coremltools
-            ct_version = coremltools.__version__
-        except Exception:  # noqa: BLE001
-            ct_version = "not installed"
-        print(f"coreml        route=native available={coreml.available()} simulated={coreml.simulated()} "
-              f"units={coreml_native.compute_units()} coremltools {ct_version}")
-    else:
-        print(f"coreml        route=ort available={coreml.available()} simulated={coreml.simulated()} "
-              f"options={coreml.provider_options()}")
+    try:
+        import coremltools
+        ct_version = coremltools.__version__
+    except Exception:  # noqa: BLE001
+        ct_version = "not installed"
+    print(f"coreml        available={coreml.available()} simulated={coreml.simulated()} "
+          f"units={coreml_native.compute_units()} coremltools {ct_version}")
     print(f"switches      {env or '(defaults)'}")
     if not coreml.available():
         print("CoreML is not available here (on Linux, set LM3_COREML_SIMULATE=1 to test the code path).")
@@ -84,8 +78,8 @@ def main(argv=None) -> int:
           f"{len(warn)} warn, {len(bad)} fail")
     if args.json:
         Path(args.json).write_text(json.dumps({
-            "platform": platform.platform(), "onnxruntime": ort.__version__,
-            "options": coreml.provider_options(), "switches": env,
+            "platform": platform.platform(), "onnxruntime": ort.__version__, "coremltools": ct_version,
+            "units": coreml_native.compute_units(), "switches": env,
             "images": [str(p) for p in images], "results": rows}, indent=1, default=str))
         print(f"wrote {args.json}")
     return 1 if bad else 0

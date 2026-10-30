@@ -45,8 +45,12 @@ OPTIONAL_SUFFIXES = ("training_metadata.json", "fit_data.csv", "fit_mp_cf.py")
 #: added to the unit automatically (dest = <unit dir>/<repo path>), so a format that appears on the
 #: Hub later is picked up by regenerating the lock, not by editing this table. Multi-file formats
 #: (CoreML .mlpackage, OpenVINO) are listed file by file; the installer is per file anyway.
-FORMAT_FOLDERS = ("onnx", "coreml", "openvino", "torchscript", "pytorch")
+FORMAT_FOLDERS = ("onnx", "coreml", "coreml_fp32", "openvino", "torchscript", "pytorch")
 DEFAULT_FORMATS = ["onnx", "json"]
+#: Formats installed by default on one platform only, keyed by ``sys.platform``. A Mac runs each
+#: model's ``coreml_fp32`` package on the Apple GPU (inference/coreml_native.py) and keeps the ONNX
+#: file beside it for everything the package does not cover.
+PLATFORM_FORMATS = {"darwin": ["coreml_fp32"]}
 #: Stages whose model the user may not swap from the GUI.
 LOCKED_STAGES = frozenset({"mp_conversion_factor", "ruler_classifier", "landmark_detector"})
 
@@ -278,7 +282,9 @@ def build() -> dict:
     version = (HERE.parents[1] / "VERSION").read_text(encoding="utf-8").strip()   # the one LM3 version
     return {"schema_version": 1, "lm3_version": version, "hub_namespace": NAMESPACE,
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-            "default_formats": list(DEFAULT_FORMATS), "actions": actions, "alternates": alternates}
+            "default_formats": list(DEFAULT_FORMATS),
+            "platform_formats": {k: list(v) for k, v in PLATFORM_FORMATS.items()},
+            "actions": actions, "alternates": alternates}
 
 
 def main(argv=None) -> int:

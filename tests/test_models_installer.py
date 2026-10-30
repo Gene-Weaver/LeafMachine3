@@ -285,3 +285,50 @@ def test_cli_installs_an_alternate_and_prints_the_settings_lines(world, monkeypa
     assert cli.main(["--dest", str(world.root), "--lock", str(world.lock_path), "install", "--model", "seg=alt_key"]) == 0
     out = capsys.readouterr().out
     assert 'key: "alt_key"' in out and "seg/alt_key/model.onnx" in out and "imgsz: 640" in out
+
+
+# --------------------------------------------------------------------------------------------------
+# platform formats: a Mac installs each model's coreml_fp32 package beside its ONNX file
+# --------------------------------------------------------------------------------------------------
+def _platform_lock(tmp_path: Path) -> tuple[dict, dict]:
+    hub = {"onnx/model.onnx": b"ONNX", "coreml_fp32/model.json": b"{}",
+           "coreml_fp32/model.mlpackage/Manifest.json": b"MANIFEST"}
+    fmt = {"onnx/model.onnx": "onnx", "coreml_fp32/model.json": "coreml_fp32",
+           "coreml_fp32/model.mlpackage/Manifest.json": "coreml_fp32"}
+    files = [{"src": s, "dest": "det/" + s.replace("onnx/", ""), "format": fmt[s], "sha256": _sha(b), "bytes": len(b)}
+             for s, b in hub.items()]
+    lock = {"schema_version": 1, "lm3_version": "3.0.0", "default_formats": ["onnx", "json"],
+            "platform_formats": {"darwin": ["coreml_fp32"]},
+            "actions": {"det": {"required": True, "units": [{"repo_id": "org/det", "revision": "r1", "model_key": "x",
+                                                             "files": files}]}}}
+    return lock, hub
+
+
+def test_platform_formats_add_to_the_defaults_only_on_their_platform(tmp_path):
+    lock, _ = _platform_lock(tmp_path)
+    assert registry.parse_lock(lock, platform="darwin").default_formats == ("onnx", "json", "coreml_fp32")
+    assert registry.parse_lock(lock, platform="linux").default_formats == ("onnx", "json")
+    assert registry.parse_lock(lock, platform="win32").default_formats == ("onnx", "json")
+    del lock["platform_formats"]                                  # a lock from before platform formats
+    assert registry.parse_lock(lock, platform="darwin").default_formats == ("onnx", "json")
+
+
+def test_a_mac_installs_the_package_and_reports_it_missing_until_then(tmp_path):
+    lock, hub = _platform_lock(tmp_path)
+    root = tmp_path / "models"
+
+    def downloader(unit, lf, scratch, progress):
+        p = Path(scratch) / lf.src
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(hub[lf.src])
+        return p
+
+    linux, mac = registry.parse_lock(lock, platform="linux"), registry.parse_lock(lock, platform="darwin")
+    installer.install(root, lock=linux, downloader=downloader)
+    assert installer.status(root, lock=linux)["actions"]["det"]["state"] == "current"
+    assert not (root / "det" / "coreml_fp32").exists()
+    st = installer.status(root, lock=mac)["actions"]["det"]
+    assert st["state"] == "missing" and st["detail"] == "2 of 3 files missing"
+    installer.install(root, lock=mac, downloader=downloader)
+    assert installer.status(root, lock=mac)["actions"]["det"]["state"] == "current"
+    assert (root / "det" / "coreml_fp32" / "model.mlpackage" / "Manifest.json").read_bytes() == b"MANIFEST"

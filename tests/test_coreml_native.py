@@ -150,23 +150,11 @@ def test_a_broken_package_falls_back_to_the_cpu_with_a_warning(tmp_path, monkeyp
 # --------------------------------------------------------------------------------------------------
 # Routing
 # --------------------------------------------------------------------------------------------------
-def test_the_route_switch(monkeypatch):
-    monkeypatch.delenv("LM3_COREML_ROUTE", raising=False)
-    assert coreml.route() == "native"
-    monkeypatch.setenv("LM3_COREML_ROUTE", "ort")
-    assert coreml.route() == "ort"
-    monkeypatch.setenv("LM3_COREML_ROUTE", "bogus")
-    assert coreml.route() == "native"
-
-
 @needs_onnx
-def test_the_native_route_never_falls_back_to_the_onnxruntime_route(tmp_path, monkeypatch):
+def test_without_a_package_a_yolo_model_runs_on_the_cpu(tmp_path, monkeypatch):
     monkeypatch.setenv("LM3_COREML_SIMULATE", "1")
-    monkeypatch.delenv("LM3_COREML_ROUTE", raising=False)
     (tmp_path / "model.onnx").write_bytes(_end2end_graph(9, 0, k=300))
-    assert coreml.yolo_session(str(tmp_path / "model.onnx"), coreml.providers()) is None   # no package: CPU
-    monkeypatch.setenv("LM3_COREML_ROUTE", "ort")
-    assert isinstance(coreml.yolo_session(str(tmp_path / "model.onnx"), coreml.providers()), coreml.End2EndSession)
+    assert coreml.yolo_session(str(tmp_path / "model.onnx"), coreml.providers()) is None
 
 
 def test_one_tail_implementation():

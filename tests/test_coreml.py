@@ -1,10 +1,10 @@
-"""The macOS CoreML path (leafmachine3/inference/coreml.py), tested where CoreML does not exist.
+"""The macOS Core ML path (leafmachine3/inference/coreml.py), tested where Core ML does not exist.
 
-What CoreML itself computes can only be checked on a Mac (tools/macos/README.md). What is pinned
-here is everything around it: the options onnxruntime 1.20.1 actually reads, which models go to
-CoreML, the executor's one-worker plan, and -- the part the box-bug fix rests on -- that cutting an
-end2end graph before its top-k tail and redoing the tail in numpy gives EXACTLY the full graph's
-output.
+What Core ML itself computes can only be checked on a Mac (tools/macos/README.md). What is pinned
+here is everything around it: which models go to Core ML, the executor's one-worker plan, the
+doctor's Core ML probe, and -- what every ``coreml_fp32`` package rests on -- that cutting an end2end
+graph before its top-k tail and redoing the tail in numpy gives EXACTLY the full graph's output.
+(The packages themselves: tests/test_coreml_native.py.)
 """
 from __future__ import annotations
 
@@ -24,32 +24,32 @@ REPO = Path(__file__).resolve().parents[1]
 # --------------------------------------------------------------------------------------------------
 # providers / options
 # --------------------------------------------------------------------------------------------------
-def test_options_use_the_flags_key_onnxruntime_1_20_reads(monkeypatch):
-    """1.20.1 ignores named keys ({"ModelFormat": ...}); only ``flags`` reaches CoreML."""
-    for var in ("LM3_COREML_UNITS", "LM3_COREML_FORMAT"):
-        monkeypatch.delenv(var, raising=False)
-    opts = coreml.provider_options()
-    assert set(opts) == {"flags"}
-    flags = opts["flags"].split("|")
-    assert set(flags) == {"COREML_FLAG_ONLY_ALLOW_STATIC_INPUT_SHAPES", "COREML_FLAG_CREATE_MLPROGRAM",
-                          "COREML_FLAG_USE_CPU_AND_GPU"}
-
-
-def test_option_switches(monkeypatch):
-    monkeypatch.setenv("LM3_COREML_UNITS", "ALL")
-    monkeypatch.setenv("LM3_COREML_FORMAT", "NeuralNetwork")
-    assert coreml.provider_options()["flags"] == "COREML_FLAG_ONLY_ALLOW_STATIC_INPUT_SHAPES"
-    monkeypatch.setenv("LM3_COREML_UNITS", "CPUOnly")
-    assert "COREML_FLAG_USE_CPU_ONLY" in coreml.provider_options()["flags"]
-    monkeypatch.setenv("LM3_COREML_UNITS", "bogus")
-    assert "COREML_FLAG_USE_CPU_AND_GPU" in coreml.provider_options()["flags"]
-
-
-def test_doctor_probe_passes_the_same_coreml_options():
+def test_the_doctor_probes_core_ml_natively(monkeypatch):
+    """Core ML is not an onnxruntime provider in LM3: check 6 runs its own Core ML probe."""
     from leafmachine3 import doctor_probe
 
-    assert doctor_probe._provider_options("CoreMLExecutionProvider") == coreml.provider_options()
+    monkeypatch.setattr(doctor_probe, "run_coreml_probe", lambda: {"bound": "CoreMLExecutionProvider", "native": True})
+    assert doctor_probe.run_probe("CoreMLExecutionProvider")["native"]
     assert doctor_probe._provider_options("CUDAExecutionProvider") == {"device_id": 0}
+    assert doctor_probe._provider_options("CPUExecutionProvider") == {}
+
+
+def test_the_core_ml_probe_reference_is_a_padded_conv_and_relu():
+    from leafmachine3 import doctor_probe
+
+    rng = np.random.default_rng(0)
+    x, w, b = rng.random((1, 3, 6, 5)), rng.normal(size=(2, 3, 3, 3)), rng.normal(size=2)
+    xp = np.pad(x, ((0, 0), (0, 0), (1, 1), (1, 1)))
+    want = np.zeros((1, 2, 6, 5))
+    for o in range(2):
+        for i in range(6):
+            for j in range(5):
+                want[0, o, i, j] = max(0.0, b[o] + (w[o] * xp[0, :, i:i + 3, j:j + 3]).sum())
+    np.testing.assert_allclose(doctor_probe._probe_conv_reference(x, w, b), want, rtol=1e-12, atol=1e-12)
+
+
+def test_the_marker_list_never_carries_onnxruntime_options():
+    assert coreml.providers() == ["CoreMLExecutionProvider", "CPUExecutionProvider"]
 
 
 def test_coreml_device_hands_out_coreml_first():
@@ -203,17 +203,19 @@ def _feat(nc: int, extra: int, anchors: int = 900, ties: bool = False, seed: int
 @pytest.mark.parametrize("nc,extra", [(9, 0), (3, 32), (1, 93)])     # detect, segment, pose
 @pytest.mark.parametrize("ties", [False, True])
 def test_cut_plus_numpy_tail_equals_the_full_graph(tmp_path, nc, extra, ties):
+    from leafmachine3.inference import coreml_native as cn
+
     path = tmp_path / "m.onnx"
     path.write_bytes(_end2end_graph(nc, extra, k=300))
     feat = _feat(nc, extra, ties=ties)
     full = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"]).run(None, {"feat": feat})[0]
-    sess = coreml.End2EndSession(str(path), ["CPUExecutionProvider"])
-    assert sess.tail.split_sizes == tuple([4, nc] + ([extra] if extra else []))
-    assert sess.tail.max_det == 300
-    got = sess.run(None, {"feat": feat})[0]
+    split = cn.find_end2end_split(onnx.load(str(path)))
+    assert split is not None and len(split.output) == (3 if extra else 2)
+    parts = ort.InferenceSession(cn.onnx_split_model(path), providers=["CPUExecutionProvider"]).run(None, {"feat": feat})
+    assert [p.shape[-1] for p in parts] == [4, nc] + ([extra] if extra else [])
+    got = coreml.end2end_tail(parts[0], parts[1], parts[2] if extra else None, 300)
     assert got.shape == full.shape == (1, 300, 6 + extra)
     np.testing.assert_array_equal(got, full)
-    assert sess.get_outputs()[0].name == "output0" and sess.get_modelmeta().custom_metadata_map["task"] == "detect"
 
 
 @needs_onnx
@@ -228,41 +230,24 @@ def test_k_is_capped_by_the_anchor_count(tmp_path):
 
 
 @needs_onnx
-def test_a_graph_without_the_tail_is_refused(tmp_path):
+def test_a_graph_without_the_tail_has_no_split(tmp_path):
     from onnx import TensorProto, helper
+
+    from leafmachine3.inference import coreml_native as cn
 
     graph = helper.make_graph([helper.make_node("Relu", ["x"], ["y"])], "plain",
                               [helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 4])],
                               [helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 4])])
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 18)])
-    with pytest.raises(coreml.CoremlUnsupported):
-        coreml.find_end2end_tail(model)
-
-
-@needs_onnx
-def test_one_session_per_input_shape_with_dims_pinned(tmp_path, monkeypatch):
-    path = tmp_path / "m.onnx"
-    path.write_bytes(_end2end_graph(9, 0, k=300))
-    seen = []
-    real = coreml.make_session
-    monkeypatch.setattr(coreml, "make_session", lambda m, p, d=None: seen.append(d) or real(m, p, d))
-    sess = coreml.End2EndSession(str(path), ["CPUExecutionProvider"])
-    for anchors in (900, 900, 1200):
-        sess.run(None, {"feat": _feat(9, 0, anchors=anchors)})
-    assert seen == [{"batch": 1, "anchors": 900}, {"batch": 1, "anchors": 1200}]
-
-
-@needs_onnx
-def test_simulation_swaps_coreml_for_the_cpu_provider(tmp_path, monkeypatch):
-    path = tmp_path / "m.onnx"
-    path.write_bytes(_end2end_graph(9, 0, k=300))
-    monkeypatch.setenv("LM3_COREML_SIMULATE", "1")
-    sess = coreml.make_session(str(path), coreml.providers(), {"batch": 1, "anchors": 900})
-    assert sess.get_providers() == ["CPUExecutionProvider"]
+    assert cn.find_end2end_split(model) is None
+    path = tmp_path / "plain.onnx"
+    onnx.save(model, str(path))
+    with pytest.raises(cn.CoremlPackageError):
+        cn.onnx_split_model(path)
 
 
 # --------------------------------------------------------------------------------------------------
-# the real exports, when installed (LM3_MODELS_DIR or <repo>/models)
+# the real exports and their packages, when installed (LM3_MODELS_DIR or <repo>/models)
 # --------------------------------------------------------------------------------------------------
 def _models_root() -> Path:
     return Path(os.environ.get("LM3_MODELS_DIR") or REPO / "models")
@@ -271,45 +256,28 @@ def _models_root() -> Path:
 @needs_onnx
 @pytest.mark.parametrize("name,task", [("plant_detector", "detect"), ("archival_detector", "detect"),
                                        ("leaf_segmenter", "segment"), ("landmark_detector", "pose")])
-def test_real_exports_cut_path_matches_the_full_graph(name, task, monkeypatch):
+def test_real_exports_native_path_matches_the_full_graph(name, task, monkeypatch):
+    """The simulated native path (the ONNX graph cut where the package is + the numpy tail) gives the
+    CPU's exact detections, fed the CPU's exact input tensor."""
     path = _models_root() / name / "model.onnx"
-    if not path.exists():
-        pytest.skip(f"{path} not installed")
+    if not (path.parent / "coreml_fp32" / "model.json").exists():
+        pytest.skip(f"no coreml_fp32 package beside {path}")
     from leafmachine3.inference import coreml_check
+    from leafmachine3.inference import coreml_native as cn
     from leafmachine3.inference import ultra_replacements as ultra_rep
 
     monkeypatch.setenv("LM3_COREML_SIMULATE", "1")
-    monkeypatch.setenv("LM3_COREML_ROUTE", "ort")
     img = ultra_rep.imread(coreml_check.calibration_images()[0])
     cut = ultra_rep.YOLO(path, task=task, providers=coreml.providers())
     ref = ultra_rep.YOLO(path, task=task, providers=["CPUExecutionProvider"])
-    assert isinstance(cut.session, coreml.End2EndSession)
+    assert isinstance(cut.session, cn.NativeSession)
     imgsz = ref.metadata["imgsz"]
     a = ref.predict(img, conf=0.1, imgsz=imgsz, retina_masks=True)[0]
     b = cut.predict(img, conf=0.1, imgsz=imgsz, retina_masks=True)[0]
-    # CoreML is fed the CPU's input tensor: the minimum rectangle, not a square
-    cpu_shape = ultra_rep.preprocess(img, ultra_rep.check_imgsz(imgsz, ref.stride), ref.stride, ref.auto_letterbox).shape
-    assert list(cut.session._sessions) == [tuple(cpu_shape)] and cpu_shape[2] != cpu_shape[3]
+    assert not cut.session.stats["cpu_fallback"]            # the CPU's rect shape is in the package
     np.testing.assert_array_equal(a.boxes.xyxy, b.boxes.xyxy)
     np.testing.assert_array_equal(a.boxes.conf, b.boxes.conf)
     if task == "segment" and a.masks is not None:
         np.testing.assert_array_equal(a.masks.data, b.masks.data)
     if task == "pose":
         np.testing.assert_array_equal(a.keypoints.data, b.keypoints.data)
-
-
-def test_dynamic_mode_drops_the_static_shapes_flag(monkeypatch):
-    monkeypatch.setenv("LM3_COREML_DYNAMIC", "1")
-    assert "STATIC" not in coreml.provider_options()["flags"]
-
-
-def test_session_cache_is_bounded(tmp_path, monkeypatch):
-    path = tmp_path / "m.onnx"
-    if onnx is None:
-        pytest.skip("needs the onnx package")
-    path.write_bytes(_end2end_graph(9, 0, k=300))
-    monkeypatch.setenv("LM3_COREML_MAX_SESSIONS", "2")
-    sess = coreml.End2EndSession(str(path), ["CPUExecutionProvider"])
-    for anchors in (900, 1000, 900, 1100, 1000):
-        sess.run(None, {"feat": _feat(9, 0, anchors=anchors)})
-    assert sess.n_built == 4 and [k[1] for k in sess._sessions] == [1100, 1000]   # 900 was least recent

@@ -367,6 +367,9 @@ def check_accelerator(env: Env, variant: str,
         return Check(6, "accelerator", FAIL,
                      f"{want} ran but returned wrong numbers (max |diff| vs CPU = {diff})",
                      "report this with the output of `lm3 doctor --json`")
+    if variant == "macos":
+        return Check(6, "accelerator", OK, f"Core ML (coremltools {res.get('coremltools_version')}) ran the probe "
+                     f"network in float32 on CPU+GPU (max |diff| vs numpy {diff:.1e})")
     return Check(6, "accelerator", OK, f"{want} bound and ran the probe model (max |diff| vs CPU {diff:.1e})")
 
 

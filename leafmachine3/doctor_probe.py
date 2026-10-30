@@ -25,13 +25,11 @@ PROBE_ONNX_B64 = (
     "CAgSCmxtMy1kb2N0b3I6nwgKJQoBeAoBdwoBYhIBYyIEQ29udioRCgRwYWRzQAFAAUABQAGgAQcKDAoBYxIBeSIEUmVsdRIQbG0zX2RvY3Rvcl9wcm9iZSrwBggICAMIAwgDEAFCAXdK4AaamZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD4qKQgIEAFCAWJKIM3MTL4lSRK++YqvvaEO6ryhDuo8+YqvPSVJEj7NzEw+WhsKAXgSFgoUCAESEAoCCAEKAggDCgIIIAoCCCBiGwoBeRIWChQIARIQCgIIAQoCCAgKAgggCgIIIEIECgAQEQ=="
 )
 
-def _provider_options(provider: str) -> dict:
-    """The options LM3's own sessions pass. CoreML: the ``flags`` form, the only one onnxruntime
-    1.20.1 reads (a ``{"ModelFormat": ...}`` dict is silently ignored there)."""
-    if provider == "CoreMLExecutionProvider":
-        from leafmachine3.inference.coreml import provider_options
+COREML = "CoreMLExecutionProvider"
 
-        return provider_options()
+
+def _provider_options(provider: str) -> dict:
+    """The options LM3's own sessions pass."""
     return {"device_id": 0} if provider == "CUDAExecutionProvider" else {}
 
 
@@ -45,8 +43,51 @@ def probe_input():
     return (np.arange(3 * 32 * 32, dtype=np.float32).reshape(1, 3, 32, 32) % 13) / 13.0
 
 
+def _probe_conv_reference(x, w, b):
+    """Conv(3x3, pad 1) + ReLU in float64 numpy: the probe network's exact answer."""
+    import numpy as np
+
+    xp = np.pad(x.astype(np.float64), ((0, 0), (0, 0), (1, 1), (1, 1)))
+    win = np.lib.stride_tricks.sliding_window_view(xp, (3, 3), axis=(2, 3))     # (1, C, H, W, 3, 3)
+    y = np.einsum("bchwij,ocij->bohw", win, w.astype(np.float64)) + b.astype(np.float64)[None, :, None, None]
+    return np.maximum(y, 0.0)
+
+
+def run_coreml_probe() -> dict:
+    """macOS check 6: build the probe network (Conv 3->8, 3x3 + ReLU) as a float32 Core ML program, run
+    it with Core ML on CPU+GPU -- the way LM3 runs a ``coreml_fp32`` package -- and compare it with numpy.
+    Needs no installed model; check 7 (``--models``) runs the real ones."""
+    out: dict = {"requested": COREML, "available": [], "bound": None, "max_abs_diff": None, "error": None}
+    try:
+        import numpy as np
+        import coremltools as ct
+        from coremltools.converters.mil import Builder as mb
+
+        out["coremltools_version"] = ct.__version__
+        x = probe_input()
+        w = ((np.arange(8 * 3 * 3 * 3) % 7 - 3) / 10.0).astype(np.float32).reshape(8, 3, 3, 3)
+        b = np.linspace(-0.2, 0.2, 8, dtype=np.float32)
+
+        @mb.program(input_specs=[mb.TensorSpec(shape=(1, 3, 32, 32))], opset_version=ct.target.macOS13)
+        def prog(x):
+            return mb.relu(x=mb.conv(x=x, weight=w, bias=b, pad_type="custom", pad=[1, 1, 1, 1]))
+
+        model = ct.convert(prog, convert_to="mlprogram", compute_precision=ct.precision.FLOAT32,
+                           minimum_deployment_target=ct.target.macOS13, compute_units=ct.ComputeUnit.CPU_AND_GPU)
+        out["available"] = [COREML]
+        y = next(iter(model.predict({"x": x}).values()))
+        out["bound"] = COREML
+        out["max_abs_diff"] = float(np.abs(np.asarray(y, np.float64) - _probe_conv_reference(x, w, b)).max())
+    except Exception as exc:  # noqa: BLE001 - every failure is a finding, reported not raised
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
 def run_probe(provider: str) -> dict:
-    """Bind provider the way LM3 does (requested first, CPU behind it) and run the probe model."""
+    """Bind provider the way LM3 does (requested first, CPU behind it) and run the probe model.
+    Core ML is not an onnxruntime provider in LM3: :func:`run_coreml_probe`."""
+    if provider == COREML:
+        return run_coreml_probe()
     out: dict = {"requested": provider, "available": [], "bound": None, "max_abs_diff": None, "error": None}
     try:
         import onnxruntime as ort
