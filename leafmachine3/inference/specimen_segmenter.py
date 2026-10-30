@@ -170,10 +170,13 @@ class BinaryOnnxSpecimenSegmenter:
                 raise FileNotFoundError(f"specimen segmenter model artifact not found: {self.model_path}")
             import onnxruntime as ort
 
+            from leafmachine3.inference import coreml
             from leafmachine3.inference.providers import session_options
-            session = ort.InferenceSession(
-                self.model_path, session_options(),
-                providers=list(providers) if providers else ["CPUExecutionProvider"])
+            providers = coreml.for_model(providers, coreml.specimen_on_coreml(spec.workflow, spec.key))
+            if coreml.is_coreml(providers):
+                session = coreml.make_static_session(self.model_path, providers, (1, 3, spec.imgsz, spec.imgsz))
+            else:
+                session = ort.InferenceSession(self.model_path, session_options(), providers=providers)
         self.session = session
         self._check_contract()
         self._input_name = self.session.get_inputs()[0].name

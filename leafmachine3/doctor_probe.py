@@ -6,6 +6,9 @@ re-exec'ing itself; this probe calls the very same function, so it binds the pro
 way a pipeline run will -- including failing the same way. A doctor that tested the provider in its
 own already-started process would pass where the pipeline silently falls back to the CPU.
 
+``--coreml-models [settings]`` (macOS, check 7) runs the real models on CoreML and on the CPU and
+compares them; see :func:`coreml_models`.
+
 Run as ``python -m leafmachine3.doctor_probe <ExecutionProvider>``. The LAST line on stdout is one
 JSON object: requested / available / bound provider, the max abs difference against a CPU reference
 run of the same model, and any error. onnxruntime's own diagnostics go to stderr, which the doctor
@@ -22,12 +25,14 @@ PROBE_ONNX_B64 = (
     "CAgSCmxtMy1kb2N0b3I6nwgKJQoBeAoBdwoBYhIBYyIEQ29udioRCgRwYWRzQAFAAUABQAGgAQcKDAoBYxIBeSIEUmVsdRIQbG0zX2RvY3Rvcl9wcm9iZSrwBggICAMIAwgDEAFCAXdK4AaamZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD6amZk+mpmZvs3MTL7NzMy9AAAAAM3MzD3NzEw+mpmZPpqZmb7NzEy+zczMvQAAAADNzMw9zcxMPpqZmT6amZm+zcxMvs3MzL0AAAAAzczMPc3MTD4qKQgIEAFCAWJKIM3MTL4lSRK++YqvvaEO6ryhDuo8+YqvPSVJEj7NzEw+WhsKAXgSFgoUCAESEAoCCAEKAggDCgIIIAoCCCBiGwoBeRIWChQIARIQCgIIAQoCCAgKAgggCgIIIEIECgAQEQ=="
 )
 
-#: provider -> options. CoreML: MLProgram is the format the LM3 CoreML path will use.
-PROVIDER_OPTIONS = {
-    "CUDAExecutionProvider": {"device_id": 0},
-    "CoreMLExecutionProvider": {"ModelFormat": "MLProgram"},
-    "CPUExecutionProvider": {},
-}
+def _provider_options(provider: str) -> dict:
+    """The options LM3's own sessions pass. CoreML: the ``flags`` form, the only one onnxruntime
+    1.20.1 reads (a ``{"ModelFormat": ...}`` dict is silently ignored there)."""
+    if provider == "CoreMLExecutionProvider":
+        from leafmachine3.inference.coreml import provider_options
+
+        return provider_options()
+    return {"device_id": 0} if provider == "CUDAExecutionProvider" else {}
 
 
 def probe_model_bytes() -> bytes:
@@ -49,7 +54,7 @@ def run_probe(provider: str) -> dict:
         out["ort_version"] = ort.__version__
         out["available"] = list(ort.get_available_providers())
         model, x = probe_model_bytes(), probe_input()
-        chain = ([(provider, PROVIDER_OPTIONS.get(provider, {}))] if provider != "CPUExecutionProvider" else []) \
+        chain = ([(provider, _provider_options(provider))] if provider != "CPUExecutionProvider" else []) \
             + ["CPUExecutionProvider"]
         sess = ort.InferenceSession(model, providers=chain)
         out["bound"] = sess.get_providers()[0]
@@ -76,8 +81,33 @@ def placement_session(model_path: str) -> None:
                                                    "CPUExecutionProvider"])
 
 
+def coreml_models(settings: str | None) -> dict:
+    """``lm3 doctor --models`` on a Mac: every CoreML-bound model vs its CPU reference on the packaged
+    calibration sheets (leafmachine3/inference/coreml_check.py). Run in a child because CoreML compiles
+    each model, which takes memory the doctor should not keep."""
+    import os
+
+    out: dict = {"results": [], "error": None}
+    try:
+        from leafmachine3.core.config import Config
+        from leafmachine3.inference import coreml_check
+
+        path = settings or "LM3_settings.yaml"
+        if not os.path.exists(path):
+            out["error"] = f"no settings file at {path} (run from the LeafMachine3 folder or pass --config)"
+            return out
+        out["results"] = coreml_check.check_models(Config.load(path), coreml_check.calibration_images()[:3],
+                                                   log=lambda s: print(s, file=sys.stderr))
+    except Exception as exc:  # noqa: BLE001 - every failure is a finding, reported not raised
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "--coreml-models":
+        print(json.dumps(coreml_models(args[1] if len(args) > 1 else None)))
+        return 0
     placement = bool(args) and args[0] == "--placement"
     provider = "CUDAExecutionProvider" if placement else (args[0] if args else "CPUExecutionProvider")
     if provider == "CUDAExecutionProvider" and sys.platform.startswith("linux"):

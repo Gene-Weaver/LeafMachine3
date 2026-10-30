@@ -16,8 +16,10 @@ at the first failure, because a later check's result is meaningless on top of an
  5    NVIDIA driver          (gpu) NVML sees a GPU and the driver meets the CUDA 12.4 minimum
  6    accelerator            a real ONNX Runtime session binds the accelerator AND runs, in a child
                              process that goes through machine3's own CUDA library-path step
- 7    models                 (``--models``) every required default model is installed and current
- 8    write access           the runtime state dir and the model folder are writable
+ 7    models                 (``--models``) every required default model is installed and current;
+                             (gpu) none of them falls back to the CPU for an op; (macos) every
+                             CoreML-bound model gives the CPU's answers on the calibration sheets
+ 8    write access          the runtime state dir and the model folder are writable
 ====  =====================  ===================================================================
 
 Check 6 is the one that catches the silent CPU fallback. ``get_available_providers()`` lists
@@ -402,9 +404,50 @@ def cpu_fallback_ops(model_path: str, environ: Mapping[str, str], timeout: float
     return sorted(set(re.findall(r"CUDA kernel not found in registries for Op type: (\w+)", cp.stderr)))
 
 
+def run_coreml_models(settings: Optional[str], environ: Mapping[str, str], timeout: float = 1200.0) -> dict:
+    """macOS check 7: :func:`leafmachine3.doctor_probe.coreml_models` in a child, its JSON back."""
+    cmd = [sys.executable, "-m", "leafmachine3.doctor_probe", "--coreml-models"] + ([settings] if settings else [])
+    try:
+        cp = subprocess.run(cmd, env=dict(environ), capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"results": [], "error": f"the CoreML model check did not finish in {timeout:.0f} s"}
+    last = next((ln for ln in reversed(cp.stdout.splitlines()) if ln.startswith("{")), None)
+    if last:
+        return json.loads(last)
+    tail = cp.stderr.strip().splitlines()[-1][:300] if cp.stderr.strip() else ""
+    return {"results": [], "error": f"the CoreML model check exited {cp.returncode} without a result {tail}".strip()}
+
+
+def check_coreml_models(settings: Optional[str], environ: Mapping[str, str],
+                        run: Callable[[Optional[str], Mapping[str, str]], dict] = run_coreml_models) -> Check:
+    """Run every CoreML-bound model on CoreML and on the CPU and compare (``inference/coreml_check.py``)."""
+    res = run(settings, environ)
+    if res.get("error"):
+        return Check(7, "models", FAIL, f"could not run the models on CoreML: {res['error']}",
+                     "report this with the output of `lm3 doctor --models --json`")
+    rows = res.get("results") or []
+    bad = [r for r in rows if r.get("verdict") == "fail"]
+    if bad:
+        return Check(7, "models", FAIL,
+                     f"{len(bad)} model(s) give different answers on CoreML than on the CPU: "
+                     + "; ".join(f"{r['model']} ({r.get('why', '')})" for r in bad),
+                     "report this with `lm3 doctor --models --json`; until it is fixed, LM3_COREML=0 runs on the CPU")
+    off = [r["model"] for r in rows if r.get("bound") not in ("CoreMLExecutionProvider", "(via ultra_rep)")]
+    loose = [r for r in rows if r.get("verdict") == "warn"]
+    speed = ", ".join(f"{r['model'].split()[-1]} x{r['ms_cpu'] / r['ms_coreml']:.1f}"
+                      for r in rows if r.get("ms_cpu") and r.get("ms_coreml"))
+    if off or loose:
+        what = ([f"ran on the CPU instead of CoreML: {', '.join(off)}"] if off else []) + \
+               ([f"agree less closely than expected: {', '.join(r['model'] for r in loose)}"] if loose else [])
+        return Check(7, "models", WARN, "; ".join(what) + f" (speed vs CPU: {speed})",
+                     "slower or slightly different, not wrong; `lm3 doctor --models --json` has the numbers")
+    return Check(7, "models", OK, f"all {len(rows)} CoreML models agree with the CPU (speed vs CPU: {speed})")
+
+
 def check_models(settings: Optional[str] = None, variant: Optional[str] = None,
                  environ: Optional[Mapping[str, str]] = None,
-                 fallback: Callable[[str, Mapping[str, str]], list[str]] = cpu_fallback_ops) -> Check:
+                 fallback: Callable[[str, Mapping[str, str]], list[str]] = cpu_fallback_ops,
+                 coreml_run: Callable[[Optional[str], Mapping[str, str]], dict] = run_coreml_models) -> Check:
     try:
         from leafmachine3.modelhub import installer
     except ImportError:
@@ -436,6 +479,8 @@ def check_models(settings: Optional[str] = None, variant: Optional[str] = None,
                          "re-export: tools/modelhub/fix_resize_opset.py, then `lm3 models install` once published")
         return Check(7, "models", OK, f"all required models current in {st['root']}; "
                      f"all {len(onnx_files)} ONNX models run entirely on the GPU")
+    if variant == "macos":
+        return check_coreml_models(settings, environ or os.environ, coreml_run)
     return Check(7, "models", OK, f"all required models current in {st['root']}")
 
 

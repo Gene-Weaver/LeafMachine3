@@ -390,5 +390,38 @@ def test_models_check_ok_when_everything_runs_on_the_gpu(monkeypatch, tmp_path):
 
 def test_models_check_does_not_probe_placement_without_a_gpu_variant(monkeypatch, tmp_path):
     _fake_status(monkeypatch, tmp_path)
-    c = doctor.check_models(variant="cpu", environ={}, fallback=lambda p, e: pytest.fail("no CUDA placement on cpu"))
+    c = doctor.check_models(variant="cpu", environ={}, fallback=lambda p, e: pytest.fail("no CUDA placement on cpu"),
+                            coreml_run=lambda s, e: pytest.fail("no CoreML comparison on cpu"))
     assert c.status == OK
+
+
+def _coreml_row(model, verdict="ok", bound="CoreMLExecutionProvider", why=""):
+    return {"model": model, "verdict": verdict, "bound": bound, "why": why, "ms_cpu": 600.0, "ms_coreml": 100.0}
+
+
+def test_models_check_on_a_mac_compares_coreml_with_the_cpu(monkeypatch, tmp_path):
+    _fake_status(monkeypatch, tmp_path)
+    rows = [_coreml_row("plant_detector"), _coreml_row("ruler_classifier x224")]
+    c = doctor.check_models(variant="macos", environ={}, coreml_run=lambda s, e: {"results": rows})
+    assert c.status == OK and "all 2 CoreML models agree with the CPU" in c.detail and "x224 x6.0" in c.detail
+
+
+def test_models_check_on_a_mac_fails_on_wrong_boxes(monkeypatch, tmp_path):
+    """The onnxruntime 1.20.1 CoreML box bug: scores right, boxes wrong -> FAIL, never a quiet pass."""
+    _fake_status(monkeypatch, tmp_path)
+    rows = [_coreml_row("plant_detector", "fail", why="found 3/48 confident detections"), _coreml_row("leaf_segmenter")]
+    c = doctor.check_models(variant="macos", environ={}, coreml_run=lambda s, e: {"results": rows})
+    assert c.status == FAIL and "plant_detector (found 3/48" in c.detail and "LM3_COREML=0" in c.fix
+
+
+def test_models_check_on_a_mac_warns_when_a_model_lands_on_the_cpu(monkeypatch, tmp_path):
+    _fake_status(monkeypatch, tmp_path)
+    rows = [_coreml_row("plant_detector", bound="CPUExecutionProvider"), _coreml_row("leaf_segmenter", "warn")]
+    c = doctor.check_models(variant="macos", environ={}, coreml_run=lambda s, e: {"results": rows})
+    assert c.status == WARN and "instead of CoreML: plant_detector" in c.detail and "less closely" in c.detail
+
+
+def test_models_check_on_a_mac_reports_a_probe_error(monkeypatch, tmp_path):
+    _fake_status(monkeypatch, tmp_path)
+    c = doctor.check_models(variant="macos", environ={}, coreml_run=lambda s, e: {"results": [], "error": "boom"})
+    assert c.status == FAIL and "boom" in c.detail

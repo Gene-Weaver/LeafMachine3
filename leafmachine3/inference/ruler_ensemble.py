@@ -172,9 +172,14 @@ class _Member:
         onnx_path = os.path.join(model_dir, "exported", "model.onnx")
         if not os.path.exists(onnx_path):
             raise FileNotFoundError(f"exported ONNX not found: {onnx_path}")
+        from leafmachine3.inference import coreml
         from leafmachine3.inference.providers import session_options
 
-        self.session = ort.InferenceSession(onnx_path, session_options(), providers=list(providers))
+        if coreml.is_coreml(providers):   # CoreML needs the one static shape _preprocess produces
+            crop = 224 if self.family == "dinov2" else self.imgsz
+            self.session = coreml.make_static_session(onnx_path, providers, (1, 3, crop, crop))
+        else:
+            self.session = ort.InferenceSession(onnx_path, session_options(), providers=list(providers))
         self._input_name = self.session.get_inputs()[0].name
         self._output_name = self.session.get_outputs()[0].name
         # The class names come from the shared label map, the scores from this model: if their
@@ -268,10 +273,14 @@ class RulerEnsemble:
             )
 
     def _load(self, members: Optional[Sequence[str]]) -> None:
+        from leafmachine3.inference import coreml
+
         self.classes = _load_label_map(self.models_dir)
         for key, dir_name in resolve_members(members):
+            # On a Mac only the members CoreML actually speeds up go there; the rest stay on the CPU.
+            providers = coreml.for_model(self.providers, key in coreml.COREML_RULER_MEMBERS)
             self._members[key] = _Member(
-                os.path.join(self.models_dir, dir_name), self.providers, self.classes
+                os.path.join(self.models_dir, dir_name), providers, self.classes
             )
 
     @staticmethod

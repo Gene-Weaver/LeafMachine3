@@ -69,7 +69,13 @@ gpu = [
     "nvidia-curand-cu12==10.3.5.147; sys_platform != 'darwin'",
 ]
 cpu = ["onnxruntime==1.20.1"]
-macos = ["onnxruntime==1.20.1; sys_platform == 'darwin'"]   # the macOS wheel exposes CoreMLExecutionProvider
+# macos: the macOS wheel exposes CoreMLExecutionProvider. onnx cuts the YOLO26 end2end top-k tail off a
+# graph before it goes to CoreML, whose integer index ops in onnxruntime 1.20.1 return wrong boxes
+# (leafmachine3/inference/coreml.py); the tail then runs in numpy. No other platform imports it at runtime.
+macos = [
+    "onnxruntime==1.20.1; sys_platform == 'darwin'",
+    "onnx==1.22.0; sys_platform == 'darwin'",
+]
 # Kept as an EMPTY alias: the server packages are now base dependencies, but `.[cpu,dev,server,test]`
 # style installs written before the fold (CI, docs) must still resolve. Remove with the CI rewrite.
 server = []

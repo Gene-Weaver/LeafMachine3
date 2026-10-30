@@ -184,6 +184,14 @@ class DeviceManager:
             return [Device("cpu")] * max(1, self._cpu_worker_count())
 
         gpus = self._resolve_gpus()
+        from leafmachine3.inference import coreml
+
+        if (not gpus or coreml.simulated()) and coreml.available():
+            # Apple GPU: ONE in-process worker. CoreML compiles each model for the GPU and shares the
+            # machine's unified memory, so the VRAM-sized fleet below does not apply.
+            log.info("%s: GPU plan: Apple GPU via CoreML, 1 worker%s", self.stage.key,
+                     " (SIMULATED on the CPU provider)" if coreml.simulated() else "")
+            return [Device("coreml")]
         if not gpus:
             return [Device("cpu")] * max(1, self._cpu_worker_count())
 
@@ -666,7 +674,8 @@ class StageExecutor:
 
     # -- path selection ----------------------------------------------------- #
     def _use_inprocess(self, devices: list[Device], n_items: int) -> bool:
-        """Prefer the simple, fork-free thread path for mock, CPU stages, or GPU-less plans.
+        """Prefer the simple, fork-free thread path for mock, CPU stages, or GPU-less plans (a
+        CoreML plan counts as GPU-less here: its single worker runs in-process, as on the CPU).
 
         Exception: a compute-heavy CPU stage that opts into ``cpu_parallel="process"`` runs on the
         spawn process pool (``_run_pool``) so it bypasses the GIL -- but ONLY when there is real
@@ -680,7 +689,7 @@ class StageExecutor:
                     and len(devices) > 1 and n_items >= self._min_pool_items()):
                 return False                             # -> spawn process pool
             return True                                  # thread pool, or serial for a tiny process batch
-        return all(d.kind == "cpu" for d in devices)
+        return all(d.kind in ("cpu", "coreml") for d in devices)
 
     def _min_pool_items(self) -> int:
         """Fewest WorkItems that justify spinning up the spawn process pool (spawn cost vs work).

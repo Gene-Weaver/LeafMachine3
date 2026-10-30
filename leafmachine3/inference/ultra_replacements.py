@@ -9,7 +9,8 @@ sorted detections (no NMS). What Ultralytics still did for us on top of ``onnxru
 
 1. load the image (``cv2.imdecode`` of the raw bytes),
 2. letterbox it (``LetterBox(auto=True)`` because the graph has dynamic H/W: long side -> ``imgsz``,
-   short side padded up to a multiple of the stride, gray 114, centered),
+   short side padded up to a multiple of the stride, gray 114, centered -- on CoreML too: a Mac gets
+   the same input tensor as every other platform, see ``coreml.py``),
 3. BGR->RGB, HWC->CHW, uint8 -> float32 / 255,
 4. ``session.run``,
 5. confidence filter + ``max_det`` slice (``non_max_suppression`` end2end branch),
@@ -287,7 +288,9 @@ class YOLO:
     task : {"detect", "segment", "pose"} or None
         Checked against the export's metadata ``task``; ``None`` takes the metadata value.
     providers : sequence or None
-        onnxruntime execution providers (e.g. ``Device.ort_providers()``). Defaults to CPU.
+        onnxruntime execution providers (e.g. ``Device.ort_providers()``). Defaults to CPU. A list that
+        starts with CoreML gets an :class:`~leafmachine3.inference.coreml.End2EndSession`: the network
+        on CoreML, the end2end tail in numpy, a CoreML session per input shape.
     """
 
     def __init__(self, model_path, task: Optional[str] = None, providers: Optional[Sequence] = None) -> None:
@@ -302,12 +305,23 @@ class YOLO:
                 "re-export with `format=onnx` (dynamic=True, nms=False)."
             )
         self.providers = list(providers) if providers else ["CPUExecutionProvider"]
+        from leafmachine3.inference import coreml
         from leafmachine3.inference.providers import session_options
 
-        self.session = ort.InferenceSession(self.model_path, session_options(), providers=self.providers)
+        self.session = None
+        if coreml.is_coreml(self.providers):
+            try:
+                self.session = coreml.End2EndSession(self.model_path, self.providers)
+            except coreml.CoremlUnsupported as exc:
+                log.warning("ultra_rep.YOLO: %s cannot run on CoreML (%s); using the CPU",
+                            os.path.basename(self.model_path), exc)
+                self.providers = list(coreml.CPU_PROVIDERS)
+        if self.session is None:
+            self.session = ort.InferenceSession(self.model_path, session_options(), providers=self.providers)
+        coreml_session = isinstance(self.session, coreml.End2EndSession)
         self.bound_provider = self.session.get_providers()[0]
         requested = self.providers[0][0] if isinstance(self.providers[0], (tuple, list)) else self.providers[0]
-        if requested != self.bound_provider:
+        if requested != self.bound_provider and not coreml_session:   # CoreML binds per shape, at first use
             log.warning("ultra_rep.YOLO: requested %s but onnxruntime bound %s for %s",
                         requested, self.bound_provider, os.path.basename(self.model_path))
 
