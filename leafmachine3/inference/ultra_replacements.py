@@ -55,13 +55,15 @@ import numpy as np
 log = logging.getLogger("leafmachine3.inference.ultra_rep")
 
 PAD_VALUE = 114          # LetterBox(padding_value=114)
-#: The letterbox resize. Ultralytics uses ``cv2.INTER_LINEAR``, but OpenCV computes that differently on
-#: x86 and on ARM: on the 23 example sheets the same image, decoded to identical pixels, came out of it
-#: with 15-25% of pixels one level apart (Linux x86_64 vs an M2 Pro, opencv-python-headless 5.0.0.93),
-#: enough to move confidences by up to 0.4 and change detection counts. ``INTER_LINEAR_EXACT`` is
-#: OpenCV's bit-exact bilinear: identical on both machines for all 23 sheets, and within one level of
-#: ``INTER_LINEAR`` on ~10% of pixels. Every platform resizes with it, so a Mac, Linux and Windows
-#: feed every YOLO model the same tensor (tools/verification/input_fingerprint.py checks this).
+#: LM3's bilinear resize, used by every ``cv2.resize`` in LM3 that would otherwise be ``INTER_LINEAR``.
+#: Ultralytics uses ``cv2.INTER_LINEAR``, but OpenCV computes that differently on x86 and on ARM: on the
+#: 23 example sheets the same image, decoded to identical pixels, came out of it with 15-25% of pixels
+#: one level apart (Linux x86_64 vs an M2 Pro, opencv-python-headless 5.0.0.93), enough to move
+#: confidences by up to 0.4 and change detection counts. ``INTER_LINEAR_EXACT`` is OpenCV's bit-exact
+#: bilinear: identical on both machines for all 23 sheets, and within one level of ``INTER_LINEAR`` on
+#: ~10% of pixels. Every platform resizes with it, so a Mac, Linux and Windows feed every model the same
+#: pixels (tools/verification/input_fingerprint.py checks this). On float maps OpenCV runs the same
+#: float bilinear for both flags.
 RESIZE = cv2.INTER_LINEAR_EXACT
 DEFAULT_IMGSZ = 640      # ultralytics cfg/default.yaml ``imgsz: 640`` (used when a caller passes none)
 DEFAULT_MAX_DET = 300    # ultralytics cfg/default.yaml ``max_det: 300``
@@ -243,14 +245,15 @@ def end2end_filter(pred: np.ndarray, conf: float, max_det: int) -> np.ndarray:
 def _bilinear_resize(m: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     """``F.interpolate(mode="bilinear", align_corners=False)`` for one (h, w) float32 map.
 
-    ``cv2.resize(INTER_LINEAR)`` uses the same half-pixel-center sampling and the same two-tap
-    weights as torch's bilinear with ``align_corners=False``; results differ only in float32
-    summation order (last ulp), which matters only for pixels whose logit is within ~1e-6 of 0.
+    ``cv2.resize`` bilinear (:data:`RESIZE`; on float32 it is OpenCV's float ``INTER_LINEAR``) uses the
+    same half-pixel-center sampling and the same two-tap weights as torch's bilinear with
+    ``align_corners=False``; results differ only in float32 summation order (last ulp), which matters
+    only for pixels whose logit is within ~1e-6 of 0.
     """
     h, w = shape
     if m.shape[0] == h and m.shape[1] == w:
         return m
-    return cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR)
+    return cv2.resize(m, (w, h), interpolation=RESIZE)
 
 
 def process_mask_native(proto: np.ndarray, coeffs: np.ndarray, boxes_xyxy: np.ndarray,

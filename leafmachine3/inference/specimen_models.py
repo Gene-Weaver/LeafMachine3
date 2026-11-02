@@ -15,12 +15,13 @@ Each workflow reproduces the image preparation its model was TRAINED with:
     ``common/seg_data.py: letterbox_pair`` and ``common/seg_infer.py: predict_mask``; the v2 trainer
     (DINOv3 pseudo masks) uses the same letterbox (``unetpp/data.py: letterbox3``).
 ``stretch_imagenet`` (BiRefNet)
-    Resize both sides to ``imgsz`` (aspect NOT kept) with ``cv2.INTER_LINEAR`` on the BGR image,
-    then BGR -> RGB; /255 then ImageNet mean/std. Output: sigmoid, bilinear resize of the
-    probabilities to the image, then threshold. Reference: BiRefNet's training loader
-    ``utils.path_to_image`` (``cv2.resize(..., INTER_LINEAR)``) + ``ToTensor`` + ``Normalize``.
+    Resize both sides to ``imgsz`` (aspect NOT kept) with bilinear on the BGR image, then BGR -> RGB;
+    /255 then ImageNet mean/std. Output: sigmoid, bilinear resize of the probabilities to the image,
+    then threshold. Reference: BiRefNet's training loader ``utils.path_to_image``
+    (``cv2.resize(..., INTER_LINEAR)``) + ``ToTensor`` + ``Normalize``; LM3 resizes with OpenCV's
+    platform-exact ``INTER_LINEAR_EXACT`` (``ultra_replacements.RESIZE``).
 ``ultralytics_seg`` (YOLO26-seg)
-    Keep aspect, long side -> ``imgsz`` with ``cv2.INTER_LINEAR``; centered, padded with 114 to the
+    Keep aspect, long side -> ``imgsz`` with bilinear (``INTER_LINEAR_EXACT``); centered, padded with 114 to the
     next multiple of the stride; BGR -> RGB; /255. Output: end2end detections at ``yolo.conf``,
     instance masks at full image resolution, union = foreground. Reference: Ultralytics'
     ``LetterBox`` / ``BasePredictor.preprocess``, reproduced by ``inference/ultra_replacements.py``.

@@ -959,7 +959,9 @@ def build_specimen_overlay(
     md = int(style.display_max_dim)
     s = min(1.0, md / float(max(H, W))) if md > 0 else 1.0
     dw, dh = max(1, int(round(W * s))), max(1, int(round(H * s)))
-    interp = cv2.INTER_AREA if s < 1.0 else cv2.INTER_LINEAR
+    from leafmachine3.inference.ultra_replacements import RESIZE
+
+    interp = cv2.INTER_AREA if s < 1.0 else RESIZE
     img = cv2.resize(image_bgr, (dw, dh), interpolation=interp) if s != 1.0 else image_bgr.copy()
     fm = cv2.resize(final_mask.astype(np.uint8), (dw, dh), interpolation=cv2.INTER_NEAREST) > 0
     rm = cv2.resize(removed_mask.astype(np.uint8), (dw, dh), interpolation=cv2.INTER_NEAREST) > 0

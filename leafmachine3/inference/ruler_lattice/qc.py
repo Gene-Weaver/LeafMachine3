@@ -31,6 +31,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from leafmachine3.inference.ultra_replacements import RESIZE
+
 from .units import unit_mm, spec_of, admissible_units
 from .units import ANCHOR_TOL, PLAUSIBLE_LEN_CM
 
@@ -1127,7 +1129,7 @@ def fp_marker_section(marker, crop_path, crop_box, *, title_index=None):
     max_w = int(0.42 * W_OUT)
     k = min(FP_CROP_H / float(ch), max_w / float(cw))
     dw, dh = max(1, int(round(cw * k))), max(1, int(round(ch * k)))
-    view = cv2.resize(crop, (dw, dh), interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR)
+    view = cv2.resize(crop, (dw, dh), interpolation=cv2.INTER_AREA if k < 1 else RESIZE)
     view = Image.fromarray(view).convert("RGBA")
 
     style = _fp_marker_style(m)

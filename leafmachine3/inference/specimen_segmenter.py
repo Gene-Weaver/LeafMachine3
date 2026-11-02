@@ -31,6 +31,7 @@ from leafmachine3.core.paper_removal import (
     METHOD_LLR_HYST_KEEPBLOBS, METHOD_NONE, PAPERCLEAN_METHODS, run_paperclean,
 )
 from leafmachine3.core.records import SpecimenMaskResult
+from leafmachine3.inference.ultra_replacements import RESIZE
 from leafmachine3.inference.specimen_models import (
     SPECIMEN_MODELS, WORKFLOW_LETTERBOX_IMAGENET, WORKFLOW_STRETCH_IMAGENET, WORKFLOW_ULTRALYTICS_SEG,
     DEFAULT_SPECIMEN_MODEL_KEY, SpecimenModelSpec,
@@ -96,15 +97,13 @@ def prep_stretch_imagenet(img_bgr: np.ndarray, imgsz: int):
     on the BGR image, then ``cvtColor`` to RGB), except that the resize is OpenCV's platform-exact
     bilinear (``ultra_replacements.RESIZE``), so every platform feeds the model the same pixels.
     """
-    from leafmachine3.inference.ultra_replacements import RESIZE
-
     r = cv2.resize(img_bgr, (imgsz, imgsz), interpolation=RESIZE)
     return _normalize_imagenet(cv2.cvtColor(r, cv2.COLOR_BGR2RGB)), None
 
 
 def post_stretch_imagenet(prob_sq: np.ndarray, H: int, W: int, thr: float) -> np.ndarray:
     """Bilinear-resize the probabilities to ``(H, W)``, then threshold -> {0,1} uint8."""
-    prob = cv2.resize(prob_sq.astype(np.float32), (W, H), interpolation=cv2.INTER_LINEAR)
+    prob = cv2.resize(prob_sq.astype(np.float32), (W, H), interpolation=RESIZE)
     return (prob > thr).astype(np.uint8)
 
 

@@ -370,7 +370,9 @@ def _load_silhouette(primary_mask, colors, tol: int, fill_holes: bool, max_dim: 
     h, w = mask.shape
     scale = float(max_dim) / float(max(h, w))
     new_w, new_h = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
-    interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+    from leafmachine3.inference.ultra_replacements import RESIZE
+
+    interp = cv2.INTER_AREA if scale < 1.0 else RESIZE
     big = cv2.resize(mask.astype(np.uint8) * 255, (new_w, new_h), interpolation=interp)
     return big > 127
 
@@ -881,7 +883,9 @@ def _fit_rotate(img, box_w: float, box_h: float, angle: float, scale: float):
     h, w = out.shape[:2]
     f = min(float(box_w) / w, float(box_h) / h) * float(scale)
     tw, th = max(1, int(round(w * f))), max(1, int(round(h * f)))
-    interp = cv2.INTER_AREA if f < 1.0 else cv2.INTER_LINEAR
+    from leafmachine3.inference.ultra_replacements import RESIZE
+
+    interp = cv2.INTER_AREA if f < 1.0 else RESIZE
     return cv2.resize(out, (tw, th), interpolation=interp)
 
 
