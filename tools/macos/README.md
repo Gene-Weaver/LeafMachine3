@@ -38,7 +38,7 @@ original order.
 Exactly what a new user does, in a new folder, so the packages come from Hugging Face:
 
 ```bash
-git clone --branch macos-gpu-support https://github.com/Gene-Weaver/LeafMachine3.git LM3_fresh
+git clone https://github.com/Gene-Weaver/LeafMachine3.git LM3_fresh
 cd LM3_fresh
 git log --oneline -1                                   # the commit you are testing
 uv sync --frozen --extra macos
@@ -68,18 +68,23 @@ In the run log expect `GPU plan: Apple GPU via CoreML, 1 worker` for each GPU st
 
 `mac_native` vs `mac_cpu`. The inputs are identical, so any difference is Core ML's arithmetic.
 
-| Check | Pass | M2 Pro, b724715 |
+| Check | Pass | M2 Pro, 0e2247e |
 |---|---|---|
-| `lm3 models status` | every stage ok, `coreml_fp32` in the formats | |
+| `lm3 models status` | every stage ok, `coreml_fp32` in the formats | ok |
 | `lm3 doctor` / `--models` | READY; check 7 OK on all 6 | 6/6 |
 | `verify_coreml.py --n 23` | 6/6 `ok`, all on CoreML, no inputs on the CPU | 6/6 |
-| run exit | exit 0, `stage_errors.csv` empty | |
+| run exit | exit 0, `stage_errors.csv` empty | exit 0; empty |
 | detections | every box matched (conf >= 0.4: all); IoU min >= 0.99; abs(dconf) max <= 0.03 | all; 1.000; 0.000 |
-| leaves | all measured leaves matched; every metric median <= 0.0005, p95 <= 0.01 | 257/257; 0.0000 |
+| leaves | all measured leaves matched; every metric median <= 0.0005, p95 <= 0.01 | 258/258; 0.0000 |
 | sheets | every count the same | 23/23 |
 | ruler | unit the same on every sheet; px/cm relative change max <= 0.005 | 23/23; 0.0000 |
 | specimen mask | area fraction abs diff max <= 0.001 | 0.0001 |
-| wall time | (b) well under (a) | 270 s vs 937 s |
+| wall time | (b) well under (a) | 265 s vs 923 s |
+
+A Mac CPU run also matches a Linux CPU run of the same commit, to rounding, on every table, with one
+known exception: a near-tie in the ruler lattice's period search can resolve differently on x86 and ARM.
+In the 23-sheet check, one ruler crop read differently (`cf_px_per_cm_measured`, `ruler_crops`) on a
+sheet withheld on both machines; all 18 published conversion factors agreed.
 
 ## Making packages for a model release
 
