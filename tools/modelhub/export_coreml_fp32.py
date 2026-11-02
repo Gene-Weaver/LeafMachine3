@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """Export an LM3 model to ``coreml_fp32``: the CoreML package LM3 runs natively on a Mac.
 
-This is the CoreML export for every LM3 model published to the Hub from now on. The older ``coreml/``
-folders (Ultralytics' default export: float16, one fixed square size) stay as they are for use outside
-LM3. A ``coreml_fp32`` package gives the CPU's answers because:
+This is the CoreML export for every LM3 model published to the Hub from now on. Releases no longer stage
+the older ``coreml/`` folder (Ultralytics' default export: float16, one fixed square size), which LM3 never
+ran; a repo keeps its copy until its next release. A ``coreml_fp32`` package gives the CPU's answers because:
 
 * weights and arithmetic are float32 (``compute_precision=FLOAT32``; coremltools defaults to float16);
 * its input is a float32 tensor -- exactly the tensor LM3's CPU path builds (letterbox, RGB, /255,
@@ -496,7 +496,7 @@ def lock_jobs(models: Path, pytorch: Path, out: Path, only: Sequence[str] = ()) 
             key = unit.model_key or ""
             onnx_f = next((f for f in unit.files if f.format == "onnx"), None)
             pt_f = next((f for f in unit.files if f.format == "pytorch"), None)
-            if key in CPU_ONLY or key.startswith("birefnet") or onnx_f is None or pt_f is None:
+            if key in CPU_ONLY or key.startswith(("birefnet", "dinov")) or onnx_f is None or pt_f is None:
                 continue
             model_dir = Path(onnx_f.dest).parent
             if model_dir.name == "exported":

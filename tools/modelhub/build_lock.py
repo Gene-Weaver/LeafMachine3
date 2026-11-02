@@ -287,6 +287,20 @@ def build() -> dict:
             "actions": actions, "alternates": alternates}
 
 
+def lost_coreml_packages(old: dict | None, new: dict) -> list[str]:
+    """Default models that had a ``coreml_fp32`` package in the old lock and have none in the new one."""
+    def packaged(lock: dict, action: str) -> set[str]:
+        units = (lock.get("actions") or {}).get(action, {}).get("units", [])
+        return {u["repo_id"] for u in units if any(f["format"] == "coreml_fp32" for f in u["files"])}
+
+    lost: set[str] = set()
+    for action in (old or {}).get("actions", {}):
+        was, now = packaged(old, action), packaged(new, action)
+        if len(now) < len(was):
+            lost |= was - now
+    return sorted(lost)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="exit 1 if the committed lock differs from the Hub")
@@ -304,9 +318,13 @@ def main(argv=None) -> int:
         same = old is not None and {k: v for k, v in old.items() if k not in stamps} == {k: v for k, v in lock.items() if k not in stamps}
         print("lock is up to date" if same else "lock is STALE")
         return 0 if same else 1
+    old = yaml.safe_load(out.read_text()) if out.exists() else None
     out.write_text(text)
     n = sum(len(u["files"]) for a_ in lock["actions"].values() for u in a_["units"])
     print(f"wrote {out} ({len(lock['actions'])} actions, {n} files)")
+    for repo in lost_coreml_packages(old, lock):
+        print(f"NOTE: {repo} has no coreml_fp32 package now; a Mac runs it on the CPU until one is "
+              f"published (tools/macos/README.md)")
     return 0
 
 

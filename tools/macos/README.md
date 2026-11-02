@@ -38,7 +38,7 @@ original order.
 Exactly what a new user does, in a new folder, so the packages come from Hugging Face:
 
 ```bash
-git clone https://github.com/Gene-Weaver/LeafMachine3.git LM3_fresh
+git clone https://github.com/Gene-Weaver/LeafMachine3.git LM3_fresh    # add --branch RELEASE_BRANCH for a release
 cd LM3_fresh
 git log --oneline -1                                   # the commit you are testing
 uv sync --frozen --extra macos
@@ -88,23 +88,55 @@ sheet withheld on both machines; all 18 published conversion factors agreed.
 
 ## Making packages for a model release
 
-`tools/modelhub/export_coreml_fp32.py` is the CoreML export for every model published to Hugging Face.
-Run it on a Mac, so each package gets a load test there, from the published PyTorch checkpoints, with
-the converter's dependencies in a throwaway uv layer (`.venv` is not changed):
+`tools/modelhub/export_coreml_fp32.py` is the CoreML export for every model published to Hugging Face;
+releases no longer stage the old `coreml/` folder. A package is made from the published checkpoint and
+must match the published ONNX file, so new weights go up first. LM3's lock keeps pinning the previous
+revision until the last step, so users see no change until then.
 
-```bash
-uv run --frozen --no-sync lm3 models install --formats pytorch,meta --dest ~/lm3-checkpoints --yes
-uv run --frozen --no-sync --with torch==2.5.1 --with ultralytics==8.4.79 --with segmentation-models-pytorch==0.5.0 \
-  /usr/bin/time -l python tools/modelhub/export_coreml_fp32.py all --models models --pytorch ~/lm3-checkpoints
-```
+1. **Upload the new weights.** The staged folder has no Core ML folder, so this also removes the old
+   weights' `coreml/` and `coreml_fp32/` from the repo. It refuses to remove `coreml_fp32/` when the
+   ONNX file is not changing.
 
-Each network is first compared with the published ONNX model, and a package that fails its load test
-or disagrees is removed. Copy the `coreml_fp32` folders (in the models layout) to the machine that
-publishes, then:
+   ```bash
+   python tools/release/hf_upload_verify.py STAGED phyloforfun/REPO "MESSAGE"
+   ```
 
-```bash
-python tools/modelhub/publish_coreml_fp32.py stage --packages DIR --out STAGE \
-  --verified-on "Apple M2 Pro, macOS 26.7.1" --commit <exporter commit>     # review the printed diffs
-python tools/modelhub/publish_coreml_fp32.py upload --stage STAGE
-python tools/modelhub/build_lock.py                                          # pins the new revisions
-```
+2. **Pin them on a release branch**, so a Mac can install them. `build_lock.py` lists the models that
+   lost their packages.
+
+   ```bash
+   python tools/release/bump_version.py
+   python tools/modelhub/build_lock.py
+   python tools/release/bump_version.py --set "$(cat VERSION)"     # re-stamps the new lock's hash
+   git switch -c RELEASE_BRANCH && git commit -am "..." && git push origin RELEASE_BRANCH
+   ```
+
+3. **Export on a Mac, from that branch**, so each package gets a load test there. The converter's
+   dependencies go in a throwaway uv layer (`.venv` is not changed). Leave out `--only` to export every
+   default model.
+
+   ```bash
+   uv run --frozen --no-sync lm3 models install --yes
+   uv run --frozen --no-sync lm3 models install --formats pytorch,meta --dest ~/lm3-checkpoints --yes
+   uv run --frozen --no-sync --with torch==2.5.1 --with ultralytics==8.4.79 --with segmentation-models-pytorch==0.5.0 \
+     /usr/bin/time -l python tools/modelhub/export_coreml_fp32.py all --models models --pytorch ~/lm3-checkpoints --only STAGE
+   ```
+
+   Each network is first compared with the published ONNX model, and a package that fails its load test
+   or disagrees is removed.
+
+4. **Publish the packages.** Copy the `coreml_fp32` folders (in the models layout) to the machine that
+   publishes, then:
+
+   ```bash
+   python tools/modelhub/publish_coreml_fp32.py stage --packages DIR --out STAGE \
+     --verified-on "Apple M2 Pro, macOS 26.7.1" --commit <exporter commit>     # review the printed diffs
+   python tools/modelhub/publish_coreml_fp32.py upload --stage STAGE
+   ```
+
+5. **Pin the final revisions and merge.** Repeat step 2's bump and lock commands and commit. Run the
+   checks in [Checking a fresh install](#checking-a-fresh-install) from the branch before merging.
+
+Packages cover the lock's default models. Alternates, and the YOLO26n and DINO ruler models, have none
+and run on the CPU on a Mac. If a Mac still has a package from older weights, LM3 sees that its ONNX hash
+differs, logs a warning and runs that model on the CPU.

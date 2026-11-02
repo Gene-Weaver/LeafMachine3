@@ -28,7 +28,7 @@ def _exporter():
     return mod
 
 
-def _package(root: Path, *, onnx_bytes: bytes | None = None, shapes=((1, 900, 13),), tail="end2end",
+def _package(root: Path, *, onnx_bytes: bytes = b"onnx model", shapes=((1, 900, 13),), tail="end2end",
              outputs=("boxes", "scores"), split=(4, 9), max_det=300, onnx_out=("output0",), **override):
     """A model dir with ``model.onnx`` and a ``coreml_fp32`` package whose program is a stub."""
     root.mkdir(parents=True, exist_ok=True)
@@ -37,13 +37,13 @@ def _package(root: Path, *, onnx_bytes: bytes | None = None, shapes=((1, 900, 13
     program.parent.mkdir(parents=True)
     program.write_bytes(b"ml program")
     (pkg / "Manifest.json").write_text("{}")
-    if onnx_bytes is not None:
-        (root / "model.onnx").write_bytes(onnx_bytes)
+    (root / "model.onnx").write_bytes(onnx_bytes)
     contract = {
         "format": cn.FORMAT, "schema": "1", "mlmodel_sha256": hashlib.sha256(b"ml program").hexdigest(),
         "input": {"name": "feat", "shapes": [list(s) for s in shapes]}, "outputs": list(outputs),
         "tail": tail, "split": list(split), "max_det": max_det,
-        "onnx": {"inputs": [["feat", ["batch", "anchors", sum(split)]]],
+        "onnx": {"sha256": hashlib.sha256(onnx_bytes).hexdigest(),
+                 "inputs": [["feat", ["batch", "anchors", sum(split)]]],
                  "outputs": [[n, ["batch", max_det, 6]] for n in onnx_out], "metadata": {"task": "detect"}},
     }
     contract.update(override)
@@ -127,6 +127,17 @@ def test_a_shape_the_package_lacks_runs_the_onnx_twin_on_the_cpu(tmp_path, monke
 
 
 @needs_onnx
+def test_a_package_from_other_weights_runs_on_the_cpu(tmp_path, monkeypatch, caplog):
+    # A model update leaves the old package on disk: the installer does not remove unpinned files.
+    monkeypatch.setenv("LM3_COREML_SIMULATE", "1")
+    onnx_path, _ = _package(tmp_path / "plant_detector")
+    onnx_path.write_bytes(b"retrained weights")
+    with caplog.at_level("WARNING"):
+        assert cn.session_for(onnx_path) is None
+    assert "different ONNX model" in caplog.text
+    assert "runs on the CPU" in caplog.text
+
+
 def test_session_for_routes_to_the_package_or_to_the_cpu(tmp_path, monkeypatch):
     monkeypatch.setenv("LM3_COREML_SIMULATE", "1")
     graph = _end2end_graph(9, 0, k=300)

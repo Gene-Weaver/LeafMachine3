@@ -185,6 +185,7 @@ class PackageInfo:
     outputs: tuple[str, ...]            # the package's output names
     onnx_inputs: list                   # [(name, shape)] of the ONNX twin
     onnx_outputs: list
+    onnx_sha256: str                    # the ONNX file the package was made from
     tail: str                           # "end2end" | "none"
     split: tuple[int, ...]
     max_det: int
@@ -222,7 +223,8 @@ def read_package(path: str | os.PathLike) -> PackageInfo:
         path=pkg, metadata={k: str(v) for k, v in (onnx.get("metadata") or {}).items()},
         input_name=c["input"]["name"], shapes=frozenset(tuple(int(d) for d in s) for s in c["input"]["shapes"]),
         outputs=tuple(c["outputs"]), onnx_inputs=[tuple(x) for x in onnx.get("inputs", [])],
-        onnx_outputs=[tuple(x) for x in onnx.get("outputs", [])], tail=c.get("tail", "none"),
+        onnx_outputs=[tuple(x) for x in onnx.get("outputs", [])], onnx_sha256=str(onnx.get("sha256") or ""),
+        tail=c.get("tail", "none"),
         split=tuple(int(x) for x in c.get("split") or ()), max_det=int(c.get("max_det") or 0))
 
 
@@ -288,6 +290,14 @@ class NativeSession:
         self.info = read_package(package)
         self.onnx_path = str(onnx_path)
         self.label = os.path.join(self.info.path.parent.parent.name, FORMAT)
+        # The installer leaves files the lock no longer pins, so a package can outlive its weights.
+        try:
+            same_weights = self.info.onnx_sha256 == _sha256(Path(onnx_path))
+        except OSError as exc:
+            raise CoremlPackageError(f"cannot read {onnx_path}: {exc}") from exc
+        if not same_weights:
+            raise CoremlPackageError(f"{self.label} was made from a different ONNX model than "
+                                     f"{os.path.basename(str(onnx_path))}; reinstall the models")
         if not self.info.onnx_inputs or not self.info.onnx_outputs:
             raise CoremlPackageError(f"{package}: model.json names no ONNX inputs/outputs")
         self._inputs = [_Arg(n, list(s)) for n, s in self.info.onnx_inputs]
