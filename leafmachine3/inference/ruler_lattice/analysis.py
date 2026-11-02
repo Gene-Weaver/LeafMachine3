@@ -112,35 +112,39 @@ def _sublattice_support(i_bp, P, unit_class):
 
 
 def _divisions_of_lags(i_bp, P_cands, unit_class, cf_anchor):
-    """The division of a lag that no printed period explains, for a class whose periods are a closed list.
+    """The division of a lag no printed period explains, for a class whose periods are a closed list.
 
     Such a class has no name for a lag that is none of its periods, so that lag is a multiple of
     one. The ACF of a 2 mm comb can peak at 4 mm with its 2 mm peak under FUND_RATIO, which
     subharmonic_lags then rejects; METRIC_CM5 strips resized to x0.75 did this and read 2x high.
 
-    Only the anchor can say a lag is unexplained, so without one nothing is offered, and a lag that
-    already reads as a printed period near the anchor is left alone: dividing a true 1 cm lag by 4
-    makes a phantom 2.5 mm comb that names as 2 mm and still passes ANCHOR_TOL, 25% high.
+    Only the anchor can say a lag is unexplained, so without one nothing is offered. The COMB then
+    picks the divisor, over every divisor, and its winner is offered only if it reads within
+    ANCHOR_TOL. Choosing by closeness to the anchor invents ticks when the anchor is biased: on a
+    38x60 cm frame it reads 30% high, a 6 mm lag / 2 is a 3 mm comb that names as 2 mm and lands on
+    it, and the sheet published 50% high.
     """
     if not (cf_anchor and cf_anchor > 0):
         return []
     periods = admissible_periods(unit_class).values()
 
-    def miss(P):
-        return min(abs(math.log(P / pcm / cf_anchor)) for pcm in periods)
+    def near(P):
+        return any(abs(P / pcm / cf_anchor - 1.0) <= ANCHOR_TOL for pcm in periods)
 
-    tol = math.log(1.0 + ANCHOR_TOL)
     out = []
     for P in P_cands:
-        if miss(P) <= tol:
+        if near(P):
             continue
-        near = [P / d for d in HARM_DIVS if P / d >= MIN_PERIOD and miss(P / d) <= tol]
-        if not near:
-            continue
-        q, _, sup = refine_period(i_bp, min(near, key=miss), frac=0.03, steps=61)
-        if (np.isfinite(q) and q >= MIN_PERIOD and sup > 0
-                and not any(abs(q / c - 1.0) <= 0.02 for c in P_cands + out)):
-            out.append(float(q))
+        best = None
+        for d in HARM_DIVS:
+            if P / d < MIN_PERIOD:
+                continue
+            q, _, sup = refine_period(i_bp, P / d, frac=0.03, steps=61)
+            if np.isfinite(q) and q >= MIN_PERIOD and sup > 0 and (best is None or sup > best[0]):
+                best = (sup, float(q))
+        if (best and near(best[1])
+                and not any(abs(best[1] / c - 1.0) <= 0.02 for c in P_cands + out)):
+            out.append(best[1])
     return out
 
 
