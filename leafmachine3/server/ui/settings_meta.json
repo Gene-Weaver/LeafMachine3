@@ -292,7 +292,7 @@
           "blurb": "The per-leaf product set: original and oriented, lamina, petiole and holes."
         },
         {
-          "label": "Overlay \u00b7 Drawing",
+          "label": "Overlay · Drawing",
           "paths": [
             "report.overlay",
             "report.overlay_ruler_lattice"
@@ -301,42 +301,42 @@
           "blurb": "What the annotated review image draws, and how heavily."
         },
         {
-          "label": "Overlay \u00b7 Scale bars",
+          "label": "Overlay · Scale bars",
           "paths": [
             "report.overlay.cf_scalebar"
           ],
           "blurb": "Colors and sizing for the two conversion-factor scale overlays."
         },
         {
-          "label": "Overlay \u00b7 Box groups",
+          "label": "Overlay · Box groups",
           "paths": [
             "report.overlay.groups"
           ],
           "blurb": "Border, fill and line weight for the leaf, plant and archival box groups."
         },
         {
-          "label": "Overlay \u00b7 Archival colors",
+          "label": "Overlay · Archival colors",
           "paths": [
             "report.overlay.classes.archival"
           ],
           "blurb": "Color and visibility for each archival class."
         },
         {
-          "label": "Overlay \u00b7 Plant colors",
+          "label": "Overlay · Plant colors",
           "paths": [
             "report.overlay.classes.plant"
           ],
           "blurb": "Color and visibility for each plant class."
         },
         {
-          "label": "Overlay \u00b7 Mask colors",
+          "label": "Overlay · Mask colors",
           "paths": [
             "report.overlay.classes.segmentation"
           ],
           "blurb": "Color and visibility for the lamina, petiole and hole masks."
         },
         {
-          "label": "Overlay \u00b7 Landmarks",
+          "label": "Overlay · Landmarks",
           "paths": [
             "report.overlay.landmark",
             "report.overlay_landmarks"
@@ -344,7 +344,7 @@
           "blurb": "The landmark overlay image and how its points and skeleton are drawn."
         },
         {
-          "label": "Overlay \u00b7 Petiole",
+          "label": "Overlay · Petiole",
           "paths": [
             "report.overlay.petiole",
             "report.overlay_petiole"
@@ -352,7 +352,7 @@
           "blurb": "The petiole-width overlay image and how its band and samples are drawn."
         },
         {
-          "label": "Overlay \u00b7 Specimen",
+          "label": "Overlay · Specimen",
           "paths": [
             "report.overlay_specimen"
           ],
@@ -1313,55 +1313,34 @@
   },
   "modules.ruler_classifier.enabled": {
     "label": "Enabled",
-    "help": "Identify each detected ruler's unit type with a three-model ensemble.",
+    "help": "Identify each detected ruler's unit type with the DINOv3 classifier.",
     "type": "bool",
     "important": false,
     "group": "Ruler Classifier"
   },
-  "modules.ruler_classifier.models_dir": {
-    "label": "Models folder",
-    "help": "Folder holding the exported ensemble members.",
+  "modules.ruler_classifier.model.key": {
+    "label": "Model",
+    "help": "Which Ruler Classifier model the file below is (its Hub model key, e.g. yolo26x_seg_1024). The Models tab sets this when you activate a model; the stage loads the file, so the key is a label for people and for the Models tab.",
+    "type": "string",
+    "important": false,
+    "group": "Ruler Classifier"
+  },
+  "modules.ruler_classifier.model.path": {
+    "label": "Model file",
+    "help": "Path to the exported Ruler Classifier weights, relative to the LM3 install or absolute.",
     "type": "path",
     "important": false,
     "group": "Ruler Classifier"
   },
-  "modules.ruler_classifier.ensemble_members": {
-    "label": "Ensemble members",
-    "help": "Which exported members to load and vote across.",
-    "type": "list",
-    "important": false,
-    "group": "Ruler Classifier"
-  },
-  "modules.ruler_classifier.min_conf": {
-    "label": "Min confidence",
-    "help": "Ensemble agreement a ruler needs before its unit type is trusted downstream.",
-    "type": "float",
-    "min": 0.0,
-    "max": 1.0,
-    "step": 0.01,
-    "important": true,
-    "group": "Ruler Classifier"
-  },
-  "modules.ruler_classifier.squarify.sz": {
-    "label": "Squarify tile size",
-    "help": "Tile edge in pixels for the collage that turns a long ruler strip into a square input; tile_four makes a collage twice this wide.",
-    "type": "int",
-    "min": 128,
-    "max": 2048,
-    "step": 16,
-    "important": false,
-    "group": "Ruler Classifier"
-  },
-  "modules.ruler_classifier.squarify.method": {
-    "label": "Squarify method",
-    "help": "How the ruler strip is cut and stacked into a square; tile_four is what all three members were trained on.",
+  "modules.ruler_classifier.model.format": {
+    "label": "Model format",
+    "help": "Artifact kind at that path; it must match the file you pointed at (PyTorch today, ONNX once exported).",
     "type": "enum",
     "enum": [
-      "tile_four",
-      "stack",
-      "quartiles",
-      "nine",
-      "maxheight"
+      "onnx",
+      "pytorch",
+      "json",
+      "tensorrt"
     ],
     "important": false,
     "group": "Ruler Classifier"
@@ -3176,7 +3155,7 @@
   },
   "report.data.files.phenology": {
     "label": "Phenology (LM2 layout)",
-    "help": "phenology.csv: one row per sheet in LeafMachine2's phenology.csv layout \u2014 per-class plant-organ counts plus has_leaves and is_fertile \u2014 so an existing LM2 phenology script reads it unchanged. Its 'leaflet' and 'specimen' columns are always blank, because LM3's detector has no such classes.",
+    "help": "phenology.csv: one row per sheet in LeafMachine2's phenology.csv layout — per-class plant-organ counts plus has_leaves and is_fertile — so an existing LM2 phenology script reads it unchanged. Its 'leaflet' and 'specimen' columns are always blank, because LM3's detector has no such classes.",
     "type": "bool",
     "important": false,
     "group": "Data Export (CSV)"

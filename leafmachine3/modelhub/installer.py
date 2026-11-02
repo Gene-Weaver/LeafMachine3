@@ -539,14 +539,11 @@ def _stage_order() -> list[str]:
 
 
 def _settings_model(stage: str, settings_values: Mapping[str, Any] | None) -> dict[str, Any]:
-    """``modules.<stage>.model`` (plus ``models_dir`` for the ensemble) as the settings tree has it."""
+    """``modules.<stage>.model`` as the settings tree has it."""
     try:
         block = ((settings_values or {}).get("modules") or {}).get(stage) or {}
         model = block.get("model") if isinstance(block, Mapping) else None
-        out = dict(model) if isinstance(model, Mapping) else {}
-        if isinstance(block, Mapping) and block.get("models_dir"):
-            out.setdefault("models_dir", block["models_dir"])
-        return out
+        return dict(model) if isinstance(model, Mapping) else {}
     except Exception:  # noqa: BLE001
         return {}
 
@@ -673,8 +670,6 @@ def catalog(root: Path | None = None, *, lock: Lock | None = None,
             "active": {"key": model.get("key"), "path": model.get("path"), "format": model.get("format"),
                        "model_key": matched[0] if matched else None, "repo_id": matched[1] if matched else None,
                        "matched_format": matched[2] if matched else None,
-                       # the ensemble has no single path: its folder is the thing
-                       "models_dir": model.get("models_dir"),
                        "matched": bool(matched) or (not action.activatable and not model.get("path"))},
             "variants": variants,
         })

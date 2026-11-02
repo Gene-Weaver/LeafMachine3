@@ -65,7 +65,6 @@ def test_which_models_go_to_coreml():
     assert coreml.for_model(cml, False) == ["CPUExecutionProvider"]
     cuda = Device("cuda").ort_providers()
     assert coreml.for_model(cuda, False) == cuda              # only a CoreML list is ever rewritten
-    assert coreml.COREML_RULER_MEMBERS == {"x224"}             # n224 x0.9, dinov2 x0.55 on an M2 Pro
     assert coreml.specimen_on_coreml("letterbox_imagenet", "unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain")
     assert coreml.specimen_on_coreml("ultralytics_seg", "yolo26x_seg_1280")
     assert not coreml.specimen_on_coreml("stretch_imagenet", "birefnet_hr_swinl_1024")

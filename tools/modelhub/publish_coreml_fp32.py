@@ -61,7 +61,7 @@ def units() -> list[dict]:
 
 def package_dir(packages: Path, u: dict) -> Path | None:
     """The unit's package under ``packages``: beside its ONNX file or one folder up, where the runtime
-    looks (``coreml_native.package_for``; the ruler members keep their ONNX in ``exported/``)."""
+    looks (``coreml_native.package_for``)."""
     onnx = Path(next(f["dest"] for f in u["files"] if f["format"] == "onnx"))
     for d in (onnx.parent, onnx.parent.parent):
         if (packages / d / FORMAT / "model.json").is_file():

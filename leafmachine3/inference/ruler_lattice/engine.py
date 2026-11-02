@@ -181,7 +181,7 @@ CREATE INDEX IF NOT EXISTS ix_rcfl_status ON ruler_CF_lattice (status, confidenc
 --   tile_four_path  a 512x512 JPEG q80 THUMBNAIL of the four-tile collage. It shows
 --                   the composition the RulerClassifier was given, but it is NOT
 --                   that image: the classifier receives the full-resolution
---                   1440x1440 collage. Downsampled and lossy on purpose (~40x
+--                   896x896 collage. Downsampled and lossy on purpose (~40x
 --                   smaller); never feed it to a model as if it were the original.
 --                   Size and quality are recorded in engine_params_json.
 --   rot_path        the deskewed grayscale strip every overlay is drawn on, exact.

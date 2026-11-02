@@ -75,7 +75,7 @@ const MODULE_INFO = [
   ["phenology_detector", "Phenology Detector",
    "Rolls the plant detections up to per-specimen presence of leaves, flowers and fruits. No model, pure aggregation."],
   ["ruler_classifier", "Ruler Classifier",
-   "Classifies every ruler crop to its measurement unit type with a three-model ensemble vote."],
+   "Classifies every ruler crop to its measurement unit type with a DINOv3 classifier."],
   ["ruler_cf", "Ruler Conversion Factor",
    "Measures the tick lattice of each ruler to fix one pixels-per-cm factor per sheet, publishing only confident readings."],
   ["leaf_segmenter", "Leaf Segmenter",

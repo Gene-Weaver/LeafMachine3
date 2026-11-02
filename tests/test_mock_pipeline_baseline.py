@@ -142,8 +142,7 @@ def _baseline_config(images_dir: Path, output_dir: Path) -> dict:
                     "fruits": {"min_conf": 0.4, "min_count": 1},
                 },
             },
-            "ruler_classifier": {"enabled": True, "models_dir": "models/ruler_classifier",
-                                 "ensemble_members": ["a", "b", "c"], "min_conf": 0.35},
+            "ruler_classifier": {"enabled": True},
             # Pinned to the value the golden was recorded with. The builtin default became True
             # (2026-10-09); the MP fallback itself is covered by test_cf_predicted_by_mp.py.
             "ruler_cf": {"enabled": True, "use_CF_predicted_by_MP": False},

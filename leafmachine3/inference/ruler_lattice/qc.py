@@ -37,7 +37,7 @@ from .units import unit_mm, spec_of, admissible_units
 from .units import ANCHOR_TOL, PLAUSIBLE_LEN_CM
 
 
-# Squarify is MANDATORY, not decorative: all three classifier ensemble members were
+# Squarify is MANDATORY, not decorative: the classifier was
 # trained on pre-squarified square crops, so the four-tile collage IS the image the
 # class label was derived from, and the QC panel shows it for exactly that reason.
 # In the LM3 integration the four-tile tile is PRE-MADE by the RulerClassifier (in
@@ -51,8 +51,9 @@ def _squarify_fallback(crop_path, tile_h):
     global _SQ
     try:
         if _SQ is None:
+            from leafmachine3.inference.ruler_classifier import SQUARIFY_METHOD, SQUARIFY_SZ
             from leafmachine3.inference.ruler_squarify import RulerSquarifier
-            _SQ = RulerSquarifier(sz=720, method="tile_four", augment=False)
+            _SQ = RulerSquarifier(sz=SQUARIFY_SZ, method=SQUARIFY_METHOD, augment=False)
         tile = cv2.cvtColor(_SQ.transform(crop_path), cv2.COLOR_BGR2RGB)
         return cv2.resize(tile, (tile_h, tile_h), interpolation=cv2.INTER_AREA)
     except Exception:
@@ -84,6 +85,7 @@ CM_COLOR, IN_COLOR = (32, 178, 96), (56, 132, 255)
 MP_CM_COLOR, MP_IN_COLOR = (220, 38, 38), (249, 115, 22)
 PRETTY = {"metric__2_MM": "0.5 mm", "metric__MM": "1 mm", "metric__4_CM": "2.5 mm",
           "metric__4_MM": "2.5 mm",          # pre-rename records still render
+          "metric__5_CM": "2 mm",
           "metric__2_CM": "5 mm", "metric__CM": "1 cm",
           "std__32_IN": '1/32"', "std__16_IN": '1/16"', "std__8_IN": '1/8"',
           "std__4_IN": '1/4"', "std__2_IN": '1/2"', "std__IN": '1"'}
@@ -220,7 +222,7 @@ def class_section(row, cls, crop_path, tile_h=CLASS_TILE_H, failure=None,
             lines.append((ln, F_S, (194, 65, 12)))
     lines.append(("", F_XS, (90, 95, 105)))
     lines.append(("The square below is the four-tile squarified collage the classifier "
-                  "actually receives (LM2 tile_four, 1440x1440).", F_XS, (120, 125, 135)))
+                  "actually receives (LM2 tile_four, 896x896).", F_XS, (120, 125, 135)))
 
     LH = {id(F_T): 30, id(F_B): 24, id(F_S): 20, id(F_XS): 18}
     head = 10 + sum(LH[id(f)] for _, f, _ in lines) + 8

@@ -3,8 +3,8 @@
 A ``coreml_fp32`` package (made by ``tools/modelhub/export_coreml_fp32.py``) is the model's network in
 float32, taking exactly the tensor LM3's CPU path builds, with every input shape LM3 feeds it in one
 package. :class:`NativeSession` stands in for ``onnxruntime.InferenceSession`` on it -- same input and
-output names and shapes as the ONNX twin, same metadata -- so ``ultra_rep.YOLO``, the specimen
-segmenter and the ruler member run it unchanged. For a YOLO26 end2end model the package stops at the
+output names and shapes as the ONNX twin, same metadata -- so ``ultra_rep.YOLO`` and the specimen
+segmenter run it unchanged. For a YOLO26 end2end model the package stops at the
 head's split and :func:`end2end_tail` runs the top-k tail in numpy, exactly as the ONNX graph does.
 
 The package lives beside its ONNX twin: ``<model dir>/coreml_fp32/model.mlpackage`` where the model

@@ -19,6 +19,7 @@ MM_PER_INCH = 25.4
 MINIMUM_UNITS: dict[str, dict] = {
     "metric__2_MM": {"system": "metric", "mm": 0.5},
     "metric__MM":   {"system": "metric", "mm": 1.0},
+    "metric__5_CM": {"system": "metric", "mm": 2.0, "declared_only": True},   # a FIFTH of a cm
     "metric__4_CM": {"system": "metric", "mm": 2.5},   # a QUARTER of a cm
     "metric__2_CM": {"system": "metric", "mm": 5.0},
     "metric__CM":   {"system": "metric", "mm": 10.0},
@@ -34,6 +35,10 @@ MINIMUM_UNITS: dict[str, dict] = {
 MULT_TOL = 0.10      # a detected ratio must be within 10% of a named unit ratio
 AGREE_TOL = 0.03     # independent per-unit px/cm estimates must agree within 3%
 
+
+#: ``declared_only`` keeps a unit off the ladder of every class that does not print it. A 2 mm rung
+#: open to all metric rulers would be a new way to misread a METRIC_MM ruler at twice its px/cm, and
+#: would move min_rung_ratio from 1.2598 to 1.25 (2.5 mm / 2 mm), and so the anchor gate of every class.
 
 #: Unit keys that were renamed. ``metric__4_MM`` was the 2.5 mm unit -- a QUARTER of a cm -- but
 #: was spelled with an MM suffix while every other key is 1/N of the unit it names (2_MM = 0.5 mm,
@@ -65,10 +70,12 @@ def is_dual(u: str) -> bool:
     return bool(MINIMUM_UNITS.get(canon_unit(u), {}).get("dual"))
 
 
-def real_units(system: str | None = None) -> list[str]:
-    """Named units, excluding the dual-scale flag pseudo-units."""
+def real_units(system: str | None = None, declared=()) -> list[str]:
+    """Named units, excluding the dual-scale flag pseudo-units and any `declared_only` unit the
+    caller's class does not declare."""
     return [u for u, s in MINIMUM_UNITS.items()
-            if not s.get("dual") and (system is None or s["system"] == system)]
+            if not s.get("dual") and (system is None or s["system"] == system)
+            and (not s.get("declared_only") or u in declared)]
 
 
 # --------------------------------------------------------------------------- #
@@ -107,16 +114,16 @@ def base_candidates(unit_class: str) -> list[str]:
     # human read off the ruler, but a crop can resolve a finer printed tick
     # (e.g. a "1/8 in" ruler whose row actually carries 1/16 in ticks).
     out = []
-    for u in real_units():
+    for u in real_units(declared=declared):
         if system_of(u) in sysset and unit_mm(u) >= finest * 0.49:
             out.append(u)
     return sorted(set(out), key=unit_mm)
 
 
-def match_named(size_mm: float, system: str, tol: float = MULT_TOL):
+def match_named(size_mm: float, system: str, tol: float = MULT_TOL, declared=()):
     """Nearest named unit of `system` to a physical size, or None."""
     best = None
-    for u in real_units(system):
+    for u in real_units(system, declared):
         e = abs(size_mm / unit_mm(u) - 1.0)
         if e <= tol and (best is None or e < best[0]):
             best = (e, u)
@@ -162,7 +169,7 @@ def reconcile_levels(P_base_px, levels, unit_class, width_px,
         top_lab, unnamed = u0, 0
         for (m, spacing) in levels:
             size = base_mm * m
-            lab = match_named(size, sysu)
+            lab = match_named(size, sysu, declared=declared)
             if lab is None:
                 unnamed += 1
                 continue
@@ -195,7 +202,7 @@ def reconcile_levels(P_base_px, levels, unit_class, width_px,
             score += 1.0 * (1.0 - min(spread / AGREE_TOL, 2.0))
         # the ACF lattice itself should also be a named unit
         if acf_mult and acf_mult > 1:
-            if match_named(base_mm * acf_mult, sysu) is not None:
+            if match_named(base_mm * acf_mult, sysu, declared=declared) is not None:
                 score += 1.0
 
         cand = dict(base_unit=u0, pxcm=pxcm, implied_len_cm=L, n_named=named,
@@ -306,7 +313,7 @@ def identify_period(P_px, unit_class, width_px, sublattice_support=None,
                 score=float(sc), admissible=sorted(cands))
 
 
-def label_levels(pxcm, P_base_px, levels, system):
+def label_levels(pxcm, P_base_px, levels, system, declared=()):
     """Name the base lattice and every coarser tick level, given a scale.
 
     Each level's MEASURED spacing yields its own independent px/cm estimate, so
@@ -315,7 +322,7 @@ def label_levels(pxcm, P_base_px, levels, system):
     """
     def name_of(px):
         mm = px / pxcm * 10.0
-        lab = match_named(mm, system)
+        lab = match_named(mm, system, declared=declared)
         return lab, mm
 
     base_lab, base_mm = name_of(P_base_px)
@@ -490,6 +497,8 @@ def reconcile_units(pxcm_seed, levels, declared_units=(), n_iter=4,
 #                   stagger (two offset rows of 1 cm blocks) and block (alternating
 #                   filled/blank cm blocks) both give a 2 cm single-row period.
 #   ratio           for `transition`, the known coarse/fine period ratio.
+#   admissible      closed list of readable units, for a ruler whose scale skips rungs of the ladder
+#                   (METRIC_CM5 prints 2 mm and 1 cm; it has no 2.5 mm or 5 mm tick to lock onto).
 #   skip            set -> no CF is attempted, with the reason recorded.
 #
 # layouts: nested | transition | stagger | block | grid | stacked | fieldprism | none
@@ -515,6 +524,8 @@ CLASS_SPEC: dict[str, dict] = {
     "METRIC_CM":   dict(systems=("metric",), units=["metric__CM"],   layout="nested"),
     "METRIC_CM2":  dict(systems=("metric",), units=["metric__2_CM"], layout="nested"),
     "METRIC_CM4":  dict(systems=("metric",), units=["metric__4_CM"], layout="nested"),
+    "METRIC_CM5":  dict(systems=("metric",), units=["metric__5_CM"], layout="nested",
+                        admissible=("metric__5_CM", "metric__CM")),
     "METRIC_MM_CM": dict(systems=("metric",), units=["metric__MM", "metric__CM"],
                          layout="transition", ratio=10.0),
     "METRIC_MM_CM2": dict(systems=("metric",), units=["metric__MM", "metric__2_CM"],
@@ -602,6 +613,8 @@ def admissible_units(unit_class: str) -> list[str]:
     unresolvable in a crop and the lattice locks a major instead.
     """
     sp = spec_of(unit_class)
+    if sp.get("admissible"):
+        return sorted(sp["admissible"], key=unit_mm)
     out: list[str] = []
     for sysu in sp.get("systems") or ():
         declared = [u for u in sp["units"] if system_of(u) == sysu]

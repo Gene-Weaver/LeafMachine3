@@ -2,9 +2,8 @@
 
 WHY THIS EXISTS
 ---------------
-All three ruler-classifier ensemble members were TRAINED on pre-squarified inputs:
-``LM3_Ruler_Classifier/models/common/paths.py`` points training at
-``datasets/LM3_RulerCrops-h-squarify/images`` (1440x1440, aspect ratio exactly 1.00).
+The ruler classifier was TRAINED on pre-squarified inputs:
+``LM3_Ruler_Classifier/exp__dinov3`` trained on tile_four collages at 896x896, aspect ratio exactly 1.00.
 Serving raw ruler strips instead is a train/serve mismatch: a 755x96 strip put through
 ``resize_shortest(256) -> center_crop(224)`` keeps only ~11% of the ruler length, so the
 model sees a generic patch of ticks and the members disagree three ways.

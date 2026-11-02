@@ -9,7 +9,6 @@ Both run on the same images and are compared:
   CoreML detections of the same class by box IoU; matched-box IoU, score difference, mask IoU
   (segmenter) and keypoint distance (landmarks);
 * specimen segmenter: whole-sheet mask IoU;
-* ruler member: top-1 class and largest probability difference.
 
 The leaf segmenter and the landmark model run on leaf crops cut from the reference plant
 detector's leaf boxes, as in a real run. Verdicts: ``ok``, ``warn`` (agrees, but less closely than
@@ -23,7 +22,6 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
-import cv2
 import numpy as np
 
 REQUIRED_CONF = 0.40      # a reference detection this confident must be found on CoreML
@@ -189,12 +187,10 @@ def _model_paths(cfg) -> dict[str, Any]:
         return cfg.resolve_model_path(cfg.stage(stage)["model"]["path"])
 
     spec, _ = resolve_specimen_model(cfg.stage("specimen_segmenter"))
-    ruler = cfg.stage("ruler_classifier")
     return {
         "archival_detector": path("archival_detector"), "plant_detector": path("plant_detector"),
         "leaf_segmenter": path("leaf_segmenter"), "landmark_detector": path("landmark_detector"),
         "specimen_segmenter": (spec, path("specimen_segmenter")),
-        "ruler_classifier": cfg.resolve_model_path(ruler.get("models_dir") or "models/ruler_classifier"),
     }
 
 
@@ -280,54 +276,7 @@ def check_models(cfg, images: Sequence[Path], log: Callable[[str], None] = lambd
         log(_line(s))
         del ref, test
 
-    if want("ruler_classifier"):
-        results.extend(_check_ruler(paths["ruler_classifier"], [im for _, im in sheets], cpu, cml, log))
     return results
-
-
-def _check_ruler(models_dir: str, sheets: Sequence[np.ndarray], cpu, cml, log) -> list[dict]:
-    """Each CoreML ruler member vs its CPU twin, on squarified tiles cut from the sheets."""
-    import os
-
-    from leafmachine3.inference import coreml
-    from leafmachine3.inference.ruler_ensemble import _load_label_map, _Member, resolve_members
-    from leafmachine3.inference.ruler_squarify import RulerSquarifier
-
-    classes = _load_label_map(models_dir)
-    sq = RulerSquarifier(sz=720, method="tile_four", augment=False)
-    tiles = []
-    for im in sheets:   # the bottom strip of a sheet is the usual ruler position; any texture will do
-        h = im.shape[0]
-        tiles.append(cv2.cvtColor(sq.transform(np.ascontiguousarray(im[int(h * 0.85):, :])), cv2.COLOR_BGR2RGB))
-    out = []
-    for key, dir_name in resolve_members(None):
-        if key not in coreml.COREML_RULER_MEMBERS:
-            continue
-        log(f"ruler_classifier {key}: loading ...")
-        ref = _Member(os.path.join(models_dir, dir_name), cpu, classes)
-        test = _Member(os.path.join(models_dir, dir_name), cml, classes)
-        same, dmax, t_ref, t_test = 0, 0.0, [], []
-        if tiles:
-            test.session.run(None, {test._input_name: test._preprocess(tiles[0])})
-        for rgb in tiles:
-            x = ref._preprocess(rgb)
-            a, tr = _timed(ref.session.run, None, {ref._input_name: x})
-            b, tt = _timed(test.session.run, None, {test._input_name: x})
-            a, b = np.asarray(a[0], np.float64), np.asarray(b[0], np.float64)
-            same += int(a.argmax() == b.argmax())
-            dmax = max(dmax, float(np.abs(a - b).max()))
-            t_ref.append(tr)
-            t_test.append(tt)
-        verdict = FAIL if same < len(tiles) else WARN if dmax > ROUNDING["ruler_prob_diff_max"] else OK
-        s = dict(model=f"ruler_classifier {key}", path=os.path.join(models_dir, dir_name), images=len(tiles),
-                 bound=test.session.get_providers()[0], top1_same=same, prob_diff_max=dmax,
-                 ms_cpu=float(np.mean(t_ref)) if t_ref else None, ms_coreml=float(np.mean(t_test)) if t_test else None,
-                 verdict=verdict, why="" if verdict == OK else f"top-1 same on {same}/{len(tiles)}, max prob diff {dmax:.3f}",
-                 **_native_stats(test.session))
-        _not_on_coreml(s, test.session)
-        out.append(s)
-        log(_line(s))
-    return out
 
 
 def _fmt(v, f="{:.3f}") -> str:

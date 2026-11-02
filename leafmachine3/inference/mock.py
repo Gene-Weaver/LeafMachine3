@@ -163,7 +163,7 @@ class MockSpecimenSegmenter:
         )
 
 
-class MockEnsemble:
+class MockRulerClassifier:
     """Return a fixed ruler unit-type verdict for every crop."""
 
     def __init__(self, unit_type: str = "METRIC_MM") -> None:
@@ -171,16 +171,12 @@ class MockEnsemble:
         self._sq = None
 
     def predict(self, _image) -> dict:
-        return {
-            "ensemble": self.unit_type,
-            "x224": self.unit_type,
-            "n224": self.unit_type,
-            "dinov2mlp": self.unit_type,
-        }
+        return {"label": self.unit_type, "conf": 1.0, "top3": [[self.unit_type, 1.0]]}
 
     def squarify_tile(self, image):
         """Real (pure-cv2) squarify so mock runs still exercise the pre-made tile path."""
         if self._sq is None:
+            from leafmachine3.inference.ruler_classifier import SQUARIFY_METHOD, SQUARIFY_SZ
             from leafmachine3.inference.ruler_squarify import RulerSquarifier
-            self._sq = RulerSquarifier(sz=720, method="tile_four", augment=False)
+            self._sq = RulerSquarifier(sz=SQUARIFY_SZ, method=SQUARIFY_METHOD, augment=False)
         return self._sq.transform(image)

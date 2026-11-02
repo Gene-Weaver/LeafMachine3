@@ -76,10 +76,7 @@ modules:
       fruits: {min_conf: 0.4, min_count: 1}
   ruler_classifier:
     enabled: true
-    models_dir: models/ruler_classifier
-    ensemble_members: [yolo26x_cls_224, yolo26n_cls_224, dinov2_frozen_mlp]
-    min_conf: 0.35
-    squarify: {sz: 720, method: tile_four}
+    model: {key: dinov3_vits16_tile_four_896_mlp, path: models/ruler_classifier/model.onnx, format: onnx}
   ruler_cf:
     enabled: true
     anchor_tol: 0.25

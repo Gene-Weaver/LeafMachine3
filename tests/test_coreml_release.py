@@ -117,9 +117,9 @@ def test_the_exporter_skips_models_with_no_core_ml_conversion(monkeypatch, tmp_p
                  SimpleNamespace(format="pytorch", dest=f"{key}/best.pt")]
         return SimpleNamespace(model_key=key, files=files)
 
-    keys = ["yolo26x_cls_224", "yolo26n_cls_224", "dinov2_frozen_mlp", "dinov3_vits16_tile_four_896_mlp",
+    keys = ["yolo26x_det_1280", "dinov2_frozen_mlp", "dinov3_vits16_tile_four_896_mlp",
             "birefnet_hr_swinl_1024", "unetpp_effb7_1024"]
     lock = SimpleNamespace(actions={"stage": SimpleNamespace(units=[unit(k) for k in keys])})
     monkeypatch.setattr(registry, "load_lock", lambda: lock)
     jobs = _tool("tools/modelhub/export_coreml_fp32.py").lock_jobs(tmp_path, tmp_path, tmp_path)
-    assert [(j[1], j[2]) for j in jobs] == [("yolo26x_cls_224", "yolo"), ("unetpp_effb7_1024", "unetpp")]
+    assert [(j[1], j[2]) for j in jobs] == [("yolo26x_det_1280", "yolo"), ("unetpp_effb7_1024", "unetpp")]

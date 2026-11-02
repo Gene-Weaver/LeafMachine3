@@ -1076,10 +1076,8 @@ _LEGACY_SIG = "sig:"
 def _stage_model_files(cfg: Any, key: str) -> list[Path]:
     """The files a stage actually loads -- what its measured worker VRAM depends on.
 
-    A stage's settings name either a model file or, for the ruler ensemble, a directory; for the
-    directory this is the members' exported graphs, their metadata and the shared label map (the
-    same resolution the ensemble itself uses), not the directory inode, whose size and mtime say
-    nothing about the models inside it.
+    A stage's settings name either a model file or a directory; for a directory this is the files
+    inside it, not the directory inode, whose size and mtime say nothing about the models.
     """
     try:
         artifacts = cfg._stage_artifacts(key)
@@ -1089,13 +1087,7 @@ def _stage_model_files(cfg: Any, key: str) -> list[Path]:
     for artifact in artifacts:
         path = Path(artifact)
         if path.is_dir():
-            if key == "ruler_classifier":
-                from leafmachine3.inference.ruler_ensemble import ensemble_files  # noqa: PLC0415
-
-                members = _cfg_get(cfg.stage(key), "ensemble_members", None)
-                files += [Path(f) for f in ensemble_files(str(path), members)]
-            else:
-                files += sorted(f for f in path.iterdir() if f.is_file())
+            files += sorted(f for f in path.iterdir() if f.is_file())
         else:
             files.append(path)
     return files
@@ -1106,7 +1098,7 @@ def _model_hashes(cfg: Any) -> dict:
 
     It used to be a size/mtime signature of one artifact. A model re-downloaded from the Hub is
     byte-identical with a new mtime, so every fresh install was reported as "models changed"; a
-    stage with several files (the ruler ensemble) kept only the last; and a directory artifact
+    stage with several files kept only the last; and a directory artifact
     signed the directory inode. Content hashes are cached by stat signature (core/digest.py), so
     only the first run after a model install pays for hashing.
     """

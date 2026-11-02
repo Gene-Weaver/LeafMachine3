@@ -29,11 +29,6 @@ def validate_ml_artifacts(cfg) -> None:
         if path and not Path(cfg.resolve_model_path(path)).exists():
             missing.append((key, str(path)))
 
-    if cfg.is_enabled("ruler_classifier"):
-        d = getattr(cfg.stage("ruler_classifier"), "models_dir", None)
-        if d and not Path(cfg.resolve_model_path(d)).exists():
-            missing.append(("ruler_classifier", str(d)))
-
     for key, path in missing:
         log.error("missing model artifact for %s: %s", key, path)
     if missing:

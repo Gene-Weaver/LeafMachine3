@@ -83,19 +83,13 @@ def test_a_multi_file_stage_hashes_every_file(tmp_path):
     assert digest.combined_digest([tmp_path / "missing"], cache) is None
 
 
-def test_the_ruler_ensemble_is_fingerprinted_by_the_files_it_loads(tmp_path):
-    models = tmp_path / "ruler_classifier"
-    for member in ("yolo26x_cls_224", "yolo26n_cls_224", "dinov2_frozen_mlp"):
-        (models / member / "exported").mkdir(parents=True)
-        (models / member / "exported" / "model.onnx").write_text(member)
-        (models / member / "metadata.json").write_text("{}")
-    (models / "label_map.json").write_text("[]")
-    (models / "unrelated_checkpoint.pt").write_text("not loaded")
-    cfg = _Cfg({"ruler_classifier": [models]})
-    files = {p.relative_to(models).as_posix() for p in hs._stage_model_files(cfg, "ruler_classifier")}
-    assert files == {f"{m}/exported/model.onnx" for m in ("yolo26x_cls_224", "yolo26n_cls_224", "dinov2_frozen_mlp")} \
-        | {f"{m}/metadata.json" for m in ("yolo26x_cls_224", "yolo26n_cls_224", "dinov2_frozen_mlp")} \
-        | {"label_map.json"}
+def test_the_ruler_classifier_is_fingerprinted_by_the_file_it_loads(tmp_path):
+    model = tmp_path / "ruler_classifier" / "model.onnx"
+    model.parent.mkdir()
+    model.write_text("graph")
+    (model.parent / "ckpt_best.pt").write_text("not loaded")
+    cfg = _Cfg({"ruler_classifier": [model]})
+    assert hs._stage_model_files(cfg, "ruler_classifier") == [model]
 
 
 # -------------------------------------------------------------------------------------------- comparison

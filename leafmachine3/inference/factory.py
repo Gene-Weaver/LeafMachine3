@@ -8,7 +8,7 @@ Return contracts
 ----------------
 * ``load_detector``      -> object with ``.predict(image)->list[Detection]``.
 * ``load_segmenter``     -> object with ``.predict(image)->list[Instance]`` (crop coords).
-* ``load_ruler_ensemble``-> object with ``.predict(image)->{"ensemble": str, ...}``.
+* ``load_ruler_classifier``-> object with ``.predict(image)->{"label": str, "conf": float, ...}``.
 * ``load_landmark_pose`` -> object with ``.predict(crop)->list[{kpt_name:(x,y,conf)}]`` (crop coords).
 """
 from __future__ import annotations
@@ -148,27 +148,17 @@ def load_specimen_segmenter(cfg: Any, device: Any):
     )
 
 
-def load_ruler_ensemble(cfg: Any, device: Any):
-    """Return the ruler unit-type classifier ensemble backend."""
+def load_ruler_classifier(cfg: Any, device: Any):
+    """Return the ruler unit-type classifier backend."""
     if _is_mock(cfg):
-        from leafmachine3.inference.mock import MockEnsemble
+        from leafmachine3.inference.mock import MockRulerClassifier
 
-        return MockEnsemble()
+        return MockRulerClassifier()
 
-    from leafmachine3.inference.ruler_ensemble import RulerEnsemble
+    from leafmachine3.inference.ruler_classifier import RulerClassifierModel
 
-    stage_cfg = cfg.stage("ruler_classifier")
-    models_dir = cfg.resolve_model_path(_get(stage_cfg, "models_dir", "models/ruler_classifier"))
-    # squarify is mandatory (training-time preprocessing); only its shape is tunable
-    sq = _get(stage_cfg, "squarify", None) or {}
-    _sq = (lambda k, d: _get(sq, k, d)) if sq else (lambda k, d: d)
-    return RulerEnsemble(
-        models_dir,
-        providers=device.ort_providers(),
-        members=_get(stage_cfg, "ensemble_members", None),
-        squarify_sz=int(_sq("sz", 720)),
-        squarify_method=str(_sq("method", "tile_four")),
-    )
+    return RulerClassifierModel(_model_path(cfg, cfg.stage("ruler_classifier")),
+                                providers=device.ort_providers())
 
 
 def load_landmark_pose(cfg: Any, device: Any):

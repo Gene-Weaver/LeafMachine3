@@ -477,10 +477,6 @@ def export(kind: str, checkpoint: str, onnx_path: str, out: str, n_check: int = 
     return record
 
 
-#: Lock models that stay on the CPU on a Mac (no faster on CoreML, or no CoreML conversion): no package.
-CPU_ONLY = frozenset({"yolo26n_cls_224", "dinov2_frozen_mlp"})
-
-
 def lock_jobs(models: Path, pytorch: Path, out: Path, only: Sequence[str] = ()) -> list[tuple]:
     """``(stage, model_key, kind, checkpoint, onnx, package)`` for every default lock model that runs on
     CoreML. The package goes to ``<model dir>/coreml_fp32/model.mlpackage``, the model dir being the
@@ -496,7 +492,7 @@ def lock_jobs(models: Path, pytorch: Path, out: Path, only: Sequence[str] = ()) 
             key = unit.model_key or ""
             onnx_f = next((f for f in unit.files if f.format == "onnx"), None)
             pt_f = next((f for f in unit.files if f.format == "pytorch"), None)
-            if key in CPU_ONLY or key.startswith(("birefnet", "dinov")) or onnx_f is None or pt_f is None:
+            if key.startswith(("birefnet", "dinov")) or onnx_f is None or pt_f is None:
                 continue
             model_dir = Path(onnx_f.dest).parent
             if model_dir.name == "exported":

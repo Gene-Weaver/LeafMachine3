@@ -49,69 +49,75 @@ def test_squarify_makes_portrait_horizontal() -> None:
     assert out.shape == (512, 512, 3)                # 2*sz, orientation-agnostic
 
 
-# ---------------------------------------------------------------- label map / model agreement
-def _write_member(model_dir, n_out: int) -> None:
-    """A tiny real ONNX classifier [1,3,224,224] -> [batch, n_out] plus its metadata.json."""
+# ---------------------------------------------------------------- the model
+def _write_model(path, n_out: int, classes=None) -> str:
+    """A tiny real ONNX classifier [N,3,896,896] -> [N, n_out], plus label_map.json beside it."""
     import json
     import os
 
     import onnx
     from onnx import TensorProto, helper, numpy_helper
 
-    os.makedirs(os.path.join(model_dir, "exported"), exist_ok=True)
-    w = numpy_helper.from_array(np.ones((3, n_out), np.float32), "w")
+    os.makedirs(path, exist_ok=True)
+    w = numpy_helper.from_array(np.arange(3 * n_out, dtype=np.float32).reshape(3, n_out), "w")
     axes = numpy_helper.from_array(np.array([2, 3], np.int64), "axes")
     graph = helper.make_graph(
         [helper.make_node("ReduceMean", ["x", "axes"], ["m"], keepdims=0),
          helper.make_node("MatMul", ["m", "w"], ["y"])],
         "tiny",
-        [helper.make_tensor_value_info("x", TensorProto.FLOAT, ["batch", 3, 224, 224])],
+        [helper.make_tensor_value_info("x", TensorProto.FLOAT, ["batch", 3, 896, 896])],
         [helper.make_tensor_value_info("y", TensorProto.FLOAT, ["batch", n_out])],
         [w, axes],
     )
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 18)])
     model.ir_version = 9
-    onnx.save(model, os.path.join(model_dir, "exported", "model.onnx"))
-    with open(os.path.join(model_dir, "metadata.json"), "w") as fh:
-        json.dump({"family": "yolo", "imgsz": 224}, fh)
+    target = os.path.join(path, "model.onnx")
+    onnx.save(model, target)
+    with open(os.path.join(path, "label_map.json"), "w", encoding="utf-8") as fh:
+        json.dump({"classes": classes or [f"C{i}" for i in range(n_out)]}, fh)
+    return target
 
 
-def _write_label_map(path, classes) -> None:
-    import json
-    import os
+def test_the_classifier_sees_the_training_input_and_names_its_top_classes(tmp_path) -> None:
+    from leafmachine3.inference.ruler_classifier import RulerClassifierModel
 
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as fh:
-        json.dump({"classes": list(classes)}, fh)
-
-
-def test_label_map_prefers_installed_copy(tmp_path) -> None:
-    """The installer's label_map.json (same Hub revisions as the members) wins over a training-tree splits/ copy."""
-    from leafmachine3.inference.ruler_ensemble import _load_label_map, ensemble_files
-
-    _write_label_map(str(tmp_path / "label_map.json"), ["A", "B"])
-    _write_label_map(str(tmp_path / "splits" / "label_map.json"), ["A", "B", "C"])
-    assert _load_label_map(str(tmp_path)) == ["A", "B"]
-    assert ensemble_files(str(tmp_path))[-1] == str(tmp_path / "label_map.json")
-    (tmp_path / "label_map.json").unlink()
-    assert _load_label_map(str(tmp_path)) == ["A", "B", "C"]    # training tree: splits/ only
+    model = RulerClassifierModel(_write_model(str(tmp_path), 4))
+    assert model.ok and model.classes == ["C0", "C1", "C2", "C3"]
+    strip = np.zeros((80, 800, 3), np.uint8)
+    strip[:, ::20] = 255
+    assert model.squarify_tile(strip).shape == (896, 896, 3)      # tile_four at sz=448
+    out = model.predict(strip)
+    # a mostly black strip normalizes to a negative mean, so the fixture's smallest column wins
+    assert out["label"] == "C0" and [c for c, _ in out["top3"]] == ["C0", "C1", "C2"]
+    assert 0.25 < out["conf"] <= 1.0 and out["conf"] >= out["top3"][1][1]
 
 
-def test_member_refuses_class_count_mismatch(tmp_path) -> None:
+def test_the_classifier_refuses_a_class_count_mismatch(tmp_path) -> None:
     """A model whose output size differs from the label map must not load (it would misname classes)."""
-    import pytest
+    from leafmachine3.inference.ruler_classifier import RulerClassifierModel
 
-    from leafmachine3.inference.ruler_ensemble import RulerEnsemble, _Member
+    bad = RulerClassifierModel(_write_model(str(tmp_path), 3, classes=["A", "B"]))
+    assert not bad.ok and bad.predict(np.zeros((40, 200, 3), np.uint8)) == {"label": "UNKNOWN"}
 
-    _write_member(str(tmp_path / "m"), n_out=3)
-    with pytest.raises(ValueError, match="outputs 3 classes but the label map has 2"):
-        _Member(str(tmp_path / "m"), ["CPUExecutionProvider"], ["A", "B"])
-    assert _Member(str(tmp_path / "m"), ["CPUExecutionProvider"], ["A", "B", "C"]).classes == ["A", "B", "C"]
 
-    for name in ("yolo26x_cls_224", "yolo26n_cls_224", "dinov2_frozen_mlp"):
-        _write_member(str(tmp_path / "ens" / name), n_out=3)
-    _write_label_map(str(tmp_path / "ens" / "label_map.json"), ["A", "B"])
-    bad = RulerEnsemble(str(tmp_path / "ens"))
-    assert not bad.ok and bad.predict(np.zeros((40, 200, 3), np.uint8)) == {"ensemble": "UNKNOWN"}
-    _write_label_map(str(tmp_path / "ens" / "label_map.json"), ["A", "B", "C"])
-    assert RulerEnsemble(str(tmp_path / "ens")).ok
+def test_a_missing_model_degrades_to_unknown(tmp_path) -> None:
+    from leafmachine3.inference.ruler_classifier import RulerClassifierModel
+
+    model = RulerClassifierModel(str(tmp_path / "absent" / "model.onnx"))
+    assert not model.ok and model.predict(np.zeros((40, 200, 3), np.uint8)) == {"label": "UNKNOWN"}
+
+
+def test_old_ensemble_settings_warn_and_still_get_the_model(tmp_path) -> None:
+    """A settings file from before 3.0.1056 names the ensemble; it must not change what runs."""
+    import yaml
+
+    from leafmachine3.core.config import Config
+
+    path = tmp_path / "old.yaml"
+    path.write_text(yaml.safe_dump({"project": {"input": {"dirs": ["x"]}}, "modules": {"ruler_classifier": {
+        "enabled": True, "models_dir": "models/ruler_classifier", "ensemble_members": ["a"],
+        "min_conf": 0.35, "squarify": {"sz": 720, "method": "tile_four"}}}}))
+    cfg = Config.load(path)
+    retired = dict(cfg.retired_settings())
+    assert {f"modules.ruler_classifier.{k}" for k in ("models_dir", "ensemble_members", "min_conf", "squarify")} <= set(retired)
+    assert cfg.stage("ruler_classifier")["model"]["path"] == "models/ruler_classifier/model.onnx"

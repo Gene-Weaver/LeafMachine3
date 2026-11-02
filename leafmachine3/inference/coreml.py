@@ -23,10 +23,9 @@ slower than the CPU. :func:`providers` still names ``CoreMLExecutionProvider``, 
 that tells the inference wrappers to ask this module for a session; no onnxruntime session is ever
 created with it.
 
-Which models go to Core ML is decided here too: the YOLO26n and DINOv2 ruler members were no faster
-on the Apple GPU than on the CPU, so they stay on the CPU (:data:`COREML_RULER_MEMBERS`); the UNet++
-specimen models and every YOLO26 end2end export with a package go to Core ML; anything else (BiRefNet)
-stays on the CPU.
+Which models go to Core ML is decided here too: the UNet++ specimen models and every YOLO26 end2end
+export with a package go to Core ML; anything else (BiRefNet, the DINOv3 ruler classifier) stays on the
+CPU from its ONNX graph.
 
 Environment switches (testing and comparison only; the defaults are what a Mac user gets):
 
@@ -51,9 +50,6 @@ log = logging.getLogger("leafmachine3.inference.coreml")
 COREML_EP = "CoreMLExecutionProvider"
 CPU_EP = "CPUExecutionProvider"
 CPU_PROVIDERS = (CPU_EP,)
-
-#: Ruler-ensemble members that run on Core ML (the others measured no faster there: x0.9 / x0.55).
-COREML_RULER_MEMBERS = frozenset({"x224"})
 
 #: The tail helpers live with the packages that need them.
 end2end_tail = coreml_native.end2end_tail

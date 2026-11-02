@@ -199,9 +199,9 @@ def test_the_exporter_covers_the_default_models_that_run_on_coreml(tmp_path):
         rel_pkg = pkg.relative_to(tmp_path / "out")
         model_dir = rel_onnx.parent.parent if rel_onnx.parent.name == "exported" else rel_onnx.parent
         assert rel_pkg == model_dir / cn.PACKAGE
+    # the DINOv3 ruler classifier stays on the CPU from its ONNX graph, so it has no package
     assert set(by_stage) == {"archival_detector", "plant_detector", "landmark_detector", "leaf_segmenter",
-                             "specimen_segmenter", "ruler_classifier"}
-    assert by_stage["ruler_classifier"] == ["yolo26x_cls_224"]          # the n and DINOv2 members stay on the CPU
+                             "specimen_segmenter"}
 
 
 # --------------------------------------------------------------------------------------------------

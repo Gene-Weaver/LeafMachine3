@@ -34,7 +34,7 @@ from .lattice import (orient, candidate_bands, adaptive_bands, band_profiles,
                         periodicity, refine_period, extract_ticks, find_levels,
                         level_of, text_penalty, bandpass, alternation,
                         detect_transition, subharmonic_lags, comb_lag, MIN_PERIOD,
-                        MAX_LEVELS)
+                        MAX_LEVELS, HARM_DIVS)
 from .units import (identify_period, label_levels, reconcile_units, combine_cf,
                       class_units, unit_mm, system_of, spec_of, class_systems,
                       admissible_units, admissible_periods, is_skipped, ANCHOR_TOL,
@@ -108,6 +108,39 @@ def _sublattice_support(i_bp, P, unit_class):
             _, _, sq = refine_period(i_bp, P / d, frac=0.02, steps=41)
             v = min(max(sq / sup0 if sup0 > 0 else 0.0, 0.0), 1.0)
         out[name] = v
+    return out
+
+
+def _divisions_of_lags(i_bp, P_cands, unit_class, cf_anchor):
+    """The division of a lag that no printed period explains, for a class whose periods are a closed list.
+
+    Such a class has no name for a lag that is none of its periods, so that lag is a multiple of
+    one. The ACF of a 2 mm comb can peak at 4 mm with its 2 mm peak under FUND_RATIO, which
+    subharmonic_lags then rejects; METRIC_CM5 strips resized to x0.75 did this and read 2x high.
+
+    Only the anchor can say a lag is unexplained, so without one nothing is offered, and a lag that
+    already reads as a printed period near the anchor is left alone: dividing a true 1 cm lag by 4
+    makes a phantom 2.5 mm comb that names as 2 mm and still passes ANCHOR_TOL, 25% high.
+    """
+    if not (cf_anchor and cf_anchor > 0):
+        return []
+    periods = admissible_periods(unit_class).values()
+
+    def miss(P):
+        return min(abs(math.log(P / pcm / cf_anchor)) for pcm in periods)
+
+    tol = math.log(1.0 + ANCHOR_TOL)
+    out = []
+    for P in P_cands:
+        if miss(P) <= tol:
+            continue
+        near = [P / d for d in HARM_DIVS if P / d >= MIN_PERIOD and miss(P / d) <= tol]
+        if not near:
+            continue
+        q, _, sup = refine_period(i_bp, min(near, key=miss), frac=0.03, steps=61)
+        if (np.isfinite(q) and q >= MIN_PERIOD and sup > 0
+                and not any(abs(q / c - 1.0) <= 0.02 for c in P_cands + out)):
+            out.append(float(q))
     return out
 
 
@@ -302,6 +335,8 @@ def analyse(gray, unit_class, cf_anchor=None):
         if cl is not None and not any(abs(cl / Pc - 1.0) <= 0.02 for Pc in P_cands):
             comb_P = float(cl)
             P_cands.append(comb_P)
+        if spec0.get("admissible"):
+            P_cands += _divisions_of_lags(rbp, P_cands, unit_class, cf_anchor)
         if not P_cands:
             continue
         prelim.append((sp, (y0, y1), kind, pr, P_cands, comb_P))
@@ -466,7 +501,7 @@ def analyse(gray, unit_class, cf_anchor=None):
             g["anchor"] = a[0] if a else (_anchor(acc) or 0.0)
     named, ests, spread, agree = label_levels(pxcm, P, [(l["mult"], l["spacing"])
                                                         for l in lv_in[1:]],
-                                              ident["system"])
+                                              ident["system"], class_units(unit_class))
 
     # ---- final CF: the finest unit AND every coarser major, each measured
     # independently, fused under the MP-anchor and crop-length bounds ----------

@@ -160,7 +160,7 @@ _LEAF_COLUMNS: tuple[Column, ...] = (
                                                     "row. It IS the CF in use only where cf_source is "
                                                     "'predicted_from_megapixels'."),
     Column("ruler_unit_type", "", "Unit type of the rulers that produced the published CF."),
-    Column("ruler_class_type", "", "Per-sheet consensus ruler unit type from the classifier ensemble."),
+    Column("ruler_class_type", "", "Per-sheet consensus ruler unit type from the classifier."),
     *_FP_SUMMARY_COLUMNS,
     Column("has_leaves", "0/1", "Sheet-level phenology: leaves present."),
     Column("has_flowers", "0/1", "Sheet-level phenology: flowers present."),
@@ -290,7 +290,7 @@ _SPECIMEN_COLUMNS: tuple[Column, ...] = (
     Column("ruler_cf_status", "", "published | withheld | no_reading | no_ruler."),
     Column("ruler_cf_confidence", "", "high | medium | low. Only 'high' publishes a CF."),
     Column("ruler_unit_type", "", "Unit type of the rulers behind the published CF."),
-    Column("ruler_class_type", "", "Per-sheet consensus ruler unit type from the classifier ensemble."),
+    Column("ruler_class_type", "", "Per-sheet consensus ruler unit type from the classifier."),
     Column("n_ruler_crops", "count", "Candidate ruler crops considered on this sheet."),
     Column("n_ruler_crops_used", "count", "Ruler crops that contributed to the published CF."),
     *_FP_SUMMARY_COLUMNS,

@@ -593,14 +593,6 @@ def _collect_warnings(cfg: Any, values: dict, settings_file: Path | None = None)
             if mpath and not _exists(Path(cfg.resolve_model_path(mpath))):
                 warn("missing_model", f"modules.{key}.model.path",
                      f"Model file not found: {cfg.resolve_model_path(mpath)}")
-        try:
-            if cfg.is_enabled("ruler_classifier"):
-                mdir = cfg.stage("ruler_classifier").get("models_dir")
-                if mdir and not _is_dir(Path(cfg.resolve_model_path(mdir))):
-                    warn("missing_model", "modules.ruler_classifier.models_dir",
-                         f"Ruler classifier models folder not found: {cfg.resolve_model_path(mdir)}")
-        except Exception:  # noqa: BLE001
-            pass
         # The specimen segmenter is named by model.key; a missing key or a retired imgsz is a
         # warning here (an unknown key is a hard error from Config.validate()).
         try:

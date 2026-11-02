@@ -20,9 +20,9 @@ What a `coreml_fp32` package is (made by `tools/modelhub/export_coreml_fp32.py`)
 - **Attention rewritten for Apple's GPU compiler.** MPSGraph aborts on Ultralytics' `v @ attn^T`, so
   the exporter writes `(attn @ v^T)^T`, which is bit-identical in torch.
 
-Six default models have packages: archival, plant, leaf segmenter, landmarks, the UNet++ specimen
-segmenter and the YOLO26x ruler member. The YOLO26n and DINOv2 ruler members stay on the CPU (no
-faster on the GPU). On a Mac, `lm3 models install` downloads ONNX and `coreml_fp32` (3.0 GB in all);
+Five default models have packages: archival, plant, leaf segmenter, landmarks and the UNet++ specimen
+segmenter. The DINOv3 ruler classifier runs from its ONNX graph on the CPU. On a Mac, `lm3 models install`
+downloads ONNX and `coreml_fp32` (2.5 GB in all);
 `uv sync --extra macos` installs `coremltools`.
 
 **Memory:** read `/usr/bin/time -l`'s **peak memory footprint** line, not maximum resident set size,
@@ -137,6 +137,6 @@ revision until the last step, so users see no change until then.
 5. **Pin the final revisions and merge.** Repeat step 2's bump and lock commands and commit. Run the
    checks in [Checking a fresh install](#checking-a-fresh-install) from the branch before merging.
 
-Packages cover the lock's default models. Alternates, and the YOLO26n and DINO ruler models, have none
+Packages cover the lock's default models. Alternates, and the DINOv3 ruler classifier, have none
 and run on the CPU on a Mac. If a Mac still has a package from older weights, LM3 sees that its ONNX hash
 differs, logs a warning and runs that model on the CPU.

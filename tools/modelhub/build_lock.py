@@ -106,28 +106,16 @@ DEFAULTS: dict[str, dict] = {
         "files": {"json/model.json": ("mp_conversion_factor/model.json", "json"),
                   "fit/fit_data.csv": ("mp_conversion_factor/fit_data.csv", "meta"),
                   "fit/fit_mp_cf.py": ("mp_conversion_factor/fit_mp_cf.py", "meta")}}]},
-    # The ensemble: each member is its own repo; the runtime (inference/ruler_ensemble.py) expects
-    # <models_dir>/<member>/exported/model.onnx + <models_dir>/<member>/metadata.json and ONE shared
-    # <models_dir>/label_map.json. The same label_map.json ships in every member repo (same sha), so
-    # it is listed once, on the tie-break member.
-    "ruler_classifier": {"units": [
-        {"repo_id": f"{NAMESPACE}/lm3_ruler_classifier_ensemble__yolo26x_cls_224",
-         "dir": "ruler_classifier/yolo26x_cls_224",
-         "files": {"onnx/model.onnx": ("ruler_classifier/yolo26x_cls_224/exported/model.onnx", "onnx"),
-                   "pytorch/best.pt": ("ruler_classifier/yolo26x_cls_224/weights/best.pt", "pytorch"),
-                   "training_metadata.json": ("ruler_classifier/yolo26x_cls_224/metadata.json", "meta"),
-                   "label_map.json": ("ruler_classifier/label_map.json", "meta")}},
-        {"repo_id": f"{NAMESPACE}/lm3_ruler_classifier_ensemble__yolo26n_cls_224",
-         "dir": "ruler_classifier/yolo26n_cls_224",
-         "files": {"onnx/model.onnx": ("ruler_classifier/yolo26n_cls_224/exported/model.onnx", "onnx"),
-                   "pytorch/best.pt": ("ruler_classifier/yolo26n_cls_224/weights/best.pt", "pytorch"),
-                   "training_metadata.json": ("ruler_classifier/yolo26n_cls_224/metadata.json", "meta")}},
-        {"repo_id": f"{NAMESPACE}/lm3_ruler_classifier_ensemble__dinov2_frozen_mlp",
-         "dir": "ruler_classifier/dinov2_frozen_mlp",
-         "files": {"onnx/model.onnx": ("ruler_classifier/dinov2_frozen_mlp/exported/model.onnx", "onnx"),
-                   "pytorch/ckpt_best.pt": ("ruler_classifier/dinov2_frozen_mlp/weights/ckpt_best.pt", "pytorch"),
-                   "training_metadata.json": ("ruler_classifier/dinov2_frozen_mlp/metadata.json", "meta")}},
-    ]},
+    # The sole classifier since 3.0.1056, replacing the ensemble of three repos. The DINOv3 License
+    # asks for a copy to travel with the weights, so LICENSE.md is installed beside them.
+    "ruler_classifier": {"units": [{
+        "repo_id": f"{NAMESPACE}/lm3_ruler_classifier__dinov3_vits16_tile_four_896_mlp",
+        "dir": "ruler_classifier",
+        "files": {"onnx/model.onnx": ("ruler_classifier/model.onnx", "onnx"),
+                  "pytorch/ckpt_best.pt": ("ruler_classifier/ckpt_best.pt", "pytorch"),
+                  "training_metadata.json": ("ruler_classifier/training_metadata.json", "meta"),
+                  "label_map.json": ("ruler_classifier/label_map.json", "meta"),
+                  "LICENSE.md": ("ruler_classifier/LICENSE.md", "meta")}}]},
 }
 
 #: Published NON-default models: installed only on request (`lm3 models install --model STAGE=KEY`),

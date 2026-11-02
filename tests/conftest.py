@@ -460,12 +460,7 @@ def build_mock_config(
                     "fruits": {"min_conf": 0.4, "min_count": 1},
                 },
             },
-            "ruler_classifier": {
-                "enabled": ruler_classifier_enabled,
-                "models_dir": "models/ruler_classifier",
-                "ensemble_members": ["a", "b", "c"],
-                "min_conf": 0.35,
-            },
+            "ruler_classifier": {"enabled": ruler_classifier_enabled},
             "ruler_cf": {"enabled": ruler_classifier_enabled},   # lattice CF; needs the classifier's tiles + verdicts
             "leaf_segmenter": {"enabled": True, "include_partial": False},
             "morphology": {"enabled": True, "classes": ["Leaf"], "find_minimum_bounding_box": True},

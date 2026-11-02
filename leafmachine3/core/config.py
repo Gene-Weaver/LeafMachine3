@@ -57,7 +57,7 @@ CANONICAL_STAGE_KEYS: tuple[str, ...] = (
 
 # Stages that require an exported single-file model artifact when enabled.
 _MODEL_PATH_STAGES: tuple[str, ...] = ("mp_conversion_factor", "archival_detector", "plant_detector",
-                                       "specimen_segmenter", "leaf_segmenter", "landmark_detector")
+                                       "specimen_segmenter", "ruler_classifier", "leaf_segmenter", "landmark_detector")
 
 _MISSING = object()
 
@@ -270,7 +270,9 @@ def builtin_defaults() -> dict[str, Any]:
                                    "yolo": {"conf": 0.25, "iou": 0.5, "max_det": 300},
                                    "paperclean": True, "LLR_Hyst_KeepBlobs": True},
             "phenology_detector": {"enabled": True},
-            "ruler_classifier": {"enabled": True},
+            "ruler_classifier": {"enabled": True, "model": {"key": "dinov3_vits16_tile_four_896_mlp",
+                                                            "path": "models/ruler_classifier/model.onnx",
+                                                            "format": "onnx"}},
             # lattice conversion-factor method. use_CF_predicted_by_MP is here (not only in the
             # YAML) so the settings form, which renders leaves of the MERGED tree, always shows it.
             # The `fieldprism` block drives FieldPrism (FP) marker sheets; its tolerances mirror
@@ -351,6 +353,10 @@ RETIRED_SETTINGS: dict[str, str] = {
     "report.overlay.draw_boxes_plant": "box border/fill is configured per group under report.overlay.groups",
     "report.overlay.line_width_archival": "line widths are configured per group under report.overlay.groups",
     "report.overlay.line_width_plant": "line widths are configured per group under report.overlay.groups",
+    "modules.ruler_classifier.models_dir": "the classifier is one model now, set by modules.ruler_classifier.model",
+    "modules.ruler_classifier.ensemble_members": "the classifier is one model now, set by modules.ruler_classifier.model",
+    "modules.ruler_classifier.min_conf": "nothing read it",
+    "modules.ruler_classifier.squarify": "the squarified input is fixed by the model it was trained for",
 }
 
 class Config:
@@ -473,7 +479,7 @@ class Config:
         Plan section 3.5 rule 1: a relative path written in a YAML settings file resolves against the
         directory containing that file -- never the process CWD. This one method is the seam: input
         dirs (``core/ingest.py``), artifact validation (``core/validate.py``,
-        ``server/settings_api.py``), model and ``models_dir`` loading (``inference/factory.py``) and
+        ``server/settings_api.py``), model loading (``inference/factory.py``) and
         the setup scratch probe (``setup/hardware_setup.py``) all route through it, so they cannot
         drift apart again.
 
@@ -505,7 +511,7 @@ class Config:
         The settings YAML keeps saying ``models/archival_detector/model.onnx`` everywhere; a packaged
         app, a Docker image or a cluster job points ``LM3_MODELS_DIR`` at wherever ``lm3 models
         install`` put the files, and a source checkout leaves it unset so the path resolves beside
-        the settings file as before. Every model/``models_dir`` load goes through here.
+        the settings file as before. Every model load goes through here.
         """
         path = Path(str(p)).expanduser()
         if path.is_absolute():
@@ -656,9 +662,6 @@ class Config:
             path = model.get("path")
             if path:
                 out.append(self.resolve_path(path))
-        models_dir = blk.get("models_dir")
-        if models_dir:
-            out.append(self.resolve_path(models_dir))
         return out
 
     # -- validation --------------------------------------------------------- #
@@ -695,9 +698,6 @@ class Config:
                 path = model.get("path") if isinstance(model, Mapping) else None
                 if not path:
                     errors.append(f"modules.{key} is enabled but has no model.path (set one or compute.mock: true)")
-            if self.is_enabled("ruler_classifier"):
-                if not self.stage("ruler_classifier").get("models_dir"):
-                    errors.append("modules.ruler_classifier is enabled but has no models_dir")
 
         # The specimen segmenter is chosen by NAME (model.key); an unknown name cannot run in any
         # mode. A missing key is not an error -- it resolves to the UNet++ default with a warning.

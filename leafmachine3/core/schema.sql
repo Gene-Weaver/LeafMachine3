@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS specimen (
                                                -- lattice did not pass, and modules.ruler_cf.use_CF_predicted_by_MP
                                                -- is on) | NULL (no CF; every *_cm column stays NULL)
     ruler_unit_type    TEXT,                   -- from ruler_cf (lattice): dominant unit-type of the crops that produced the CF
-    ruler_class_type   TEXT,                   -- from ruler_classifier (ensemble unit-type; per-specimen consensus across rulers)
+    ruler_class_type   TEXT,                   -- from ruler_classifier (unit-type; per-specimen consensus across rulers)
     has_leaves         INTEGER, has_flowers INTEGER, has_fruits INTEGER,
     ingested_at        TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (image_stem),
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS phenology (
     n_leaves INTEGER, n_flowers INTEGER, n_fruits INTEGER
 );
 
--- ruler_classification : per Ruler crop -> unit_type + the ensemble votes.
+-- ruler_classification : per Ruler crop -> unit_type + the top classes (votes_json).
 -- squarify_path is the pre-made four-tile collage (_ruler_squarify) the classifier saw,
 -- reused by the ruler_cf lattice stage + its QC panel so nothing re-squarifies.
 CREATE TABLE IF NOT EXISTS ruler_classification (
