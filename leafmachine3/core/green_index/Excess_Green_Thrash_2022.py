@@ -5,9 +5,10 @@ https://bsapubs.onlinelibrary.wiley.com/doi/10.1002/aps3.11502
 
     ExG = 2G - R - B
 
-Original index associated with Woebbecke et al. (1995), https://doi.org/10.13031/2013.27838, whose
-raw-RGB Vegetation_Index_Woebbecke_1995 is the same formula, so it is an alias here rather than a
-separate column.
+This is the raw-RGB form, as Thrash et al. calculate it per pixel. Woebbecke et al. (1995),
+https://doi.org/10.13031/2013.27838, define excess green on chromatic coordinates: 2g - r - b, which is
+(2G - R - B) / (R + G + B). The two are on different scales and are not interchangeable. The name
+Vegetation_Index_Woebbecke_1995 is used for this raw form, so it is an alias here rather than a separate column.
 
 Thrash et al. used ExG values of 29 to 202 to identify green pixels and estimate foliar area. Dried
 herbarium tissue is mostly browner than that window: it held no pixels at all on about half of the
@@ -59,7 +60,7 @@ METHOD = GreenIndexMethod(
     name="Excess_Green_Thrash_2022",
     column="excess_green_thrash_2022",
     short="ExG",
-    formula="ExG = 2G - R - B",
+    formula="ExG = 2G - R - B, on raw RGB values (Woebbecke's normalized form is 2g - r - b)",
     citation="Thrash et al. (2022), Applications in Plant Sciences",
     url="https://bsapubs.onlinelibrary.wiley.com/doi/10.1002/aps3.11502",
     calculate=calculate_excess_green,

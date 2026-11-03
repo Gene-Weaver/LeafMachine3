@@ -5,6 +5,9 @@ https://onlinelibrary.wiley.com/doi/full/10.1111/gcbb.12999
 
     GR = (2G - R - B) / (2R + G + B)
 
+Lazarevic et al. define this on multispectral reflectance from a PlantEye F500 scanner. LM3 applies the same
+equation to RGB image values, so its values are not reflectance measurements and are not directly comparable.
+
 Alternative formulation used by some commercial phenotyping systems under the name Green Leaf Index.
 """
 from __future__ import annotations
@@ -25,7 +28,7 @@ METHOD = GreenIndexMethod(
     name="Greenness_Lazarevic_2022",
     column="greenness_lazarevic_2022",
     short="GR",
-    formula="GR = (2G - R - B) / (2R + G + B)",
+    formula="GR = (2G - R - B) / (2R + G + B), a reflectance-derived equation applied here to RGB values",
     citation="Lazarevic et al. (2022), GCB Bioenergy",
     url="https://onlinelibrary.wiley.com/doi/full/10.1111/gcbb.12999",
     calculate=calculate_greenness,

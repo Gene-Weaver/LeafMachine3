@@ -3,7 +3,10 @@
 Woebbecke et al. (1995). Transactions of the ASAE.
 https://doi.org/10.13031/2013.27838
 
-    GCC = G / (R + G + B)
+    GCC = g = G / (R + G + B)
+
+Woebbecke et al. normalize each channel by the pixel's total, so the chromatic coordinates r, g and b
+sum to 1. This is g.
 
 See also Browning et al. (2024), the USDA LTAR PhenoCam protocol for GCC:
 https://www.ars.usda.gov/research/publications/publication/?seqNo115=418040

@@ -772,10 +772,11 @@ and its column in `Data/green_index.csv` is that name in lowercase. R, G and B a
    > organisms. *Plant, Cell & Environment*, 48(11), 8027–8043. <https://doi.org/10.1111/pce.70102>
 
 2. **[`Green_Chromatic_Coordinate_Woebbecke_1995`](leafmachine3/core/green_index/Green_Chromatic_Coordinate_Woebbecke_1995.py).**
-   Green's share of the pixel's total brightness.
+   Green's share of the pixel's total brightness. This is Woebbecke et al.'s green chromatic coordinate,
+   *g*: they normalize each channel by the pixel's total, so *r*, *g* and *b* sum to 1.
 
    ```math
-   \mathrm{GCC} = \frac{G}{R + G + B}
+   \mathrm{GCC} = g = \frac{G}{R + G + B}
    ```
 
    > Woebbecke, D. M., Meyer, G. E., Von Bargen, K., & Mortensen, D. A. (1995). Color indices for weed
@@ -788,7 +789,9 @@ and its column in `Data/green_index.csv` is that name in lowercase. R, G and B a
 3. **[`Excess_Green_Thrash_2022`](leafmachine3/core/green_index/Excess_Green_Thrash_2022.py).** Thrash et al. keep pixels with ExG
    from 29 to 202. Dried tissue is mostly browner than that, and on about half of the leaves we tested no
    pixel qualified. So this column averages all used pixels, and the strict result is in
-   `excess_green_thrash_2022_window_mean` (with `_window_n_px` and `_window_frac`).
+   `excess_green_thrash_2022_window_mean` (with `_window_n_px` and `_window_frac`). This is the raw-RGB form
+   Thrash et al. use. Woebbecke et al.'s original excess green is on chromatic coordinates, 2*g* − *r* − *b*,
+   which equals this value divided by R + G + B, so the two are on different scales and are not interchangeable.
 
    ```math
    \mathrm{ExG} = 2G - R - B
@@ -832,8 +835,10 @@ and its column in `Data/green_index.csv` is that name in lowercase. R, G and B a
    > photography for documentation of grazing impacts on wheat. *Geocarto International*, 16(1), 65–70.
    > <https://doi.org/10.1080/10106040108542184>
 
-7. **[`Greenness_Lazarevic_2022`](leafmachine3/core/green_index/Greenness_Lazarevic_2022.py).** Some commercial phenotyping systems
-   use this formula under the name Green Leaf Index, so check which one a system means.
+7. **[`Greenness_Lazarevic_2022`](leafmachine3/core/green_index/Greenness_Lazarevic_2022.py).** Lazarević et al. define this on
+   multispectral reflectance from a PlantEye F500 scanner. LM3 applies the same equation to RGB image values, so
+   its values are not reflectance measurements and are not directly comparable to theirs. Some commercial
+   phenotyping systems use this formula under the name Green Leaf Index, so check which one a system means.
 
    ```math
    \mathrm{GR} = \frac{2G - R - B}{2R + G + B}
@@ -853,8 +858,8 @@ one once and gives them no columns of their own. Their names survive as aliases 
   > optimum N fertilization of winter wheat on the North China Plain. *Field Crops Research*, 89(2–3),
   > 389–395. <https://doi.org/10.1016/j.fcr.2004.02.014>
 
-- **Vegetation Index** is ExG on raw RGB, as `calculate_vegetation_index()`, from Woebbecke et al. (1995),
-  cited under GCC.
+- **Vegetation Index** is 2G − R − B on raw RGB, the same as LM3's ExG, as `calculate_vegetation_index()`. It is
+  attributed to Woebbecke et al. (1995), cited under GCC, but their index is the normalized form described under ExG.
 
 **Summary images.** `Overlay/Overlay_Green_Index/` holds one image per leaf. Excluded pixels are red. Each
 tile is one index: a histogram of its per-pixel values with bars colored by the pixels in each bin, the
