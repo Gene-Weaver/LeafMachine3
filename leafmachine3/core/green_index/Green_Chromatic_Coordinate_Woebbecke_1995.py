@@ -2,9 +2,11 @@
 
 Woebbecke et al. (1995). Transactions of the ASAE.
 https://doi.org/10.13031/2013.27838
-https://www.ars.usda.gov/research/publications/publication/?seqNo115=418040
 
     GCC = G / (R + G + B)
+
+See also Browning et al. (2024), the USDA LTAR PhenoCam protocol for GCC:
+https://www.ars.usda.gov/research/publications/publication/?seqNo115=418040
 
 Also called Normalized Greenness Index (NGI). Greenness_Index_Jia_2004 is the same formula
 (https://doi.org/10.1016/j.fcr.2004.02.014), so it is an alias here rather than a separate column.

@@ -755,53 +755,152 @@ paints holes a recoverable near-black).
 
 ### 17. Green Index
 
-Scores every oriented leaf with seven published color indices, reading the Reporter's
-`Leaf_Oriented/Lamina_RGB` cutout and its `Lamina_Mask`. The code for each index is in its own file in
-[`leafmachine3/core/green_index/`](leafmachine3/core/green_index/), named for that version, so a
-column in `Data/green_index.csv` leads straight to its formula and citation.
+Reports seven published color indices for every oriented leaf, measured on the Reporter's
+`Leaf_Oriented/Lamina_RGB` cutouts with `Lamina_Mask` selecting the leaf. A leaf's value is the mean of
+the index's per-pixel values. Each index has its own code file in [`leafmachine3/core/green_index/`](leafmachine3/core/green_index/), named for its version,
+and its column in `Data/green_index.csv` is that name in lowercase. R, G and B are 0–255 values.
 
-| Index and file | Column | Formula |
-|---|---|---|
-| [`Green_Index_Signorelli_2025`](https://onlinelibrary.wiley.com/doi/full/10.1111/pce.70102) | `green_index_signorelli_2025` | preGI / (12 × (1 − preGI)), where preGI = ((255 − \|G − 165\|) + (255 − \|R − 37.5\|) + (255 − \|B − 37.5\|)) / (3 × 255) |
-| [`Green_Chromatic_Coordinate_Woebbecke_1995`](https://doi.org/10.13031/2013.27838) | `green_chromatic_coordinate_woebbecke_1995` | G / (R + G + B) |
-| [`Excess_Green_Thrash_2022`](https://bsapubs.onlinelibrary.wiley.com/doi/10.1002/aps3.11502) | `excess_green_thrash_2022` | 2G − R − B |
-| [`Two_Fold_Red_Excess_Agarwal_2025`](https://link.springer.com/article/10.1186/s13007-025-01339-y) | `two_fold_red_excess_agarwal_2025` | 2R − G − B |
-| [`Vegetation_Index_2_Kawashima_1998`](https://doi.org/10.1006/anbo.1997.0544) | `vegetation_index_2_kawashima_1998` | (R − B) / (R + B) |
-| [`Green_Leaf_Index_Louhaichi_2001`](https://doi.org/10.1080/10106040108542184) | `green_leaf_index_louhaichi_2001` | (2G − R − B) / (2G + R + B) |
-| [`Greenness_Lazarevic_2022`](https://onlinelibrary.wiley.com/doi/full/10.1111/gcbb.12999) | `greenness_lazarevic_2022` | (2G − R − B) / (2R + G + B) |
+1. **[`Green_Index_Signorelli_2025`](leafmachine3/core/green_index/Green_Index_Signorelli_2025.py).** How close a pixel is to one
+   reference green (R 37.5, G 165, B 37.5). It is not capped at 1: an 8-bit pixel can reach 63.67.
 
-A leaf's value is the mean of that index's per-pixel values. `mean_r`, `mean_g` and `mean_b` are stored
-too, so any formula can also be applied to the leaf's mean color. Keep three things in mind when
-reading them:
+   ```math
+   \mathrm{GI} = \frac{p}{12(1-p)}, \quad p = \frac{(255-|G-165|) + (255-|R-37.5|) + (255-|B-37.5|)}{3 \times 255}
+   ```
 
-- **Not every index measures green.** TREx and VI2 rise with red, so a higher value means a less green leaf.
-- **Excess Green has two values.** Thrash et al. keep pixels with ExG from 29 to 202. Dried tissue is
-  mostly browner than that, and on about half of the leaves we tested no pixel falls in the window. So
-  `excess_green_thrash_2022` averages all used pixels, and the strict result is in
-  `excess_green_thrash_2022_window_mean` (empty when no pixel qualifies), with `_window_n_px` and `_window_frac`.
-- **Colors are not calibrated.** Values come from each image's RGB as scanned, so differences between
-  institutions or cameras carry over into the indices.
+   > Signorelli, S., Casaretto, E., Etchemendy-Gamundi, M., Bentancor, M., & Millar, A. H. (2025). The
+   > Green Index: A widely accessible method to quantify the degree of greenness of photosynthetic
+   > organisms. *Plant, Cell & Environment*, 48(11), 8027–8043. <https://doi.org/10.1111/pce.70102>
 
-**Which pixels count.** Mounting tape is glued across the leaf, inside its mask, and it moves every
-index. So LM3 builds a histogram of each leaf's whiteness, min(R, G, B), and looks for a separate peak on
-the bright side with a trough between it and the leaf. Pixels whiter than the trough are left out of every
-value. Tape can cover more of a curved or broken leaf than the leaf itself: up to 80% of the lamina can
-be excluded, and above 50% the excluded pixels must be near-neutral and the kept pixels colored, because
-that shape is otherwise a pale, woolly leaf. The rules are in
-[`pixel_exclusion.py`](leafmachine3/core/green_index/pixel_exclusion.py). `white_peak_status` records what
-happened on each leaf and `used_frac` how much of it was used. Leaves under 400 pixels are not checked, and tape on
-a pale leaf can merge with the leaf's own peak and stay in.
+2. **[`Green_Chromatic_Coordinate_Woebbecke_1995`](leafmachine3/core/green_index/Green_Chromatic_Coordinate_Woebbecke_1995.py).**
+   Green's share of the pixel's total brightness.
 
-![Green Index summary image: taped leaf with excluded pixels in red, and one histogram per index](docs/readme_github/green_index/summary_image.jpg)
+   ```math
+   \mathrm{GCC} = \frac{G}{R + G + B}
+   ```
 
-One image per leaf in `Overlay/Overlay_Green_Index/`: excluded pixels in red, then for each index a
-histogram of its per-pixel values with bars colored by the actual pixels in each bin, the leaf's value, and
-color tiles for that index's lowest 10% of pixels, the pixels nearest the value, and its highest 10%. The last
-panel shows the white-peak check itself.
+   > Woebbecke, D. M., Meyer, G. E., Von Bargen, K., & Mortensen, D. A. (1995). Color indices for weed
+   > identification under various soil, residue, and lighting conditions. *Transactions of the ASAE*,
+   > 38(1), 259–269. <https://doi.org/10.13031/2013.27838>
 
-`modules.green_index.enabled` turns the module off. `write_overlay` turns off only the images, which take
-about 120 KB per leaf; every value and the CSV are still written. `white_peak_check` turns off the tape
-exclusion. If you use these values, please cite the paper for each index you report.
+   See also the USDA [PhenoCam protocol for GCC](https://www.ars.usda.gov/research/publications/publication/?seqNo115=418040)
+   (Browning, Saliendra & Whippo, 2024).
+
+3. **[`Excess_Green_Thrash_2022`](leafmachine3/core/green_index/Excess_Green_Thrash_2022.py).** Thrash et al. keep pixels with ExG
+   from 29 to 202. Dried tissue is mostly browner than that, and on about half of the leaves we tested no
+   pixel qualified. So this column averages all used pixels, and the strict result is in
+   `excess_green_thrash_2022_window_mean` (with `_window_n_px` and `_window_frac`).
+
+   ```math
+   \mathrm{ExG} = 2G - R - B
+   ```
+
+   > Thrash, T., Lee, H., & Baker, R. L. (2022). A low-cost high-throughput phenotyping system for
+   > automatically quantifying foliar area and greenness. *Applications in Plant Sciences*, 10(6), e11502.
+   > <https://doi.org/10.1002/aps3.11502>
+
+4. **[`Two_Fold_Red_Excess_Agarwal_2025`](leafmachine3/core/green_index/Two_Fold_Red_Excess_Agarwal_2025.py).** Rises with red, so a
+   higher value does not mean a greener leaf.
+
+   ```math
+   \mathrm{TREx} = (R-G) + (R-B) = 2R - G - B
+   ```
+
+   > Agarwal, A., Colwell, F. de J., Galvis, V. A. C., Hill, T. R., Boonham, N., & Prashar, A. (2025).
+   > Two-fold red excess (TREx): A simple and novel digital color index that enables non-invasive
+   > real-time monitoring of green-leaved as well as anthocyanin-rich crops. *Plant Methods*, 21, 24.
+   > <https://doi.org/10.1186/s13007-025-01339-y> (correction:
+   > <https://doi.org/10.1186/s13007-025-01370-z>)
+
+5. **[`Vegetation_Index_2_Kawashima_1998`](leafmachine3/core/green_index/Vegetation_Index_2_Kawashima_1998.py).** Also called the
+   Normalized Difference Pigment Index (NDPI). It correlates negatively with chlorophyll, so a higher value
+   does not mean a greener leaf.
+
+   ```math
+   \mathrm{VI2} = \frac{R - B}{R + B}
+   ```
+
+   > Kawashima, S., & Nakatani, M. (1998). An algorithm for estimating chlorophyll content in leaves using
+   > a video camera. *Annals of Botany*, 81(1), 49–54. <https://doi.org/10.1006/anbo.1997.0544>
+
+6. **[`Green_Leaf_Index_Louhaichi_2001`](leafmachine3/core/green_index/Green_Leaf_Index_Louhaichi_2001.py).**
+
+   ```math
+   \mathrm{GLI} = \frac{2G - R - B}{2G + R + B}
+   ```
+
+   > Louhaichi, M., Borman, M. M., & Johnson, D. E. (2001). Spatially located platform and aerial
+   > photography for documentation of grazing impacts on wheat. *Geocarto International*, 16(1), 65–70.
+   > <https://doi.org/10.1080/10106040108542184>
+
+7. **[`Greenness_Lazarevic_2022`](leafmachine3/core/green_index/Greenness_Lazarevic_2022.py).** Some commercial phenotyping systems
+   use this formula under the name Green Leaf Index, so check which one a system means.
+
+   ```math
+   \mathrm{GR} = \frac{2G - R - B}{2R + G + B}
+   ```
+
+   > Lazarević, B., Kontek, M., Carović-Stanko, K., Clifton-Brown, J., Al Hassan, M., Trindade, L. M., &
+   > Jurišić, V. (2022). Multispectral image analysis detects differences in drought responses in novel
+   > seeded *Miscanthus sinensis* hybrids. *GCB Bioenergy*, 14(11), 1219–1234.
+   > <https://doi.org/10.1111/gcbb.12999>
+
+**Redundant equations.** Two more published indices use equations already listed, so LM3 calculates each
+one once and gives them no columns of their own. Their names survive as aliases in the code:
+
+- **Greenness Index** (also called NGI) is GCC, as `calculate_greenness_index()`:
+
+  > Jia, L., Buerkert, A., Chen, X., Roemheld, V., & Zhang, F. (2004). Low-altitude aerial photography for
+  > optimum N fertilization of winter wheat on the North China Plain. *Field Crops Research*, 89(2–3),
+  > 389–395. <https://doi.org/10.1016/j.fcr.2004.02.014>
+
+- **Vegetation Index** is ExG on raw RGB, as `calculate_vegetation_index()`, from Woebbecke et al. (1995),
+  cited under GCC.
+
+**Summary images.** `Overlay/Overlay_Green_Index/` holds one image per leaf. Excluded pixels are red. Each
+tile is one index: a histogram of its per-pixel values with bars colored by the pixels in each bin, the
+leaf's value, and color tiles for that index's lowest 10% of pixels, the pixels nearest the value, and its
+highest 10%. The last tile shows the tape check.
+
+![Green Index summary image of a taped Litsea fulva leaf, with the tape painted red](docs/readme_github/green_index/summary_taped_leaf.jpg)
+
+*Litsea fulva* with tape across the blade. Leaving the tape out moves its GI from 0.223 to 0.231.
+<sub>[US 2377278](https://www.gbif.org/occurrence/2592235707), CC0.</sub>
+
+![Green Index summary image of an untaped Iva annua leaf, with every pixel used](docs/readme_github/green_index/summary_untaped_leaf.jpg)
+
+*Iva annua* with no tape: no white peak, so every pixel is used.
+<sub>[KU 32943](https://www.gbif.org/occurrence/176962620), CC BY 4.0.</sub>
+
+**How white-ish tape pixels are excluded.** Mounting tape is glued across leaves, inside the leaf mask, and
+it shifts every index. LM3 builds a histogram of each leaf's whiteness, min(R, G, B), and looks for a
+separate near-white peak with a trough between it and the leaf's own peak. Pixels whiter than the trough
+are left out of every value. Tape can cover more of a curved or broken leaf than the leaf itself, so up to
+80% of the lamina can be excluded, but above 50% the excluded pixels must be near-neutral and the kept
+pixels colored. The rules are in [`pixel_exclusion.py`](leafmachine3/core/green_index/pixel_exclusion.py).
+
+**This will not always work.** It is a color test, not a tape detector, and when the evidence is unclear it
+keeps the pixels: **it defaults to including tape rather than excluding leaf.** Tape stays in when:
+
+- its peak merges with the leaf's, as with tape on a pale leaf;
+- it is tan or aged and too dark to read as white;
+- the leaf has fewer than 400 pixels, or the cut would exclude over 80% of the lamina.
+
+Going the other way, a cut removes anything near-white on that leaf, such as pale spots or lichen, and it
+can occasionally take pale tissue. To check a leaf, use `white_peak_status` and `used_frac` in the CSV and
+the red pixels on its summary image.
+
+![Contact sheet of 50 leaves: each cutout beside the same leaf with excluded pixels in red](docs/readme_github/green_index/tape_exclusion_contact_sheet.jpg)
+
+50 randomly chosen leaves where the check made a cut, each beside the same leaf with excluded pixels in red.
+Thin red lines along a margin are usually paper caught at the leaf's edge. Under each pair: `main` is the leaf
+peak, `peak` the white peak and `cut` the trough (whiteness values); `excl` is the share of the lamina
+excluded and `w170` the share with whiteness of 170 or more.
+<sub>[Specimens and licenses](docs/readme_github/green_index/image_sources.csv).</sub>
+
+Index values are not color-calibrated: they come from each image's RGB as scanned, so differences between
+institutions or cameras carry over. In the settings, `enabled` turns the module off, `write_overlay` turns off
+only the images (about 120 KB per leaf), and `white_peak_check` turns off the tape exclusion. If you use these
+values, please cite the paper for each index you report.
 
 ### 18. Shape (ECT)
 
