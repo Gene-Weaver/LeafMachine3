@@ -230,6 +230,17 @@
       ],
       "stage": "ect",
       "phase": "leaf",
+      "order": 18
+    },
+    {
+      "id": "green_index",
+      "label": "Green Index",
+      "blurb": "Several published color indices for each oriented leaf, leaving out mounting tape.",
+      "keys": [
+        "modules.green_index"
+      ],
+      "stage": "green_index",
+      "phase": "leaf",
       "order": 17
     },
     {
@@ -369,7 +380,7 @@
       ],
       "stage": "momocs",
       "phase": "output",
-      "order": 18
+      "order": 19
     }
   ],
   "version": {
@@ -1891,6 +1902,27 @@
     "type": "bool",
     "important": false,
     "group": "ECT"
+  },
+  "modules.green_index.enabled": {
+    "label": "Enabled",
+    "help": "Score each oriented leaf with several published color indices. Results go to the project database and reports/Data/green_index.csv.",
+    "type": "bool",
+    "important": false,
+    "group": "Green Index"
+  },
+  "modules.green_index.write_overlay": {
+    "label": "Write summary images",
+    "help": "One image per leaf in Overlay/Overlay_Green_Index, about 120 KB each. Off still computes every value and writes the CSV.",
+    "type": "bool",
+    "important": false,
+    "group": "Green Index"
+  },
+  "modules.green_index.white_peak_check": {
+    "label": "Exclude white peak (tape)",
+    "help": "Look for a separate near-white peak in each leaf's colors, usually mounting tape, and leave those pixels out of every value. Excluded pixels show in red on the summary image.",
+    "type": "bool",
+    "important": false,
+    "group": "Green Index"
   },
   "modules.momocs.enabled": {
     "label": "Enabled",

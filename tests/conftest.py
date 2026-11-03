@@ -472,6 +472,7 @@ def build_mock_config(
             "reporter": {"enabled": True},
             "ect": {"enabled": True, "num_dirs": 64, "radial_viz": True, "cartesian_viz": True,
                     "radial_overlay_viz": True},
+            "green_index": {"enabled": True, "write_overlay": True, "white_peak_check": True},
             "momocs": {"enabled": True, "include_petiole": False, "oriented": True, "pad_px": 10},
         },
         "naming": {

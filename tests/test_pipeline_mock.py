@@ -162,6 +162,16 @@ def test_end_to_end_mock_pipeline(run_env: Path) -> None:
         ect_rows = list(conn.execute("SELECT h5_path, mask_includes, num_dirs FROM leaf_ect"))
         assert ect_rows and all(r["mask_includes"] == "lamina" for r in ect_rows)
 
+        # Green Index stage: one row per Lamina_RGB file, each with its summary image and a CSV row
+        gi_rows = list(conn.execute("SELECT leaf_image_path, overlay_png, n_used_px, green_index_signorelli_2025 "
+                                    "FROM leaf_green_index"))
+        assert gi_rows and all(Path(r["leaf_image_path"]).is_file() and Path(r["overlay_png"]).is_file()
+                               and r["n_used_px"] > 0 for r in gi_rows)
+        cutouts = {str(p) for p in (Path(project.dirs.reports) / "Leaf_Oriented" / "Lamina_RGB").glob("*")}
+        assert {r["leaf_image_path"] for r in gi_rows} == cutouts
+        gi_csv = (Path(project.dirs.reports) / "Data" / "green_index.csv").read_text().splitlines()
+        assert len(gi_csv) == len(gi_rows) + 1                # header + one row per cutout
+
         # Momocs stage: every exported leaf has its JPG on disk, listed in the run-level files
         mom_rows = list(conn.execute("SELECT mask_path, json_path, tree, mask_includes FROM leaf_momocs"))
         assert mom_rows and all(r["tree"] == "Leaf_Oriented" and r["mask_includes"] == "lamina" for r in mom_rows)

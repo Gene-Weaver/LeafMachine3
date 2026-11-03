@@ -337,6 +337,34 @@ CREATE TABLE IF NOT EXISTS leaf_ect (
 );
 CREATE INDEX IF NOT EXISTS ix_ect_spec ON leaf_ect (specimen_id);
 
+-- leaf_green_index : published color indices per oriented leaf cutout (Green Index stage). Every value
+-- is computed over the used pixels only. leaf_image_path is the Reporter's cutout (a foreign reference,
+-- never deleted with this table); overlay_png is this stage's own summary image.
+CREATE TABLE IF NOT EXISTS leaf_green_index (
+    leaf_id      INTEGER PRIMARY KEY REFERENCES leaf_segmentation(leaf_id) ON DELETE CASCADE,
+    specimen_id  INTEGER NOT NULL REFERENCES specimen(specimen_id) ON DELETE CASCADE,
+    detection_id INTEGER, instance_index INTEGER,
+    leaf_image_name TEXT,                       -- <stem>__or-RGB-lamina__x_y_x_y.jpg
+    leaf_image_path TEXT,                       -- reports/Leaf_Oriented/Lamina_RGB/<leaf> (Reporter's)
+    overlay_png     TEXT,                       -- reports/Overlay/Overlay_Green_Index/<leaf>.jpg, or NULL
+    n_lamina_px INTEGER, n_excluded_white_peak_px INTEGER, n_used_px INTEGER, used_frac REAL,
+    white_peak_status TEXT,                     -- cut | off | the reason nothing was excluded
+    white_peak_cut    INTEGER,                  -- whiteness of the trough; NULL when nothing was excluded
+    mean_r REAL, mean_g REAL, mean_b REAL,
+    green_index_signorelli_2025 REAL,
+    green_chromatic_coordinate_woebbecke_1995 REAL,
+    excess_green_thrash_2022 REAL,
+    two_fold_red_excess_agarwal_2025 REAL,
+    vegetation_index_2_kawashima_1998 REAL,
+    green_leaf_index_louhaichi_2001 REAL,
+    greenness_lazarevic_2022 REAL,
+    excess_green_thrash_2022_window_mean REAL,  -- mean ExG of pixels in 29-202; NULL when none are
+    excess_green_thrash_2022_window_n_px INTEGER,
+    excess_green_thrash_2022_window_frac REAL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_green_index_spec ON leaf_green_index (specimen_id);
+
 -- leaf_momocs : one Momocs/Momocs2-ready image per leaf (Momocs stage), read from the Reporter's
 -- holes-filled leaf-product mask. mask_path / json_path are this stage's own files; source_mask is the
 -- Reporter's (a foreign reference, never deleted with this table).

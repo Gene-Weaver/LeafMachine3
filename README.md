@@ -57,8 +57,9 @@ reproduces every figure.*
   14. [Bilateral Symmetry](#14-bilateral-symmetry)
   15. [Metric Grounding](#15-metric-grounding)
   16. [Reporter](#16-reporter)
-  17. [Shape (ECT)](#17-shape-ect)
-  18. [Momocs Export](#18-momocs-export)
+  17. [Green Index](#17-green-index)
+  18. [Shape (ECT)](#18-shape-ect)
+  19. [Momocs Export](#19-momocs-export)
 - [Module Outputs](#module-outputs)
 - [Outputs](#outputs)
 - [Postprocessing Tools](#postprocessing-tools)
@@ -79,7 +80,7 @@ rebuilds every step on current models and a runtime that is simpler to install a
 - **Output:** a per-specimen summary overlay for quality control, cropped components, per-leaf
   masks and cutouts (as mounted and oriented tip-up), and CSV tables with one row per leaf, per
   specimen, per detection, and per landmark.
-- **Pipeline:** eighteen modules run in a fixed order, each one feeding the next. The first two
+- **Pipeline:** nineteen modules run in a fixed order, each one feeding the next. The first two
   detectors place bounding boxes around plant and archival components; everything downstream
   works on those crops. Every module can be switched off individually.
 
@@ -87,7 +88,7 @@ rebuilds every step on current models and a runtime that is simpler to install a
 MP Conversion Factor → Archival Detector → Plant Detector → Specimen Segmenter → Phenology Detector
 → Ruler Classifier → Ruler Conversion Factor → Leaf Segmenter → Morphology → Landmark Detector
 → Landmark Measurements → Leaf Orientation → Petiole Width → Bilateral Symmetry
-→ Metric Grounding → Reporter → Shape (ECT) → Momocs Export
+→ Metric Grounding → Reporter → Green Index → Shape (ECT) → Momocs Export
 ```
 
 **What changed from LeafMachine2**
@@ -238,7 +239,7 @@ Six tabs, left to right:
 | **Postprocessing** | standalone tools that run on a finished run (STL export, leaf collage) |
 
 Set the **input folder**, name the **project**, press **Start LM3**. The stage bar across the top
-mirrors the eighteen modules and fills in as the run advances.
+mirrors the nineteen modules and fills in as the run advances.
 
 ![Live Status tab during a run](docs/readme_github/gui_live_status.jpg)
 
@@ -317,7 +318,7 @@ uv run --frozen --no-sync machine3 --config LM3_settings.local.yaml
 runs/<run_name>/
   <run_name>.sqlite          every result, queryable
   reports/
-    Overlay/                 summary overlays + per-leaf landmark / petiole overlays   (start here for QC)
+    Overlay/                 summary overlays + per-leaf landmark / petiole / green index images   (start here for QC)
     Leaf_Original/           7 per-leaf products, as mounted
     Leaf_Oriented/           the same 7 products, rotated tip-up
     Crops/                   RGB crops of every non-leaf detection (rulers, labels, fruits, ...)
@@ -353,7 +354,7 @@ and, if its long side exceeds the working limit, downsampled into a working copy
 module measures on. Every pixel value in the outputs is in that working frame; `work_scale` on
 every row converts back.
 
-**Modules.** The eighteen modules in pipeline order, each with an **Enabled** switch and its own
+**Modules.** The nineteen modules in pipeline order, each with an **Enabled** switch and its own
 settings. Disabled modules are marked complete without doing work; enabled downstream modules
 still run, but may have no inputs. Turn off dependent modules too when you do not need them.
 
@@ -471,8 +472,8 @@ In the Settings tab these live under **Scale › Ruler Conversion Factor › Fie
 
 ## In-Depth: the processing modules
 
-One block per module, in runtime pipeline order. ECT and Momocs Export run after Reporter because
-they consume the leaf masks Reporter writes. Each gives what the module does and the model it runs if
+One block per module, in runtime pipeline order. Green Index, ECT and Momocs Export run after Reporter
+because they consume the leaf products Reporter writes. Each gives what the module does and the model it runs if
 it has one; what each module writes is collected in [Module Outputs](#module-outputs). Model metrics are quoted from the Hugging Face model
 cards, which hold the full training details.
 
@@ -752,7 +753,57 @@ The seven per-leaf products: the detector crop, the lamina mask, the lamina + pe
 filled lamina silhouette, and RGB cutouts of each (the lamina-holes cutout keeps the tissue and
 paints holes a recoverable near-black).
 
-### 17. Shape (ECT)
+### 17. Green Index
+
+Scores every oriented leaf with seven published color indices, reading the Reporter's
+`Leaf_Oriented/Lamina_RGB` cutout and its `Lamina_Mask`. The code for each index is in its own file in
+[`leafmachine3/core/green_index/`](leafmachine3/core/green_index/), named for that version, so a
+column in `Data/green_index.csv` leads straight to its formula and citation.
+
+| Index and file | Column | Formula |
+|---|---|---|
+| [`Green_Index_Signorelli_2025`](https://onlinelibrary.wiley.com/doi/full/10.1111/pce.70102) | `green_index_signorelli_2025` | preGI / (12 × (1 − preGI)), where preGI = ((255 − \|G − 165\|) + (255 − \|R − 37.5\|) + (255 − \|B − 37.5\|)) / (3 × 255) |
+| [`Green_Chromatic_Coordinate_Woebbecke_1995`](https://doi.org/10.13031/2013.27838) | `green_chromatic_coordinate_woebbecke_1995` | G / (R + G + B) |
+| [`Excess_Green_Thrash_2022`](https://bsapubs.onlinelibrary.wiley.com/doi/10.1002/aps3.11502) | `excess_green_thrash_2022` | 2G − R − B |
+| [`Two_Fold_Red_Excess_Agarwal_2025`](https://link.springer.com/article/10.1186/s13007-025-01339-y) | `two_fold_red_excess_agarwal_2025` | 2R − G − B |
+| [`Vegetation_Index_2_Kawashima_1998`](https://doi.org/10.1006/anbo.1997.0544) | `vegetation_index_2_kawashima_1998` | (R − B) / (R + B) |
+| [`Green_Leaf_Index_Louhaichi_2001`](https://doi.org/10.1080/10106040108542184) | `green_leaf_index_louhaichi_2001` | (2G − R − B) / (2G + R + B) |
+| [`Greenness_Lazarevic_2022`](https://onlinelibrary.wiley.com/doi/full/10.1111/gcbb.12999) | `greenness_lazarevic_2022` | (2G − R − B) / (2R + G + B) |
+
+A leaf's value is the mean of that index's per-pixel values. `mean_r`, `mean_g` and `mean_b` are stored
+too, so any formula can also be applied to the leaf's mean color. Keep three things in mind when
+reading them:
+
+- **Not every index measures green.** TREx and VI2 rise with red, so a higher value means a less green leaf.
+- **Excess Green has two values.** Thrash et al. keep pixels with ExG from 29 to 202. Dried tissue is
+  mostly browner than that, and on about half of the leaves we tested no pixel falls in the window. So
+  `excess_green_thrash_2022` averages all used pixels, and the strict result is in
+  `excess_green_thrash_2022_window_mean` (empty when no pixel qualifies), with `_window_n_px` and `_window_frac`.
+- **Colors are not calibrated.** Values come from each image's RGB as scanned, so differences between
+  institutions or cameras carry over into the indices.
+
+**Which pixels count.** Mounting tape is glued across the leaf, inside its mask, and it moves every
+index. So LM3 builds a histogram of each leaf's whiteness, min(R, G, B), and looks for a separate peak on
+the bright side with a trough between it and the leaf. Pixels whiter than the trough are left out of every
+value. Tape can cover more of a curved or broken leaf than the leaf itself: up to 80% of the lamina can
+be excluded, and above 50% the excluded pixels must be near-neutral and the kept pixels colored, because
+that shape is otherwise a pale, woolly leaf. The rules are in
+[`pixel_exclusion.py`](leafmachine3/core/green_index/pixel_exclusion.py). `white_peak_status` records what
+happened on each leaf and `used_frac` how much of it was used. Leaves under 400 pixels are not checked, and tape on
+a pale leaf can merge with the leaf's own peak and stay in.
+
+![Green Index summary image: taped leaf with excluded pixels in red, and one histogram per index](docs/readme_github/green_index/summary_image.jpg)
+
+One image per leaf in `Overlay/Overlay_Green_Index/`: excluded pixels in red, then for each index a
+histogram of its per-pixel values with bars colored by the actual pixels in each bin, the leaf's value, and
+color tiles for that index's lowest 10% of pixels, the pixels nearest the value, and its highest 10%. The last
+panel shows the white-peak check itself.
+
+`modules.green_index.enabled` turns the module off. `write_overlay` turns off only the images, which take
+about 120 KB per leaf; every value and the CSV are still written. `white_peak_check` turns off the tape
+exclusion. If you use these values, please cite the paper for each index you report.
+
+### 18. Shape (ECT)
 
 Computes the Euler Characteristic Transform of every oriented leaf, a topological shape
 descriptor that captures the outline from every direction at once and is directly comparable
@@ -876,7 +927,7 @@ ECT. Every palette and view for all five sample leaves is in
   <tr><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__jet__linear.png" width="120" alt="jet linear"><br><sub>linear</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__jet__log.png" width="120" alt="jet log"><br><sub>log</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__turbo__linear.png" width="120" alt="turbo linear"><br><sub>linear</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__turbo__log.png" width="120" alt="turbo log"><br><sub>log</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__gist_ncar__linear.png" width="120" alt="gist_ncar linear"><br><sub>linear</sub></td><td align="center"><img src="docs/readme_github/ect_palettes/simple_toothed__ECT-cartesian__d360__gist_ncar__log.png" width="120" alt="gist_ncar log"><br><sub>log</sub></td></tr>
 </table>
 
-### 18. Momocs Export
+### 19. Momocs Export
 
 **Step-by-step guide:** [`tools/MOMOCS/LM3_Momocs_Guide.html`](tools/MOMOCS/LM3_Momocs_Guide.html) (download or
 clone the repo and open it in a browser). It walks one real sheet from LM3 into Momocs and Momocs2: loading,
@@ -970,8 +1021,9 @@ CPU code.
 | 14. [Bilateral Symmetry](#14-bilateral-symmetry) | none (CPU) | `bilateral_symmetry` table; `Leaf_Data/Bilateral_Symmetry/` |
 | 15. [Metric Grounding](#15-metric-grounding) | none (CPU) | the `_cm` and `_cm2` columns in `Data/leaf_measurements.csv`, with `cf_source` on each row saying where the factor came from |
 | 16. [Reporter](#16-reporter) | none | everything under `reports/`; see [Outputs](#outputs) |
-| 17. [Shape (ECT)](#17-shape-ect) | none (CPU) | `leaf_ect` table; `Leaf_Data/Oriented_Leaf_ECT/`, `Oriented_Leaf_Radial_ECT/`, `Oriented_Leaf_Radial_ECT_Overlay/`, `Coordinates/*.h5` |
-| 18. [Momocs Export](#18-momocs-export) | none (CPU) | `leaf_momocs` table; `Leaf_Momocs/*.jpg`, `momocs_fac.csv`, `momocs_outlines.json`, `Momit_JSON/<stem>.json` |
+| 17. [Green Index](#17-green-index) | none (CPU) | `leaf_green_index` table; `Data/green_index.csv`; `Overlay/Overlay_Green_Index/` |
+| 18. [Shape (ECT)](#18-shape-ect) | none (CPU) | `leaf_ect` table; `Leaf_Data/Oriented_Leaf_ECT/`, `Oriented_Leaf_Radial_ECT/`, `Oriented_Leaf_Radial_ECT_Overlay/`, `Coordinates/*.h5` |
+| 19. [Momocs Export](#19-momocs-export) | none (CPU) | `leaf_momocs` table; `Leaf_Momocs/*.jpg`, `momocs_fac.csv`, `momocs_outlines.json`, `Momit_JSON/<stem>.json` |
 
 ---
 
@@ -985,6 +1037,7 @@ reports/
     Overlay_Summary/               <stem>__Overlay.jpg              masks + boxes + landmarks + petiole bands
     Overlay_Landmarks/             <stem>__LM-leaf__x_y_x_y.jpg     per leaf
     Overlay_Petiole/               <stem>__PET-leaf__x_y_x_y.jpg    per leaf
+    Overlay_Green_Index/           <stem>__or-GI-lamina__x_y_x_y.jpg  per leaf
     Overlay_Specimen_Segmentation/ <stem>__SpecimenSeg.jpg
     Overlay_Ruler_Lattice/         <stem>__RulerLattice.png         ruler QC panel
   Leaf_Original/                   7 products per leaf, as mounted  (og-)
@@ -1010,6 +1063,7 @@ reports/
 | `landmarks.csv` | predicted keypoint (31 per leaf) |
 | `ruler_conversion_factor.csv` | sheet: the conversion-factor verdict and why |
 | `run_stages.csv`, `stage_errors.csv` | pipeline stage; per-image failure |
+| `green_index.csv` | oriented **leaf** cutout: the seven color indices, written by the Green Index stage. Join to `leaf_measurements.csv` on `leaf_uid` |
 | `data_dictionary.csv` | every column above: file, units, meaning |
 
 Two things to know before analyzing: every `_px` value is in the **working frame** (divide by

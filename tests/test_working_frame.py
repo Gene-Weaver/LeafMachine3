@@ -167,6 +167,9 @@ def test_reporter_outputs_are_working_sized_and_survive_a_deleted_original(tmp_p
         if img is None:
             continue
         h, w = img.shape[:2]
+        # Overlay_Green_Index is a fixed-size chart about one leaf, not a render of the sheet.
+        if p.parent.name == "Overlay_Green_Index":
+            continue
         # Overlay_Specimen_Segmentation is two panels hstacked (sheet | cutout), so its width is
         # legitimately 2x a panel's. Measure the PANEL, not the sheet of paper it is printed on.
         if p.parent.name == "Overlay_Specimen_Segmentation":

@@ -33,6 +33,7 @@ from leafmachine3.modules.bilateral_symmetry import BilateralSymmetry
 from leafmachine3.modules.petiole_width import PetioleWidth
 from leafmachine3.modules.metric_grounding import MetricGrounding
 from leafmachine3.modules.reporter import Reporter
+from leafmachine3.modules.green_index import GreenIndex, enforce_report_deps as enforce_green_index_report_deps
 from leafmachine3.modules.ect import ECT, enforce_report_deps
 from leafmachine3.modules.momocs import Momocs, enforce_report_deps as enforce_momocs_report_deps
 
@@ -65,8 +66,9 @@ STAGE_ORDER: tuple[type, ...] = (
     # <---------- extensible slot: new PipelineStage subclasses go here ---------->
     MetricGrounding,         # 12 apply CF: area_px -> cm^2, perimeter_px -> cm
     Reporter,                # 13 overlays / mask PNGs / RGB crops / oriented + original leaf products
-    ECT,                     # 14 Euler Characteristic Transform per oriented leaf (consumes Reporter masks)
-    Momocs,                  # 15 Momocs/Momocs2 leaf images + outlines (consumes Reporter masks)
+    GreenIndex,              # 14 published color indices per oriented leaf (consumes Reporter cutouts + masks)
+    ECT,                     # 15 Euler Characteristic Transform per oriented leaf (consumes Reporter masks)
+    Momocs,                  # 16 Momocs/Momocs2 leaf images + outlines (consumes Reporter masks)
 )
 STAGE_KEYS: tuple[str, ...] = tuple(cls.key for cls in STAGE_ORDER)  # the canonical id set
 
@@ -80,6 +82,7 @@ def build_pipeline(cfg: "Config") -> list["PipelineStage"]:
     """
     enforce_report_deps(cfg)                      # ECT (if on) forces the Reporter to export the mask it needs
     enforce_momocs_report_deps(cfg)               # so does Momocs (its holes-filled product)
+    enforce_green_index_report_deps(cfg)          # and Green Index (the oriented lamina cutout + mask)
     stages = [cls(cfg) for cls in STAGE_ORDER if cfg.is_enabled(cls.key)]
     _assert_dependencies_precede(stages)          # raises on a mis-ordered depends_on graph
     return stages

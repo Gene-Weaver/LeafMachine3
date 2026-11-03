@@ -100,6 +100,7 @@ _STAGE_META: tuple[tuple[str, str, str, str], ...] = (
     ("bilateral_symmetry", "Bilateral Symmetry", "cpu", "process"),
     ("metric_grounding", "Metric Grounding", "cpu", "thread"),
     ("reporter", "Reporter", "cpu", "thread"),
+    ("green_index", "Green Index", "cpu", "process"),
     ("ect", "ECT", "cpu", "process"),
     ("momocs", "Momocs", "cpu", "thread"),
 )

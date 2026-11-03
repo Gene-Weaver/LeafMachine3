@@ -51,6 +51,7 @@ CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "bilateral_symmetry",
     "metric_grounding",
     "reporter",
+    "green_index",
     "ect",
     "momocs",
 )
@@ -294,6 +295,7 @@ def builtin_defaults() -> dict[str, Any]:
             "bilateral_symmetry": {"enabled": True},
             "metric_grounding": {"enabled": True},
             "reporter": {"enabled": True},
+            "green_index": {"enabled": True, "write_overlay": True, "white_peak_check": True},
             "ect": {"enabled": True},
             # Every knob, not just `enabled`: the settings form renders only leaves of the MERGED
             # tree, and existing LM3_settings.yaml files predate this block.

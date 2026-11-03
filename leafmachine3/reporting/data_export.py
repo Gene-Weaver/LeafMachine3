@@ -15,6 +15,7 @@ them, written straight out of the per-project SQLite so a run is analyzable with
     reports/Data/run_stages.csv               one row per pipeline stage (the run ledger)
     reports/Data/stage_errors.csv             one row per per-image stage failure
     reports/Data/data_dictionary.csv          every column above: file, units, meaning
+    reports/Data/green_index.csv              one row per leaf cutout (written by the Green Index stage)
 
 FRAME AND UNITS. Every pixel measurement LM3 stores is in the WORKING frame -- the resized copy the
 stages actually analyzed, not the original. Columns are suffixed accordingly (``_px``, ``_cm``,
@@ -43,6 +44,8 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Sequence
+
+from leafmachine3.core.green_index import METHODS as GREEN_INDEX_METHODS
 
 log = logging.getLogger("leafmachine3.data_export")
 
@@ -625,6 +628,78 @@ FILES: tuple[ExportFile, ...] = (
 
 _FILES_BY_KEY = {f.key: f for f in FILES}
 
+# --------------------------------------------------------------------------- #
+# Files written by a stage that runs AFTER the Reporter
+# --------------------------------------------------------------------------- #
+# They share this folder, format and dictionary, but the Reporter never writes them: at its export the
+# rows are absent or left over from a previous run, the same reason leaf_ect is not in leaf_measurements.
+# They also have no report.data.files toggle. The Reporter's settings hash covers all of `report`, so a
+# new key there would re-render the Reporter, ECT and Momocs on every existing run. The stage's own
+# `enabled` switch decides instead.
+_GREEN_INDEX_COLUMNS: tuple[Column, ...] = (
+    # -- the leaf image ----------------------------------------------------- #
+    Column("leaf_image_name", "", "Filename of the oriented lamina cutout in "
+                                  "reports/Leaf_Oriented/Lamina_RGB this row was measured from."),
+    Column("leaf_image_path", "", "Full path to that cutout."),
+    Column("overlay_png", "", "Path to this leaf's summary image in reports/Overlay/Overlay_Green_Index. "
+                              "Empty when modules.green_index.write_overlay is off."),
+    # -- the parent image --------------------------------------------------- #
+    Column("image_name", "", "Parent image filename, with extension."),
+    Column("image_stem", "", "Parent image filename without extension."),
+    Column("original_path", "", "Immutable path to the source image LM3 ingested."),
+    # -- tracing it back ---------------------------------------------------- #
+    Column("leaf_uid", "", "derived: '<image_stem>__<x1>_<y1>_<x2>_<y2>__i<instance_index>'. The key to "
+                           "join this file to leaf_measurements.csv; it survives a re-run."),
+    Column("crop_file_token", "", "derived: '<image_stem>__<x1>_<y1>_<x2>_<y2>', the token every exported "
+                                  "file for this leaf crop carries."),
+    Column("specimen_id", "", "Row id of the parent sheet in this project's database."),
+    Column("leaf_id", "", "Row id of this leaf instance mask. Project-local; not stable across re-runs."),
+    Column("detection_id", "", "Row id of the plant-detector box this leaf was segmented inside."),
+    Column("instance_index", "", "Segmentation instance within the crop; 0 is the primary leaf."),
+    Column("crop_x1", "px", "Parent leaf box, left edge (working frame)."),
+    Column("crop_y1", "px", "Parent leaf box, top edge (working frame)."),
+    Column("crop_x2", "px", "Parent leaf box, right edge (working frame)."),
+    Column("crop_y2", "px", "Parent leaf box, bottom edge (working frame)."),
+    Column("work_scale", "ratio", "working / original long side. Divide a working-frame px value by this "
+                                  "for original-frame px."),
+    Column("oriented_leaf_rotation_angle_degreesCW", "degrees",
+           "Clockwise rotation that stood this leaf tip-up to make the cutout."),
+    # -- which pixels were used --------------------------------------------- #
+    Column("n_lamina_px", "count", "Pixels in the lamina mask (holes excluded)."),
+    Column("n_excluded_white_peak_px", "count", "Lamina pixels the white-peak check excluded, usually "
+                                                "mounting tape. Painted red on the summary image."),
+    Column("n_used_px", "count", "Lamina pixels every value in this row was computed from."),
+    Column("used_frac", "0-1", "n_used_px / n_lamina_px. Below 0.5, white outnumbered the leaf: usually "
+                               "tape over a small or broken leaf, but worth a look at the summary image."),
+    Column("white_peak_status", "", "cut (pixels were excluded); off (the check is switched off); "
+                                    "otherwise why nothing was excluded: too_few_px, no_white_peak, "
+                                    "no_leaf_peak, shallow_valley, colored_peak, too_small, too_large, "
+                                    "pale_leaf_not_tape."),
+    Column("white_peak_cut", "0-255", "Whiteness, min(R, G, B), of the trough the cut was made at. Pixels "
+                                      "above it were excluded. Empty when nothing was excluded."),
+    # -- color of the used pixels ------------------------------------------- #
+    Column("mean_r", "0-255", "Mean red of the used pixels."),
+    Column("mean_g", "0-255", "Mean green of the used pixels."),
+    Column("mean_b", "0-255", "Mean blue of the used pixels."),
+    # -- the indices -------------------------------------------------------- #
+    *(Column(m.column, "index", f"{m.name}: {m.formula}. Mean of the per-pixel values over the used "
+                                f"pixels. {m.citation}, {m.url}.") for m in GREEN_INDEX_METHODS),
+    # -- the strict Thrash window ------------------------------------------- #
+    Column("excess_green_thrash_2022_window_mean", "index",
+           "Thrash et al. (2022) value: mean ExG of the used pixels with 29 <= ExG <= 202. Empty when no "
+           "pixel falls in that window, which is common on dried tissue."),
+    Column("excess_green_thrash_2022_window_n_px", "count", "Used pixels with 29 <= ExG <= 202."),
+    Column("excess_green_thrash_2022_window_frac", "0-1", "Share of the used pixels with 29 <= ExG <= 202."),
+)
+
+STAGE_FILES: tuple[ExportFile, ...] = (
+    ExportFile("green_index", "green_index", True,
+               "One row per oriented leaf cutout: several published color indices, computed over the "
+               "lamina pixels left after the white-peak check. Written by the Green Index stage.",
+               columns=_GREEN_INDEX_COLUMNS),
+)
+_STAGE_FILES_BY_KEY = {f.key: f for f in STAGE_FILES}
+
 
 # --------------------------------------------------------------------------- #
 # Entry point
@@ -643,20 +718,13 @@ def export_data_csvs(project, cfg) -> list[Path]:
         log.info("data export disabled (report.data.enabled=false)")
         return []
 
-    folder = str(_get(data_cfg, "folder", default=DEFAULT_FOLDER) or DEFAULT_FOLDER)
-    out_dir = Path(str(project.dirs.reports)) / folder
-    fmt = str(_get(data_cfg, "format", default="csv") or "csv").lower().lstrip(".")
-    if fmt not in ("csv", "tsv"):
-        log.warning("report.data.format=%r is not csv or tsv; falling back to csv", fmt)
-        fmt = "csv"
-    delimiter = "\t" if fmt == "tsv" else ","
-    na_rep = str(_get(data_cfg, "na_rep", default="") or "")
-    precision = int(_get(data_cfg, "float_precision", default=6) or 6)
+    out_dir, fmt, delimiter, na_rep, precision = _bundle_settings(project, data_cfg)
     files_cfg = _sub(data_cfg, "files")
 
     wanted = [f for f in FILES if _flag(files_cfg, f.key, f.default)]
+    stage_files = [f for f in STAGE_FILES if _stage_enabled(cfg, f.key)]
     out_dir.mkdir(parents=True, exist_ok=True)
-    _remove_disabled(out_dir, wanted, fmt)
+    _remove_disabled(out_dir, [*wanted, *stage_files], fmt)
     if not wanted:
         log.info("data export: every file is disabled; nothing written")
         return []
@@ -715,7 +783,7 @@ def export_data_csvs(project, cfg) -> list[Path]:
     if dict_spec in wanted:
         path = out_dir / f"{dict_spec.stem}.{fmt}"
         try:
-            rows = _dictionary_rows(wanted, passthrough_cols, fmt)
+            rows = _dictionary_rows([*wanted, *stage_files], passthrough_cols, fmt)
             _write_csv(path, [c.name for c in dict_spec.columns], rows,
                        delimiter=delimiter, na_rep=na_rep, precision=precision)
             written.append(path)
@@ -724,6 +792,81 @@ def export_data_csvs(project, cfg) -> list[Path]:
 
     log.info("data export: %d file(s) -> %s", len(written), out_dir)
     return written
+
+
+def export_stage_csv(project, cfg, key: str) -> Optional[Path]:
+    """Write one :data:`STAGE_FILES` entry from the stage's rows, or None when the data export is off.
+
+    Called by the stage itself, at the end of its run. Follows the same report.data folder, format and
+    number rules as the rest of the bundle.
+    """
+    data_cfg = _sub(cfg.report, "data")
+    if not _flag(data_cfg, "enabled", True):
+        return None
+    out_dir, fmt, delimiter, na_rep, precision = _bundle_settings(project, data_cfg)
+    spec = _STAGE_FILES_BY_KEY[key]
+    rows = _STAGE_ROW_BUILDERS[key](project.db)
+    path = out_dir / f"{spec.stem}.{fmt}"
+    try:
+        _write_csv(path, [c.name for c in spec.columns], rows, delimiter=delimiter, na_rep=na_rep, precision=precision)
+    except Exception:
+        # As in export_data_csvs: an unwritable file must not fail a run whose measurements are stored.
+        log.exception("data export failed for %s", path.name)
+        return None
+    log.info("data export: %s (%d rows)", path.name, len(rows))
+    _add_to_dictionary(out_dir / f"{_FILES_BY_KEY['data_dictionary'].stem}.{fmt}", spec, fmt, delimiter)
+    return path
+
+
+def _add_to_dictionary(path: Path, spec: ExportFile, fmt: str, delimiter: str) -> None:
+    """Describe a stage file in an existing dictionary that does not mention it yet.
+
+    A project from before the stage existed has a dictionary the Reporter wrote without it, and an
+    up-to-date Reporter never rewrites it. No dictionary (a toggle turned it off) stays no dictionary.
+    """
+    filename = f"{spec.stem}.{fmt}"
+    try:
+        if not path.is_file():
+            return
+        with path.open(newline="", encoding="utf-8") as fh:
+            if any(row.get("file") == filename for row in csv.DictReader(fh, delimiter=delimiter)):
+                return
+        with path.open("a", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh, delimiter=delimiter, lineterminator="\n")
+            w.writerow([filename, "", "", spec.blurb])
+            for c in spec.columns:
+                w.writerow([filename, c.name, c.units, c.desc])
+    except (OSError, csv.Error):
+        log.exception("could not add %s to %s", filename, path.name)
+
+
+def _bundle_settings(project, data_cfg) -> tuple[Path, str, str, str, int]:
+    """``(out_dir, fmt, delimiter, na_rep, precision)`` from ``report.data``."""
+    folder = str(_get(data_cfg, "folder", default=DEFAULT_FOLDER) or DEFAULT_FOLDER)
+    out_dir = Path(str(project.dirs.reports)) / folder
+    fmt = str(_get(data_cfg, "format", default="csv") or "csv").lower().lstrip(".")
+    if fmt not in ("csv", "tsv"):
+        log.warning("report.data.format=%r is not csv or tsv; falling back to csv", fmt)
+        fmt = "csv"
+    delimiter = "\t" if fmt == "tsv" else ","
+    na_rep = str(_get(data_cfg, "na_rep", default="") or "")
+    precision = int(_get(data_cfg, "float_precision", default=6) or 6)
+    return out_dir, fmt, delimiter, na_rep, precision
+
+
+def _stage_enabled(cfg, key: str) -> bool:
+    check = getattr(cfg, "is_enabled", None)
+    return bool(check(key)) if check is not None else False
+
+
+def _green_index_rows(db) -> list[dict]:
+    rows = [dict(r) for r in db.export_green_index_rows()]
+    for r in rows:
+        _derive_leaf(r)
+    return rows
+
+
+_STAGE_ROW_BUILDERS: dict[str, Callable[[Any], list[dict]]] = {"green_index": _green_index_rows}
 
 
 # --------------------------------------------------------------------------- #
@@ -942,7 +1085,7 @@ def _remove_disabled(out_dir: Path, wanted: Sequence[ExportFile], fmt: str) -> N
     """Delete bundle files that are no longer enabled (or are in the other format), so the folder
     never mixes this run's exports with leftovers from a differently-configured one."""
     keep = {f"{f.stem}.{fmt}" for f in wanted}
-    for spec in FILES:
+    for spec in (*FILES, *STAGE_FILES):
         for ext in ("csv", "tsv"):
             stale = out_dir / f"{spec.stem}.{ext}"
             if stale.name not in keep and stale.is_file():

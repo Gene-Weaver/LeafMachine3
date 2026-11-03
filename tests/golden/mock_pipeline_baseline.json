@@ -8,6 +8,7 @@
       "SQLite -wal / -shm sidecars, whose presence is checkpoint timing"
     ],
     "gate": "plan §8 gate 60 -- the deterministic mock pipeline's DB rows, resume behavior, and output inventory match the pre-refactor baseline",
+    "green_index_module": "enabled -- settings pinned in _baseline_config",
     "momocs_module": "enabled -- needs no third-party package; settings pinned in _baseline_config",
     "n_specimens": 2,
     "plan_step": "§4 Step 1 -- Characterization, isolation, and path unification",
@@ -34,6 +35,12 @@
         "ect",
         "done",
         1
+      ],
+      [
+        "specimen_00",
+        "green_index",
+        "done",
+        0
       ],
       [
         "specimen_00",
@@ -142,6 +149,12 @@
         "ect",
         "done",
         1
+      ],
+      [
+        "specimen_01",
+        "green_index",
+        "done",
+        0
       ],
       [
         "specimen_01",
@@ -287,6 +300,7 @@
       "reports/Data/detections.csv",
       "reports/Data/fieldprism_markers.csv",
       "reports/Data/fieldprism_sheets.csv",
+      "reports/Data/green_index.csv",
       "reports/Data/landmarks.csv",
       "reports/Data/leaf_measurements.csv",
       "reports/Data/phenology.csv",
@@ -348,6 +362,9 @@
       "reports/Leaf_Original/Leaf_BBox/specimen_00__og-BBOX-leaf__70_90_294_396.jpg",
       "reports/Leaf_Original/Leaf_BBox/specimen_01__og-BBOX-leaf__70_90_294_396.jpg",
       "reports/Overlay/",
+      "reports/Overlay/Overlay_Green_Index/",
+      "reports/Overlay/Overlay_Green_Index/specimen_00__or-GI-lamina__70_90_294_396.jpg",
+      "reports/Overlay/Overlay_Green_Index/specimen_01__or-GI-lamina__70_90_294_396.jpg",
       "reports/Overlay/Overlay_Landmarks/",
       "reports/Overlay/Overlay_Landmarks/specimen_00__LM-leaf__70_90_294_396.jpg",
       "reports/Overlay/Overlay_Landmarks/specimen_01__LM-leaf__70_90_294_396.jpg",
@@ -503,15 +520,22 @@
         2
       ],
       [
-        "ect",
+        "green_index",
         17,
         "done",
         2,
         2
       ],
       [
-        "momocs",
+        "ect",
         18,
+        "done",
+        2,
+        2
+      ],
+      [
+        "momocs",
+        19,
         "done",
         2,
         2
@@ -570,6 +594,7 @@
       "reports/Data/detections.csv",
       "reports/Data/fieldprism_markers.csv",
       "reports/Data/fieldprism_sheets.csv",
+      "reports/Data/green_index.csv",
       "reports/Data/landmarks.csv",
       "reports/Data/leaf_measurements.csv",
       "reports/Data/phenology.csv",
@@ -631,6 +656,9 @@
       "reports/Leaf_Original/Leaf_BBox/specimen_00__og-BBOX-leaf__70_90_294_396.jpg",
       "reports/Leaf_Original/Leaf_BBox/specimen_01__og-BBOX-leaf__70_90_294_396.jpg",
       "reports/Overlay/",
+      "reports/Overlay/Overlay_Green_Index/",
+      "reports/Overlay/Overlay_Green_Index/specimen_00__or-GI-lamina__70_90_294_396.jpg",
+      "reports/Overlay/Overlay_Green_Index/specimen_01__or-GI-lamina__70_90_294_396.jpg",
       "reports/Overlay/Overlay_Landmarks/",
       "reports/Overlay/Overlay_Landmarks/specimen_00__LM-leaf__70_90_294_396.jpg",
       "reports/Overlay/Overlay_Landmarks/specimen_01__LM-leaf__70_90_294_396.jpg",
@@ -723,10 +751,11 @@
     "table_row_counts": {
       "archival_detection": 6,
       "bilateral_symmetry": 2,
-      "image_status": 36,
+      "image_status": 38,
       "landmark_schema": 31,
       "landmark_skeleton": 28,
       "leaf_ect": 0,
+      "leaf_green_index": 2,
       "leaf_landmark": 62,
       "leaf_landmark_measurement": 2,
       "leaf_momocs": 2,
@@ -735,7 +764,7 @@
       "leaf_segmentation": 6,
       "phenology": 2,
       "plant_detection": 6,
-      "project_status": 18,
+      "project_status": 19,
       "report_manifest": 62,
       "ruler_CF_lattice": 2,
       "ruler_CF_lattice_crop": 2,

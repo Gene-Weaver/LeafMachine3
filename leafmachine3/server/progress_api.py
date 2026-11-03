@@ -144,6 +144,8 @@ _STATIC_MODULES: tuple[dict, ...] = (
                     "phenology_detector", "ruler_classifier", "ruler_cf", "leaf_segmenter",
                     "morphology", "landmark_detector", "landmark_measurements",
                     "leaf_orientation", "petiole_width", "metric_grounding")},
+    {"key": "green_index",           "name": "Green Index",             "device_kind": "cpu",
+     "cpu_parallel": "process", "serial": False, "fanout": True,  "depends_on": ("reporter",)},
     {"key": "ect",                   "name": "ECT",                     "device_kind": "cpu",
      "cpu_parallel": "process", "serial": False, "fanout": True,  "depends_on": ("reporter",)},
     {"key": "momocs",                "name": "Momocs",                  "device_kind": "cpu",
@@ -162,7 +164,7 @@ _PRIOR_S_PER_IMAGE: dict[str, float] = {
     "ruler_cf": 0.80, "leaf_segmenter": 0.32, "morphology": 0.03,
     "landmark_detector": 0.53, "landmark_measurements": 0.03, "leaf_orientation": 0.02,
     "petiole_width": 0.06, "bilateral_symmetry": 0.20, "metric_grounding": 0.01, "reporter": 0.68,
-    "ect": 0.31, "momocs": 0.05,
+    "green_index": 0.5, "ect": 0.31, "momocs": 0.05,
 }
 
 _MODULES_CACHE: Optional[tuple[dict, ...]] = None
@@ -171,7 +173,7 @@ _MODULES_LOCK = threading.Lock()
 
 
 def module_table() -> tuple[dict, ...]:
-    """The 18 canonical modules in STAGE_ORDER, each with the facts the UI needs.
+    """The 19 canonical modules in STAGE_ORDER, each with the facts the UI needs.
 
     Read off the live ``PipelineStage`` subclasses when ``leafmachine3.pipeline`` is ALREADY
     in ``sys.modules`` (so a new or edited stage is picked up for free during and after a run),

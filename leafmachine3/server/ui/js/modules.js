@@ -56,10 +56,11 @@ export const MODULES = [
   { key: "leaf_orientation",      name: "Leaf Orientation",        short: "Orientation", order: 12, phase: "leaf",   railOrder: 12, device: "cpu", exec: "thread",  depends: ["morphology", "landmark_detector"] },
   { key: "petiole_width",         name: "Petiole Width",           short: "Petiole",     order: 13, phase: "leaf",   railOrder: 13, device: "cpu", exec: "thread",  depends: ["leaf_segmenter", "landmark_detector", "morphology"] },
   { key: "bilateral_symmetry",    name: "Bilateral Symmetry",      short: "Symmetry",    order: 14, phase: "leaf",   railOrder: 14, device: "cpu", exec: "process", depends: ["leaf_segmenter", "landmark_detector", "morphology", "leaf_orientation"] },
-  { key: "ect",                   name: "Shape (ECT)",             short: "ECT",         order: 17, phase: "leaf",   railOrder: 15, device: "cpu", exec: "process", depends: ["reporter"] },
-  { key: "metric_grounding",      name: "Metric Grounding",        short: "Grounding",   order: 15, phase: "output", railOrder: 16, device: "cpu", exec: "thread",  depends: ["ruler_cf", "leaf_segmenter", "petiole_width"] },
-  { key: "reporter",              name: "Reporter",                short: "Reporter",    order: 16, phase: "output", railOrder: 17, device: "cpu", exec: "thread",  depends: ["archival_detector", "plant_detector", "specimen_segmenter", "phenology_detector", "ruler_classifier", "ruler_cf", "leaf_segmenter", "morphology", "landmark_detector", "landmark_measurements", "leaf_orientation", "petiole_width", "metric_grounding"] },
-  { key: "momocs",                name: "Momocs Export",           short: "Momocs",      order: 18, phase: "output", railOrder: 18, device: "cpu", exec: "thread",  depends: ["reporter"] },
+  { key: "ect",                   name: "Shape (ECT)",             short: "ECT",         order: 18, phase: "leaf",   railOrder: 15, device: "cpu", exec: "process", depends: ["reporter"] },
+  { key: "green_index",           name: "Green Index",             short: "Green",       order: 17, phase: "leaf",   railOrder: 16, device: "cpu", exec: "process", depends: ["reporter"] },
+  { key: "metric_grounding",      name: "Metric Grounding",        short: "Grounding",   order: 15, phase: "output", railOrder: 17, device: "cpu", exec: "thread",  depends: ["ruler_cf", "leaf_segmenter", "petiole_width"] },
+  { key: "reporter",              name: "Reporter",                short: "Reporter",    order: 16, phase: "output", railOrder: 18, device: "cpu", exec: "thread",  depends: ["archival_detector", "plant_detector", "specimen_segmenter", "phenology_detector", "ruler_classifier", "ruler_cf", "leaf_segmenter", "morphology", "landmark_detector", "landmark_measurements", "leaf_orientation", "petiole_width", "metric_grounding"] },
+  { key: "momocs",                name: "Momocs Export",           short: "Momocs",      order: 19, phase: "output", railOrder: 19, device: "cpu", exec: "thread",  depends: ["reporter"] },
 ];
 
 /** key -> module record. */

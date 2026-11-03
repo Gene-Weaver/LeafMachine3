@@ -188,10 +188,10 @@ _STAGE_UNIT: dict[str, str] = {
     "ruler_cf": "ruler_crops", "leaf_segmenter": "images", "morphology": "leaves",
     "landmark_detector": "leaves", "landmark_measurements": "leaves", "leaf_orientation": "leaves",
     "petiole_width": "leaves", "metric_grounding": "leaves", "reporter": "images", "ect": "leaf_ect",
-    "bilateral_symmetry": "leaves", "momocs": "leaf_momocs",
+    "bilateral_symmetry": "leaves", "momocs": "leaf_momocs", "green_index": "leaf_green_index",
 }
 _UNIT_LABEL = {"images": "image", "ruler_crops": "ruler crop", "leaves": "leaf", "leaf_ect": "leaf",
-               "leaf_momocs": "leaf"}
+               "leaf_momocs": "leaf", "leaf_green_index": "leaf"}
 
 
 def _counts(db: Any) -> dict[str, int]:
@@ -206,6 +206,7 @@ def _counts(db: Any) -> dict[str, int]:
         "leaves": n("SELECT COUNT(*) FROM leaf_segmentation"),
         "leaf_ect": n("SELECT COUNT(*) FROM leaf_ect"),
         "leaf_momocs": n("SELECT COUNT(*) FROM leaf_momocs"),
+        "leaf_green_index": n("SELECT COUNT(*) FROM leaf_green_index"),
     }
 
 

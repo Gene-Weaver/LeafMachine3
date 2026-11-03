@@ -119,6 +119,7 @@ _CATEGORY_BLURB: dict[str, str] = {
     "Overlay/Overlay_Summary": "Full sheet with masks, boxes, landmarks and the conversion-factor banner drawn on top.",
     "Overlay/Overlay_Landmarks": "One image per leaf: keypoints, skeleton and the derived measurement panel.",
     "Overlay/Overlay_Petiole": "One image per leaf: the petiole width band, its samples and a measurement panel.",
+    "Overlay/Overlay_Green_Index": "One image per leaf: excluded pixels in red, plus a histogram, value and color tiles for each green index.",
     "Overlay/Overlay_Specimen_Segmentation": "Two panels per sheet: the annotated sheet beside the background-removed cutout.",
     "Overlay/Overlay_Ruler_Lattice": "Ruler conversion-factor QC: squarify tile, deskewed strip, tick overlays and per-unit combs.",
     "Overlay/Overlay_FieldPrism":
@@ -147,7 +148,7 @@ _CATEGORY_BLURB: dict[str, str] = {
     "Collage": "Leaf collages from the postprocessing tab: the run's high-scoring leaves tiled "
                "into the shape of one primary mask, each PNG paired with a .json of its leaves.",
     "Data": "The run's measurements as CSV: one row per leaf in leaf_measurements.csv, plus "
-            "per-specimen, detection, landmark and ruler-CF tables and a data dictionary.",
+            "per-specimen, detection, landmark, ruler-CF and green index tables and a data dictionary.",
     "Timing": "Per-module run timing: timing.csv and the timing.html report.",
     "_crops": "Working detection crops the ruler, segmenter and landmark modules read.",
     "_specimen_masks": "Working whole-specimen mask PNGs the Reporter reads.",

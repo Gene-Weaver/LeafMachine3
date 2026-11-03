@@ -96,6 +96,8 @@ const MODULE_INFO = [
    "Applies each sheet's conversion factor to the stored pixel measurements, turning them into cm and cm²."],
   ["reporter", "Reporter",
    "Renders every requested output — overlays, crops, masks and leaf products — from the stored records and the originals."],
+  ["green_index", "Green Index",
+   "Scores each oriented leaf with several published color indices, leaving out mounting tape, and writes a summary image per leaf."],
   ["ect", "ECT",
    "Computes the Euler Characteristic Transform of each oriented leaf and writes its radial and Cartesian views."],
   ["momocs", "Momocs",

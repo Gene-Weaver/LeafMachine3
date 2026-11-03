@@ -67,6 +67,7 @@ _CANONICAL_STAGE_KEYS: tuple[str, ...] = (
     "bilateral_symmetry",
     "metric_grounding",
     "reporter",
+    "green_index",
     "ect",
     "momocs",
 )
@@ -95,6 +96,20 @@ _OWNED_MORPH_COLS: dict[str, tuple[str, ...]] = {
 _OWNED_PETIOLE_COLS: dict[str, tuple[str, ...]] = {
     "metric_grounding": ("width_cm", "length_cm"),
 }
+
+# Every leaf_green_index column the stage writes, in table order.
+_GREEN_INDEX_COLS: tuple[str, ...] = (
+    "leaf_id", "specimen_id", "detection_id", "instance_index",
+    "leaf_image_name", "leaf_image_path", "overlay_png",
+    "n_lamina_px", "n_excluded_white_peak_px", "n_used_px", "used_frac",
+    "white_peak_status", "white_peak_cut",
+    "mean_r", "mean_g", "mean_b",
+    "green_index_signorelli_2025", "green_chromatic_coordinate_woebbecke_1995", "excess_green_thrash_2022",
+    "two_fold_red_excess_agarwal_2025", "vegetation_index_2_kawashima_1998",
+    "green_leaf_index_louhaichi_2001", "greenness_lazarevic_2022",
+    "excess_green_thrash_2022_window_mean", "excess_green_thrash_2022_window_n_px",
+    "excess_green_thrash_2022_window_frac",
+)
 
 
 def _stage_keys() -> list[str]:
@@ -265,9 +280,12 @@ class ProjectDB:
         from leafmachine3.inference.ruler_lattice import SCHEMA_SQL as _LATTICE_SCHEMA_SQL
         self._migrate_lattice_tables()
         self.conn.executescript(_LATTICE_SCHEMA_SQL)
+        # An UPSERT, not INSERT OR IGNORE: when a release adds a stage mid-pipeline, an existing project
+        # must renumber the stages after it, or the ledger sorts two stages into one position.
         for order, key in enumerate(_stage_keys(), start=1):
             self._exec(
-                "INSERT OR IGNORE INTO project_status(stage_key, stage_order) VALUES (?, ?)",
+                "INSERT INTO project_status(stage_key, stage_order) VALUES (?, ?) "
+                "ON CONFLICT(stage_key) DO UPDATE SET stage_order = excluded.stage_order",
                 (key, order),
             )
         from leafmachine3.core import landmarks as _lm     # seed the self-describing keypoint schema
@@ -1140,6 +1158,20 @@ class ProjectDB:
             "SELECT json_path FROM leaf_momocs WHERE json_path IS NOT NULL "
             "GROUP BY json_path ORDER BY MIN(specimen_id)")]
 
+    def record_leaf_green_index_one(self, row: dict) -> None:
+        """Upsert ONE leaf's ``leaf_green_index`` row, keyed on ``leaf_id`` (per-leaf fanout writes)."""
+        cols = ", ".join(_GREEN_INDEX_COLS)
+        marks = ", ".join("?" for _ in _GREEN_INDEX_COLS)
+        updates = ", ".join(f"{c}=excluded.{c}" for c in _GREEN_INDEX_COLS if c != "leaf_id")
+        self._exec(
+            f"INSERT INTO leaf_green_index ({cols}) VALUES ({marks}) "
+            f"ON CONFLICT(leaf_id) DO UPDATE SET {updates}",
+            tuple(row.get(c) for c in _GREEN_INDEX_COLS),
+        )
+
+    def leaf_green_index(self, specimen_id: int) -> list[sqlite3.Row]:
+        return self._query("SELECT * FROM leaf_green_index WHERE specimen_id = ? ORDER BY leaf_id", (specimen_id,))
+
     # ---- CSV export readers (reports/Data) -------------------------------- #
     # Whole-project, run-once reads backing `reporting.data_export`. They live here because this is
     # the only module allowed to issue SQL; the exporter owns the column ORDER, units and prose.
@@ -1345,6 +1377,21 @@ class ProjectDB:
               LEFT JOIN plant_detection pd  ON pd.detection_id = k.detection_id
               LEFT JOIN landmark_schema sch ON sch.kpt_index   = k.kpt_index
              ORDER BY k.specimen_id, k.detection_id, k.instance_index, k.kpt_index
+            """
+        )
+
+    def export_green_index_rows(self) -> list[sqlite3.Row]:
+        """One row per measured leaf cutout, with the identity that traces it back to its parent image."""
+        return self._query(
+            """
+            SELECT g.*, s.image_name, s.image_stem, s.original_path, s.work_scale,
+                   pd.x1 AS crop_x1, pd.y1 AS crop_y1, pd.x2 AS crop_x2, pd.y2 AS crop_y2,
+                   m.oriented_leaf_rotation_angle_degreesCW
+              FROM leaf_green_index g
+              JOIN specimen s ON s.specimen_id = g.specimen_id
+              LEFT JOIN plant_detection pd ON pd.detection_id = g.detection_id
+              LEFT JOIN leaf_morphology m ON m.leaf_id = g.leaf_id
+             ORDER BY s.image_stem, g.detection_id, g.instance_index
             """
         )
 
@@ -1583,6 +1630,8 @@ class ProjectDB:
         # The FieldPrism tables store no files (marker geometry and sheet fit only).
         "ruler_FP_marker": (),
         "ruler_FP_sheet": (),
+        # leaf_image_path is the Reporter's cutout, a foreign reference that must survive a reset.
+        "leaf_green_index": ("overlay_png",),
     }
 
     def _unlink_table_artifacts(self, table: str) -> None:
