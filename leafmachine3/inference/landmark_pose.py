@@ -18,7 +18,7 @@ from leafmachine3.core.landmarks import KPT_NAMES, WHITE_PAD_FRAC
 class LeafLandmarkPose:
     """Exported yolo26x-pose backend that returns per-leaf named keypoints (crop frame)."""
 
-    def __init__(self, model_path, conf: float = 0.25, iou: float = 0.45, imgsz=640,
+    def __init__(self, model_path, conf: float = 0.10, iou: float = 0.45, imgsz=640,
                  device=None, white_pad: float = WHITE_PAD_FRAC, providers=None):
         from leafmachine3.inference import ultra_replacements as ultra_rep
 

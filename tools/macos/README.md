@@ -51,7 +51,7 @@ Then:
 
 ```bash
 uv run --frozen --no-sync lm3 doctor                   # check 6: "Core ML (coremltools 9.0) ran the probe network ..."
-uv run --frozen --no-sync lm3 doctor --models          # check 7: all 6 Core ML models agree with the CPU
+uv run --frozen --no-sync lm3 doctor --models          # check 7: all 5 Core ML models agree with the CPU
 uv run --frozen --no-sync /usr/bin/time -l python tools/macos/verify_coreml.py --n 23 --json native.json
 
 # full runs, one after another
@@ -61,25 +61,26 @@ grep -E "GPU plan|CoreML" runs/mac_native/logs/lm3.log | head -40
 uv run --frozen --no-sync python tools/verification/compare_runs_close.py runs/mac_cpu runs/mac_native --json cmp_native.json
 ```
 
-In the run log expect `GPU plan: Apple GPU via CoreML, 1 worker` for each GPU stage, one
-`coreml_fp32 loaded` line per model, and no `runs on the CPU` or `has no input shape` lines.
+In the run log expect `GPU plan: Apple GPU via CoreML, 1 worker` for each GPU stage except the ruler
+classifier, which has no package and logs `GPU plan: CPU (ONNX; this model has no coreml_fp32 package)`;
+one `coreml_fp32 loaded` line per packaged model, and no `runs on the CPU` or `has no input shape` lines.
 
 ## Acceptance
 
 `mac_native` vs `mac_cpu`. The inputs are identical, so any difference is Core ML's arithmetic.
 
-| Check | Pass | M2 Pro, 0e2247e |
+| Check | Pass | M2 Pro, 1148243 |
 |---|---|---|
 | `lm3 models status` | every stage ok, `coreml_fp32` in the formats | ok |
-| `lm3 doctor` / `--models` | READY; check 7 OK on all 6 | 6/6 |
-| `verify_coreml.py --n 23` | 6/6 `ok`, all on CoreML, no inputs on the CPU | 6/6 |
+| `lm3 doctor` / `--models` | READY; check 7 OK on all 5 | 5/5 |
+| `verify_coreml.py --n 23` | 5/5 `ok`, all on CoreML, no inputs on the CPU | 5/5 |
 | run exit | exit 0, `stage_errors.csv` empty | exit 0; empty |
 | detections | every box matched (conf >= 0.4: all); IoU min >= 0.99; abs(dconf) max <= 0.03 | all; 1.000; 0.000 |
 | leaves | all measured leaves matched; every metric median <= 0.0005, p95 <= 0.01 | 258/258; 0.0000 |
 | sheets | every count the same | 23/23 |
 | ruler | unit the same on every sheet; px/cm relative change max <= 0.005 | 23/23; 0.0000 |
 | specimen mask | area fraction abs diff max <= 0.001 | 0.0001 |
-| wall time | (b) well under (a) | 265 s vs 923 s |
+| wall time | (b) well under (a) | 289 s vs 955 s |
 
 A Mac CPU run also matches a Linux CPU run of the same commit, to rounding, on every table, with one
 known exception: a near-tie in the ruler lattice's period search can resolve differently on x86 and ARM.

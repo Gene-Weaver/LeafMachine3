@@ -189,7 +189,7 @@ class DeviceManager:
         if (not gpus or coreml.simulated()) and coreml.available():
             # Apple GPU: ONE in-process worker. CoreML compiles each model for the GPU and shares the
             # machine's unified memory, so the VRAM-sized fleet below does not apply.
-            log.info("%s: GPU plan: Apple GPU via CoreML, 1 worker%s", self.stage.key,
+            log.info("%s: GPU plan: %s, 1 worker%s", self.stage.key, self._coreml_target(),
                      " (SIMULATED on the CPU provider)" if coreml.simulated() else "")
             return [Device("coreml")]
         if not gpus:
@@ -200,6 +200,23 @@ class DeviceManager:
         # deliberately uneven. The hardware profile supplies the per-worker COST; free VRAM at
         # run time -- not a number frozen at profile time -- decides how many of them fit.
         return self._vram_plan(gpus)
+
+    def _coreml_target(self) -> str:
+        """Where this stage's model runs under the CoreML plan, for the plan log line.
+
+        A model with an installed ``coreml_fp32`` package runs on the Apple GPU; one without (e.g. the
+        DINOv3 ruler classifier) runs its ONNX file on the CPU inside the same single worker.
+        """
+        try:
+            from leafmachine3.inference.coreml_native import package_for
+
+            model = self.cfg.stage(self.stage.key).get("model") or {}
+            path = model.get("path") if isinstance(model, dict) else None
+            if path and str(path).endswith(".onnx") and package_for(self.cfg.resolve_model_path(path)) is None:
+                return "CPU (ONNX; this model has no coreml_fp32 package)"
+        except Exception:  # noqa: BLE001 - a log line must never break planning
+            pass
+        return "Apple GPU via CoreML"
 
     @staticmethod
     def ensure_cuda_libpath() -> None:

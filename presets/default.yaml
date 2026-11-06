@@ -104,7 +104,7 @@ modules:
     source_classes: [Leaf_WHOLE]
     include_partial: false
     imgsz: 640
-    conf: 0.25
+    conf: 0.10
     iou: 0.45
     white_pad: 0.1
   landmark_measurements: {enabled: true, min_kpt_conf: 0.25}

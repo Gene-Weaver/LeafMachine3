@@ -173,7 +173,7 @@ def load_landmark_pose(cfg: Any, device: Any):
 
     return LeafLandmarkPose(
         _model_path(cfg, stage_cfg),
-        conf=float(_get(stage_cfg, "conf", 0.25)),
+        conf=float(_get(stage_cfg, "conf", 0.10)),
         iou=float(_get(stage_cfg, "iou", 0.45)),
         imgsz=_get(stage_cfg, "imgsz", 640),
         device=device.torch_str,
