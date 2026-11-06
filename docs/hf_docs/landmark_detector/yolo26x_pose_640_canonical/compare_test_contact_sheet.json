@@ -1,0 +1,17 @@
+{
+ "what": "Random test leaves (seed 11), tip up: corrected label | previous default | this model; top-confidence prediction, keypoints with conf >= 0.25",
+ "models": {
+  "Previous default": "/datac/Labelbox_Dump/LM3_Landmark_Detector/models/yolo26x_pose_640_strict/it2/weights/best.pt",
+  "This model": "/datac/Labelbox_Dump/LM3_Landmark_Detector/models/yolo26x_pose_640_strict/it2labels_300ep/weights/best.pt"
+ },
+ "test_images": [
+  "9odbfnff__NY_1929366094_Sapotaceae_Sideroxylon_celastrinum__129",
+  "2otaafni__20220622-TX-Shinnery-REU-5A-5-__23",
+  "gteb6fi6__TEX_4003260400_Platanaceae_Platanus_occidentalis__25",
+  "9odbfnff__NY_1929594011_Rutaceae_Amyris_balsamifera__12",
+  "gbac5kw6__US_1320374664_Tovariaceae_Tovaria_pendula__L__425-1892-1064-3491",
+  "gbac5kw6__NY_1929120188_Araliaceae_Panax_trifolius__L__1094-2585-1286-2789",
+  "gbac5kw6__CHSC_2418056456_Lythraceae_Lythrum_portula__L__2328-2745-2391-2871",
+  "gbac5kw6__NY_1931039930_Linderniaceae_Lindernia_dubia__L__1202-4463-1334-4633"
+ ]
+}

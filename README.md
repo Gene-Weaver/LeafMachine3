@@ -688,12 +688,12 @@ point with a confidence, so missing or occluded points are known to be missing.
 
 ![Landmark overlays for one leaf per specimen](docs/readme_github/landmark_detector.jpg)
 
-| Model | [`lm3_landmark_detector__yolo26x_pose_640`](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640) |
+| Model | [`lm3_landmark_detector__yolo26x_pose_640_canonical`](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640_canonical) |
 |---|---|
 | Architecture | YOLO26x pose, end-to-end (NMS-free), 640 px; the `mid15_pet5` skeleton |
 | Keypoints | 31 (lamina_tip, apex ×3, midvein ×15, base ×3, lamina_base, petiole ×6, width ×2) |
-| Trained on | 15,217 single-leaf crops, 358,054 keypoint instances, 23 annotation projects |
-| Accuracy | test box mAP50 0.995; pose mAP50 0.763, mAP50-95 0.433 (OKS) |
+| Trained on | 15,178 single-leaf crops, 357,929 keypoint instances, 23 annotation projects; labels corrected so left and right follow the leaf, not the screen |
+| Accuracy | test box mAP50 0.995; pose mAP50 0.847, mAP50-95 0.550 (OKS, corrected labels) |
 
 ### 11. Landmark Measurements
 
@@ -1118,7 +1118,7 @@ CPU code.
 | 7. [Ruler Conversion Factor](#7-ruler-conversion-factor) | none (CPU) | `ruler_CF_lattice` tables; `specimen.cf_px_per_cm` + `cf_source`; `Overlay/Overlay_Ruler_Lattice/` and `Data/ruler_conversion_factor.csv` (the verdict and why) |
 | 8. [Leaf Segmenter](#8-leaf-segmenter) | [`phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024`](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024) | `leaf_segmentation` table; `Specimen_Masks/*__Leaf/` per leaf and per sheet |
 | 9. [Morphology](#9-morphology) | none (CPU) | `leaf_morphology` table; the green rotated boxes on the summary overlay |
-| 10. [Landmark Detector](#10-landmark-detector) | [`phyloforfun/lm3_landmark_detector__yolo26x_pose_640`](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640) | `leaf_landmark` table (specimen and crop coordinates); `Data/landmarks.csv` |
+| 10. [Landmark Detector](#10-landmark-detector) | [`phyloforfun/lm3_landmark_detector__yolo26x_pose_640_canonical`](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640_canonical) | `leaf_landmark` table (specimen and crop coordinates); `Data/landmarks.csv` |
 | 11. [Landmark Measurements](#11-landmark-measurements) | none (CPU) | `leaf_landmark_measurement` table; the cyan/white/black lines and the measurement block on `Overlay/Overlay_Landmarks/` |
 | 12. [Leaf Orientation](#12-leaf-orientation) | none (CPU) | `oriented_leaf_rotation_angle_degreesCW` and `oriented_leaf_success` on `leaf_morphology` |
 | 13. [Petiole Width](#13-petiole-width) | none (CPU) | `leaf_petiole` table (`width_px`, `length_px`, `touches_leaf`); `Overlay/Overlay_Petiole/` |
@@ -1227,7 +1227,7 @@ uv run --frozen --no-sync lm3 models verify
 | Specimen Segmenter | [unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_selftrain) (UNet++ v9) | <sub>[unetpp_effb7_1024_dinov3_vith16plus_2048_consensus](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048_consensus), [unetpp_effb7_1024_dinov3_vith16plus_2048](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024_dinov3_vith16plus_2048), [unetpp_effb7_1024](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__unetpp_effb7_1024), [birefnet_hr_swinl_1024](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__birefnet_hr_swinl_1024), [yolo26x_seg_1280](https://huggingface.co/phyloforfun/lm3_specimen_segmenter__yolo26x_seg_1280)</sub> | AGPL-3.0 (Apache-2.0, MIT, AGPL-3.0) |
 | Ruler Classifier | [dinov3_vits16_tile_four_896_mlp](https://huggingface.co/phyloforfun/lm3_ruler_classifier__dinov3_vits16_tile_four_896_mlp) |  | DINOv3 License |
 | Leaf Segmenter | [yolo26x_seg_1024](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__yolo26x_seg_1024) | [birefnet_hr_swinl_1024_leaf](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__birefnet_hr_swinl_1024_leaf), [birefnet_hr_swinl_1024_leaf_no_petiole](https://huggingface.co/phyloforfun/lm3_leaf_segmenter__birefnet_hr_swinl_1024_leaf_no_petiole) | AGPL-3.0 (MIT) |
-| Landmark Detector | [yolo26x_pose_640](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640) | | AGPL-3.0 |
+| Landmark Detector | [yolo26x_pose_640_canonical](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640_canonical) | [yolo26x_pose_640](https://huggingface.co/phyloforfun/lm3_landmark_detector__yolo26x_pose_640) (previous default) | AGPL-3.0 |
 | MP Conversion Factor | [sqrt_fit](https://huggingface.co/phyloforfun/lm3_mp_conversion_factor__sqrt_fit) | | MIT |
 
 The BiRefNet leaf alternates output semantic masks (lamina + petiole as one mask, or the lamina

@@ -34,7 +34,7 @@ Environment: torch, ultralytics 8.4.79 (the version LM3's ONNX exports were made
 onnx and onnxruntime; segmentation_models_pytorch for UNet++. On a Mac, without touching LM3's own
 environment (uv layers these over it in a throwaway environment):
 
-    uv run --frozen --no-sync --with coremltools==9.0 --with torch==2.5.1 --with ultralytics==8.4.79 \\
+    uv run --frozen --no-sync --with coremltools==9.0 --with torch==2.5.1 --with ultralytics==8.4.79 --with onnx==1.22.0 \\
         python tools/modelhub/export_coreml_fp32.py yolo best.pt model.onnx OUT/coreml_fp32/model.mlpackage
 
 Usage:

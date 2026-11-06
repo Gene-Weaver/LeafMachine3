@@ -1,0 +1,26 @@
+{
+ "left_right": [
+  "train",
+  "gbac5kw6__NY_1928659860_Cornaceae_Cornus_canadensis__L__1156-2306-1402-2773"
+ ],
+ "midvein": [
+  "train",
+  "gteb6fi6__F_1228567010_Rubiaceae_Posoqueria_latifolia__3"
+ ],
+ "petiole_tip": [
+  "train",
+  "gteb6fi6__US_2284209729_Bignoniaceae_Catalpa_bungei__13"
+ ],
+ "angle_two_arms": [
+  "train",
+  "gteb6fi6__MNHN_474861379_Platanaceae_Platanus_densicoma__20"
+ ],
+ "angle_many_vertices": [
+  "train",
+  "gteb6fi6__US_1319127590_Bignoniaceae_Catalpa_obovata__112"
+ ],
+ "width_chord": [
+  "train",
+  "a2o13anj__Leaf_WHOLE__USF_1584439080_Caprifoliaceae_Lonicera_periclymenum__11"
+ ]
+}

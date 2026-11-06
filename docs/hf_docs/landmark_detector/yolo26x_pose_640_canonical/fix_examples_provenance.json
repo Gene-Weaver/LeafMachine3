@@ -1,0 +1,41 @@
+{
+ "what": "Before/after examples of the landmark-label corrections, original label (LM3_Landmarks_Pose) vs corrected label (LM3_Landmarks_Pose_it2), drawn tip up by code/render_landmark_fix_examples.py",
+ "examples": [
+  {
+   "file": "fix_left_right.jpg",
+   "correction": "Left/right order",
+   "split": "train",
+   "image": "gbac5kw6__NY_1928659860_Cornaceae_Cornus_canadensis__L__1156-2306-1402-2773"
+  },
+  {
+   "file": "fix_midvein.jpg",
+   "correction": "Midvein direction",
+   "split": "train",
+   "image": "gteb6fi6__F_1228567010_Rubiaceae_Posoqueria_latifolia__3"
+  },
+  {
+   "file": "fix_petiole_tip.jpg",
+   "correction": "Petiole tip",
+   "split": "train",
+   "image": "gteb6fi6__US_2284209729_Bignoniaceae_Catalpa_bungei__13"
+  },
+  {
+   "file": "fix_angle_two_arms.jpg",
+   "correction": "Angle drawn as two separate arms",
+   "split": "train",
+   "image": "gteb6fi6__MNHN_474861379_Platanaceae_Platanus_densicoma__20"
+  },
+  {
+   "file": "fix_angle_many_vertices.jpg",
+   "correction": "Angle drawn with extra vertices",
+   "split": "train",
+   "image": "gteb6fi6__US_1319127590_Bignoniaceae_Catalpa_obovata__112"
+  },
+  {
+   "file": "fix_width_chord.jpg",
+   "correction": "Width drawn with extra vertices",
+   "split": "train",
+   "image": "a2o13anj__Leaf_WHOLE__USF_1584439080_Caprifoliaceae_Lonicera_periclymenum__11"
+  }
+ ]
+}

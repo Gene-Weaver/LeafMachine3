@@ -1,0 +1,17 @@
+{
+ "what": "Test leaves (seed 11 order) where the previous default put a width/apex/base pair on the wrong side, both on one side, or collapsed the width to under half the label's, tip up: corrected label | previous default | this model; top-confidence prediction, keypoints with conf >= 0.25",
+ "models": {
+  "Previous default": "/datac/Labelbox_Dump/LM3_Landmark_Detector/models/yolo26x_pose_640_strict/it2/weights/best.pt",
+  "This model": "/datac/Labelbox_Dump/LM3_Landmark_Detector/models/yolo26x_pose_640_strict/it2labels_300ep/weights/best.pt"
+ },
+ "test_images": [
+  "2otaafni__20220622-TX-Shinnery-REU-5A-5-__23",
+  "gbac5kw6__US_1320374664_Tovariaceae_Tovaria_pendula__L__425-1892-1064-3491",
+  "gbac5kw6__CM_2859359272_Malvaceae_Malva_moschata__L__2254-869-2500-1261",
+  "a2o13anj__Leaf_WHOLE__O_1701883983_Caprifoliaceae_Lonicera_periclymenum__5",
+  "gteb6fi6__MNHN_694472395_Bixaceae_Bixa_arborea__13",
+  "gbac5kw6__US_1456467660_Proteaceae_Roupala_montana__L__1682-2056-2604-2764",
+  "gteb6fi6__MNHN_465013008_Phellinaceae_Phelline_gracilior__39",
+  "gteb6fi6__GH_1998828321_Platanaceae_Platanus_glabrata__25"
+ ]
+}

@@ -75,7 +75,7 @@ DEFAULTS: dict[str, dict] = {
                   "pytorch/best.pt": ("plant_detector/best.pt", "pytorch"),
                   "training_metadata.json": ("plant_detector/training_metadata.json", "meta")}}]},
     "landmark_detector": {"units": [{
-        "repo_id": f"{NAMESPACE}/lm3_landmark_detector__yolo26x_pose_640",
+        "repo_id": f"{NAMESPACE}/lm3_landmark_detector__yolo26x_pose_640_canonical",
         "dir": "landmark_detector",
         "files": {"onnx/model.onnx": ("landmark_detector/model.onnx", "onnx"),
                   "torchscript/model.torchscript": ("landmark_detector/model.torchscript", "torchscript"),

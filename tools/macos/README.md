@@ -118,7 +118,7 @@ revision until the last step, so users see no change until then.
    ```bash
    uv run --frozen --no-sync lm3 models install --yes
    uv run --frozen --no-sync lm3 models install --formats pytorch,meta --dest ~/lm3-checkpoints --yes
-   uv run --frozen --no-sync --with torch==2.5.1 --with ultralytics==8.4.79 --with segmentation-models-pytorch==0.5.0 \
+   uv run --frozen --no-sync --with torch==2.5.1 --with ultralytics==8.4.79 --with segmentation-models-pytorch==0.5.0 --with onnx==1.22.0 \
      /usr/bin/time -l python tools/modelhub/export_coreml_fp32.py all --models models --pytorch ~/lm3-checkpoints --only STAGE
    ```
 
