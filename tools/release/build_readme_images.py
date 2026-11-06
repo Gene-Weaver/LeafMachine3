@@ -3,7 +3,7 @@
 
 Every image in the README comes from the same three specimens so it reads as one story. They are
 sheets that ship in ``examples/images/``, so anyone can reproduce every figure by running LM3 on the
-bundled examples. Which sheets and which leaves is the CONFIG block below -- swapping the README's
+bundled examples (one exception: MEASUREMENT_PANEL_SWAPS, also a bundled sheet). Which sheets and which leaves is the CONFIG block below -- swapping the README's
 specimens is an edit there, not here. The composites are committed, so this script only needs to
 run again when the Reporter's output changes or a different run should illustrate the README.
 
@@ -42,10 +42,17 @@ SPECIMENS = [
 ]
 # (primary leaf, secondary leaf) per sheet, as the x1_y1_x2_y2 token in the Reporter's file names --
 # chosen by eye from the Overlay_Landmarks contact sheets. The primary must have a petiole mask.
+# Boxes from the 3.0.1062 plant detector (same leaves as the original picks, a few px apart).
 LEAVES = {
-    "A_1998857721_Platanaceae_Platanus_kerrii": ["0_2_867_880", "969_1770_1564_2084"],
-    "PH_3865012217_Bignoniaceae_Catalpa_erubescens": ["630_1666_1791_2598", "788_286_2069_1971"],
-    "YPM_1038926111_Bignoniaceae_Catalpa_purpurea": ["947_53_1336_437", "774_83_971_389"],
+    "A_1998857721_Platanaceae_Platanus_kerrii": ["0_0_870_887", "969_1769_1564_2083"],
+    "PH_3865012217_Bignoniaceae_Catalpa_erubescens": ["627_1659_1793_2596", "781_263_2070_1977"],
+    "YPM_1038926111_Bignoniaceae_Catalpa_purpurea": ["946_51_1335_438", "776_83_972_390"],
+}
+# The one exception to "same three specimens": landmark_measurements.jpg takes this sheet's panel from another
+# bundled sheet. The README sheet's only other whole leaf is three-lobed and cut off by its crop, and the 3.0.1062
+# landmark model's width line runs off that leaf. {README sheet: (bundled sheet, leaf token)}
+MEASUREMENT_PANEL_SWAPS = {
+    "PH_3865012217_Bignoniaceae_Catalpa_erubescens": ("A_2351160546_Bignoniaceae_Catalpa_speciosa", "624_1001_1454_2139"),
 }
 # Leaves whose lamina has holes (leaf_morphology.n_holes > 0); any sheet, three rows.
 HOLE_LEAVES = [
@@ -230,8 +237,11 @@ class Builder:
 
     def landmarks(self) -> None:
         for idx, name in [(0, "landmark_detector.jpg"), (1, "landmark_measurements.jpg")]:
-            cells = [caption(fit(load(self.one(f"Overlay/Overlay_Landmarks/{s}__LM-leaf__{LEAVES[s][idx]}.jpg")), h=560), label(s))
-                     for s in SPECIMENS]
+            cells = []
+            for s in SPECIMENS:
+                sheet, tok = MEASUREMENT_PANEL_SWAPS[s] if idx == 1 and s in MEASUREMENT_PANEL_SWAPS else (s, LEAVES[s][idx])
+                cells.append(caption(fit(load(self.one(f"Overlay/Overlay_Landmarks/{sheet}__LM-leaf__{tok}.jpg")), h=560),
+                                     label(sheet)))
             self.save(row(cells), name, max_w=1800)
 
     def leaf_orientation(self) -> None:

@@ -703,7 +703,7 @@ obtuse, reflex, following LeafMachine2's convention), the petiole trace length, 
 curvature (the largest midvein bend, 0° = straight). It is occlusion-robust: any metric that needs
 a low-confidence keypoint is left `NULL`; nothing is fabricated.
 
-![Landmark overlays with the derived measurements for a second leaf per specimen](docs/readme_github/landmark_measurements.jpg)
+![Landmark overlays with the derived measurements for a second leaf per specimen; the middle panel is from another bundled Catalpa sheet](docs/readme_github/landmark_measurements.jpg)
 
 ### 12. Leaf Orientation
 
