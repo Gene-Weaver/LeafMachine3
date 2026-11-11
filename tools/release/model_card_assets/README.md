@@ -10,6 +10,7 @@ model repos copy them into their own `docs/`. Re-run a script after retraining a
 | `landmark_detector.py` | `docs/hf_docs/landmark_detector/overlay_*`: Reporter Overlay_Landmarks renders for the pose model | LM3 runtime env |
 | `landmark_detect_points.py` | `docs/hf_docs/landmark_detector/yolo26n_det_640/`: evaluation (box mAP + point metric sweep) and the predicted-point overlays + legend for the landmark-as-class detector | training env (ultralytics) |
 | `plant_detector.py` | `docs/hf_docs/plant_detector/overlay_*`: the detector example grid, detected with the stage's own loader, settings and duplicate suppression, drawn with `build_summary_image` (boxes + labels) | LM3 runtime env |
+| `archival_detector.py` | `docs/hf_docs/archival_detector/overlay_*`: the same kind of grid for the archival detector (translucent fill + border per class), same method as `plant_detector.py` | LM3 runtime env |
 | `birefnet_leaf.py` | `docs/hf_docs/leaf_segmenter/birefnet/panel_*`: the two BiRefNet leaf alternates (lamina + petiole, lamina only) and their combination on `Leaf_WHOLE` crops; the leaf_segmenter card's crops plus four more | LM3 runtime env (onnxruntime) |
 | `specimen_detector.py` | `docs/hf_docs/specimen_detector/overlay_*`: Specimen boxes vs the hand-drawn ones on test sheets (not an LM3 stage, so its own drawing) | training env (ultralytics) |
 | `specimen_segmenter.py` | `docs/hf_docs/specimen_segmenter/<key>/`: `examples` = the earlier UNet++ card's 20 sheets, Original \| UNet++ v1 (its saved masks) \| UNet++ v2; `failures` = sheets v1 failed on, both models through the stage's own path, raw masks and with paper removal (red = removed) | LM3 runtime env (onnxruntime) |
@@ -32,8 +33,8 @@ NV=$(ls -d .venv/lib/python3*/site-packages/nvidia); export LD_LIBRARY_PATH="$(l
 
 Not here (they render from other runs or were made by hand):
 - README images: `tools/release/build_readme_images.py`.
-- The archival detector card grid (detector-only box overlays) and the ruler-classifier squarify
-  before/after examples: their provenance JSONs in `docs/hf_docs/<action>/` record the sources.
+- The ruler-classifier squarify before/after examples: the provenance JSON in `docs/hf_docs/ruler_classifier/`
+  records the sources.
 
 Publishing: stage a repo folder (weights + exports hardlinked, card, `training_metadata.json`,
 `manifest.json` with per-file sha256 and export-hash verification), then

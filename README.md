@@ -505,7 +505,7 @@ screening a collection for envelopes or attached items).
 | Architecture | YOLO26x object detection, end-to-end (NMS-free), 1280 px |
 | Classes | 9: Ruler, Barcode, Colorcard, Label, Map, Envelope, Photo, Attached Item, Weights |
 | Trained on | 8,470 sheets from 67 annotation projects |
-| Accuracy | test mAP50 0.949, mAP50-95 0.775 (nano alternate: 0.884 / 0.678) |
+| Accuracy | test mAP50 0.953, mAP50-95 0.767 (nano alternate: 0.884 / 0.678) |
 
 ### 3. Plant Detector
 
