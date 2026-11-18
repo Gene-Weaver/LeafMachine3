@@ -4,7 +4,7 @@ project:
   input:
     dirs: [examples/images]
     recursive: true
-    image_extensions: [.jpg, .jpeg, .png, .tif, .tiff]
+    image_extensions: [.jpg, .jpeg, .png, .tif, .tiff, .jxl]
   output: {dir: runs, tmp_dir: auto}
   run_mode:
     overwrite: false

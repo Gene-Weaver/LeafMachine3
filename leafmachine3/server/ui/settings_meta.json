@@ -415,7 +415,7 @@
   },
   "project.input.image_extensions": {
     "label": "Image extensions",
-    "help": "Only files with these extensions are collected as input images.",
+    "help": "Only files with these extensions are collected as input images. LM3 reads .jpg, .jpeg, .png, .tif, .tiff, .bmp, .webp and .jxl (JPEG XL); anything that is not already a JPEG is converted to one for processing, and the original is never modified.",
     "type": "list",
     "important": false,
     "group": "Input"

@@ -29,6 +29,22 @@ except Exception:  # pragma: no cover - cv2 always present at runtime
 MAX_IMAGE_PIXELS = 1_000_000_000
 
 
+def _register_jpegxl() -> bool:
+    """Teach Pillow to read JPEG XL (``.jxl``); return whether a JXL codec is available.
+
+    Pillow 12.2 has no JPEG XL codec of its own; importing ``pillow_jxl`` (the pinned
+    ``pillow-jxl-plugin`` dependency) registers one. OpenCV cannot read JXL either, which is fine:
+    ingest converts every non-JPEG original into a JPEG working copy, so nothing past ingest ever
+    decodes a ``.jxl``. Missing plugin = JXL inputs are quarantined as undecodable, nothing else
+    changes. Importing it twice is a no-op (Python caches the module).
+    """
+    try:
+        import pillow_jxl  # noqa: F401, PLC0415 - imported for its Pillow registration side effect
+    except Exception:  # noqa: BLE001 - optional codec; a broken install must not break ingest
+        return False
+    return True
+
+
 def configure_pillow():
     """Raise Pillow's decompression-bomb limit to :data:`MAX_IMAGE_PIXELS`; return ``PIL.Image``.
 
@@ -37,6 +53,7 @@ def configure_pillow():
     """
     from PIL import Image  # noqa: PLC0415 - Pillow is only needed by the callers that decode originals
 
+    _register_jpegxl()
     current = Image.MAX_IMAGE_PIXELS
     if current is not None and current < MAX_IMAGE_PIXELS:
         Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS

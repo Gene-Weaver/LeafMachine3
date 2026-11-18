@@ -75,7 +75,7 @@ LeafMachine3 is the successor to [LeafMachine2](https://github.com/Gene-Weaver/L
 problem into discrete steps the way a person would when extracting data from a specimen, and
 rebuilds every step on current models and a runtime that is simpler to install and run.
 
-- **Input:** a folder of herbarium specimen images (JPEG, PNG, TIFF). Field images and other
+- **Input:** a folder of herbarium specimen images (JPEG, PNG, TIFF, JPEG XL). Field images and other
   digital plant data sets work too; archival detections are simply empty.
 - **Output:** a per-specimen summary overlay for quality control, cropped components, per-leaf
   masks and cutouts (as mounted and oriented tip-up), and CSV tables with one row per leaf, per

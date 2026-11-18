@@ -212,7 +212,7 @@ def builtin_defaults() -> dict[str, Any]:
             "input": {
                 "dirs": [],
                 "recursive": True,
-                "image_extensions": [".jpg", ".jpeg", ".png", ".tif", ".tiff"],
+                "image_extensions": [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".jxl"],
             },
             # No keep_tmp knob. It was declared for a cleanup that was never implemented, and under the
             # working-frame contract it must never be: _tmp_original holds the DOWNSAMPLED copies, which

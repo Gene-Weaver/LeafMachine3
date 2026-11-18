@@ -37,8 +37,32 @@ log = logging.getLogger(__name__)
 
 #: Extensions that are already in the target working format (no conversion needed).
 JPEG_EXTS = {".jpg", ".jpeg"}
-#: Every raster format we know how to decode & normalize.
-SUPPORTED = JPEG_EXTS | {".png", ".tif", ".tiff", ".bmp", ".webp"}
+#: Every raster format we know how to decode & normalize. ``.jxl`` (JPEG XL) decodes through the
+#: pillow-jxl-plugin that configure_pillow() registers; like every non-JPEG it becomes a JPEG copy.
+SUPPORTED = JPEG_EXTS | {".png", ".tif", ".tiff", ".bmp", ".webp", ".jxl"}
+
+#: Pillow modes holding more than 8 bits per sample. ``convert("RGB")`` CLIPS these (every value
+#: above 255 becomes 255), turning a 16-bit grayscale scan almost white, so _to_rgb8 rescales first.
+#: 16-bit/float RGB never reaches us in these modes: Pillow has no such mode and the decoders
+#: (JXL plugin, PNG, TIFF) hand it over as 8-bit RGB already.
+_HIGH_BIT_MODES = {"I", "I;16", "I;16L", "I;16B", "I;16N", "F"}
+
+
+def _to_rgb8(im):
+    """Return ``im`` as 8-bit RGB, rescaling high-bit grayscale instead of clipping it.
+
+    Integer modes are taken as 16-bit (full scale 65535), float as nominal 0..1 (JPEG XL's float
+    range). Everything else uses Pillow's own conversion (L / LA / P / RGBA / CMYK ...).
+    """
+    if im.mode == "RGB":
+        return im
+    if im.mode in _HIGH_BIT_MODES:
+        import numpy as np  # noqa: PLC0415 - only the rare high-bit input pays for it
+
+        a = np.asarray(im, dtype=np.float32)
+        a = a * 255.0 if im.mode == "F" else a / 257.0
+        im = Image.fromarray(np.clip(np.rint(a), 0, 255).astype(np.uint8))
+    return im.convert("RGB")
 
 
 @dataclass(frozen=True)
@@ -199,8 +223,7 @@ class ImageIngestor:
         self.tmp.mkdir(parents=True, exist_ok=True)
         dst = self.tmp / f"{original.stem}_{self._short_hash(original)}_tmp.jpg"
         with Image.open(original) as im:
-            if im.mode != "RGB":
-                im = im.convert("RGB")                  # collapse L / RGBA / P / CMYK to 3-channel
+            im = _to_rgb8(im)                           # collapse L / RGBA / P / CMYK / 16-bit to 8-bit RGB
             long_side = max(im.size)
             if long_side > self.max_dim:
                 scale = self.max_dim / float(long_side)

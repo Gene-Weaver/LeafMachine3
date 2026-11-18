@@ -485,6 +485,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pillow" },
+    { name = "pillow-jxl-plugin" },
     { name = "psutil" },
     { name = "python-multipart" },
     { name = "pyyaml" },
@@ -567,6 +568,7 @@ requires-dist = [
     { name = "onnxruntime-gpu", marker = "sys_platform != 'darwin' and extra == 'gpu'", specifier = "==1.20.2" },
     { name = "opencv-python-headless", specifier = "==5.0.0.93" },
     { name = "pillow", specifier = "==12.2.0" },
+    { name = "pillow-jxl-plugin", specifier = "==1.3.8" },
     { name = "psutil", specifier = "==7.2.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
@@ -988,6 +990,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/49/62/5b0ed78fce87346be7a5cfcfaaad91f6a1f98c26f86bdbafa2066c647ef6/pillow-12.2.0-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:0c838a5125cee37e68edec915651521191cef1e6aa336b855f495766e77a366e", size = 7032230, upload-time = "2026-04-01T14:46:03.874Z" },
     { url = "https://files.pythonhosted.org/packages/5e/8b/51b0eddcfa2180d60e41f06bd6d0a62202b20b59c68f5a132e615b75aecf/pillow-12.2.0-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:25373b66e0dd5905ed63fa3cae13c82fbddf3079f2c8bf15c6fb6a35586324c1", size = 6002215, upload-time = "2026-04-01T14:46:08.83Z" },
     { url = "https://files.pythonhosted.org/packages/bc/60/5382c03e1970de634027cee8e1b7d39776b778b81812aaf45b694dfe9e28/pillow-12.2.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:bfa9c230d2fe991bed5318a5f119bd6780cda2915cca595393649fc118ab895e", size = 7080946, upload-time = "2026-04-01T14:46:11.734Z" },
+]
+
+[[package]]
+name = "pillow-jxl-plugin"
+version = "1.3.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/02/75/810608d489c2d453e16a0866de5edea2bedd728e8830da22a1ec633f3b80/pillow_jxl_plugin-1.3.8.tar.gz", hash = "sha256:4430fd7757899742079c548a7d2537d6d63cf0f1d323180095bc0f6f03d9d4fa", size = 1602233, upload-time = "2026-07-17T03:23:50.387Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/f7/1dc8ddbfa056e39307d67286f45c8300695c9a0137ed98f60775a2c37322/pillow_jxl_plugin-1.3.8-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:ceaca73f77fa0dc6409e85ca77da24560270d0929bdbee579714da05614c67ec", size = 2667692, upload-time = "2026-07-17T03:22:47.217Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/1e/453f3268eb67190930294875628890b8eacd297364a2abadf206d715cdcf/pillow_jxl_plugin-1.3.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:97a627c02fc660e6d36010c2bf57f1c346ce2a58cd7e83e43241f5ad174c3f18", size = 2508619, upload-time = "2026-07-17T03:22:38.406Z" },
+    { url = "https://files.pythonhosted.org/packages/34/35/d669758c1b49b04673b95e6bb275d59ed9f901d7a8346c8f560d5b6136fa/pillow_jxl_plugin-1.3.8-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:2f11b1d5d20013a8bdab06d9d3244488db0e00a5d57e5daaefa78f67eb70f474", size = 9237613, upload-time = "2026-07-17T03:23:40.223Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/57/ff6381e1df975840a0af201adca7d54bb6d7cd116514527c5179f8f599f5/pillow_jxl_plugin-1.3.8-cp311-cp311-win_amd64.whl", hash = "sha256:85649ffbb6a21b2830022ce723de8625fc4d33621ed09ec4687eaf57b5044f4c", size = 4941456, upload-time = "2026-07-17T03:23:58.841Z" },
+    { url = "https://files.pythonhosted.org/packages/72/3e/70b1c9c18839b7c6980edb6f4e0c4dd6b52be96df380adf2da55be8e6f7d/pillow_jxl_plugin-1.3.8-pp311-pypy311_pp73-macosx_11_0_arm64.whl", hash = "sha256:323ba7ab8fe6aceddbf571853b47c8900a293c6430649be31c3a743b12d0bcfc", size = 2668471, upload-time = "2026-07-17T03:22:52.738Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/4f/0f00dab8c1b4b026cb62909e01b26a8f12f9f536bb6b002c71a15a638004/pillow_jxl_plugin-1.3.8-pp311-pypy311_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ab40c82ead318b058804211a7f6d6e2715f65015f73792dee63813731105f74c", size = 2509592, upload-time = "2026-07-17T03:22:44.31Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/d9/c54bce2efd22f3d79e83fa9948fa5ca0184422c6bd9c38c4d28861ee9a50/pillow_jxl_plugin-1.3.8-pp311-pypy311_pp73-musllinux_1_2_x86_64.whl", hash = "sha256:75351073d967c85c24a330f9e375b17b809bff9779cd08c8d0e90d659b39be5a", size = 9239329, upload-time = "2026-07-17T03:23:48.617Z" },
 ]
 
 [[package]]
